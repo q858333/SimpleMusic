@@ -7,31 +7,31 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		7FCB73B1DEF13F3A841C2123 /* libPods-SimpleMusic.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B3DCFCC340C9311532D7179F /* libPods-SimpleMusic.a */; };
+		78C41645E1D4A38A5B4CFB28 /* libPods-SimpleMusic.a in Frameworks */ = {isa = PBXBuildFile; fileRef = DEB52EDE875076F080C144A0 /* libPods-SimpleMusic.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		23BA7237302F03A700023EB5 /* SimpleMusic.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SimpleMusic.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		61A8E657B75244B16F4D81A9 /* Pods-SimpleMusic.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SimpleMusic.release.xcconfig"; path = "Target Support Files/Pods-SimpleMusic/Pods-SimpleMusic.release.xcconfig"; sourceTree = "<group>"; };
-		B3DCFCC340C9311532D7179F /* libPods-SimpleMusic.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-SimpleMusic.a"; sourceTree = BUILT_PRODUCTS_DIR; };
-		FD85DCFE12592E432929ECEA /* Pods-SimpleMusic.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SimpleMusic.debug.xcconfig"; path = "Target Support Files/Pods-SimpleMusic/Pods-SimpleMusic.debug.xcconfig"; sourceTree = "<group>"; };
+		23BA727E302F095900023EB5 /* SimpleMusic.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SimpleMusic.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		55DF45A54AE45924626D378B /* Pods-SimpleMusic.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SimpleMusic.debug.xcconfig"; path = "Target Support Files/Pods-SimpleMusic/Pods-SimpleMusic.debug.xcconfig"; sourceTree = "<group>"; };
+		82FEF5096D84D9077E96AF8F /* Pods-SimpleMusic.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SimpleMusic.release.xcconfig"; path = "Target Support Files/Pods-SimpleMusic/Pods-SimpleMusic.release.xcconfig"; sourceTree = "<group>"; };
+		DEB52EDE875076F080C144A0 /* libPods-SimpleMusic.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-SimpleMusic.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		23BA7251302F03A800023EB5 /* Exceptions for "SimpleMusic" folder in "SimpleMusic" target */ = {
+		23BA7293302F095A00023EB5 /* Exceptions for "SimpleMusic" folder in "SimpleMusic" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
-			target = 23BA7236302F03A700023EB5 /* SimpleMusic */;
+			target = 23BA727D302F095900023EB5 /* SimpleMusic */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		23BA7239302F03A700023EB5 /* SimpleMusic */ = {
+		23BA7280302F095900023EB5 /* SimpleMusic */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				23BA7251302F03A800023EB5 /* Exceptions for "SimpleMusic" folder in "SimpleMusic" target */,
+				23BA7293302F095A00023EB5 /* Exceptions for "SimpleMusic" folder in "SimpleMusic" target */,
 			);
 			path = SimpleMusic;
 			sourceTree = "<group>";
@@ -39,49 +39,49 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		23BA7234302F03A700023EB5 /* Frameworks */ = {
+		23BA727B302F095900023EB5 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				7FCB73B1DEF13F3A841C2123 /* libPods-SimpleMusic.a in Frameworks */,
+				78C41645E1D4A38A5B4CFB28 /* libPods-SimpleMusic.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		0A3EC8DF16003738FEDF5D37 /* Pods */ = {
+		23BA7275302F095900023EB5 = {
 			isa = PBXGroup;
 			children = (
-				FD85DCFE12592E432929ECEA /* Pods-SimpleMusic.debug.xcconfig */,
-				61A8E657B75244B16F4D81A9 /* Pods-SimpleMusic.release.xcconfig */,
+				23BA7280302F095900023EB5 /* SimpleMusic */,
+				23BA727F302F095900023EB5 /* Products */,
+				5ACFDA3B7BD23FE3BE504DEE /* Pods */,
+				A9DC615DE7453103500D71FA /* Frameworks */,
+			);
+			sourceTree = "<group>";
+		};
+		23BA727F302F095900023EB5 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				23BA727E302F095900023EB5 /* SimpleMusic.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		5ACFDA3B7BD23FE3BE504DEE /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				55DF45A54AE45924626D378B /* Pods-SimpleMusic.debug.xcconfig */,
+				82FEF5096D84D9077E96AF8F /* Pods-SimpleMusic.release.xcconfig */,
 			);
 			name = Pods;
 			path = Pods;
 			sourceTree = "<group>";
 		};
-		23BA722E302F03A700023EB5 = {
+		A9DC615DE7453103500D71FA /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				23BA7239302F03A700023EB5 /* SimpleMusic */,
-				23BA7238302F03A700023EB5 /* Products */,
-				0A3EC8DF16003738FEDF5D37 /* Pods */,
-				648BD4ADEAF96EA58D356E0A /* Frameworks */,
-			);
-			sourceTree = "<group>";
-		};
-		23BA7238302F03A700023EB5 /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				23BA7237302F03A700023EB5 /* SimpleMusic.app */,
-			);
-			name = Products;
-			sourceTree = "<group>";
-		};
-		648BD4ADEAF96EA58D356E0A /* Frameworks */ = {
-			isa = PBXGroup;
-			children = (
-				B3DCFCC340C9311532D7179F /* libPods-SimpleMusic.a */,
+				DEB52EDE875076F080C144A0 /* libPods-SimpleMusic.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -89,63 +89,64 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		23BA7236302F03A700023EB5 /* SimpleMusic */ = {
+		23BA727D302F095900023EB5 /* SimpleMusic */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 23BA7252302F03A800023EB5 /* Build configuration list for PBXNativeTarget "SimpleMusic" */;
+			buildConfigurationList = 23BA7294302F095A00023EB5 /* Build configuration list for PBXNativeTarget "SimpleMusic" */;
 			buildPhases = (
-				9269AFEED203CE6BA177EC90 /* [CP] Check Pods Manifest.lock */,
-				23BA7233302F03A700023EB5 /* Sources */,
-				23BA7234302F03A700023EB5 /* Frameworks */,
-				23BA7235302F03A700023EB5 /* Resources */,
-				F3072AE827C0BAB5C36808AF /* [CP] Copy Pods Resources */,
+				EF4FEFE1FF0F536A957B2678 /* [CP] Check Pods Manifest.lock */,
+				23BA727A302F095900023EB5 /* Sources */,
+				23BA727B302F095900023EB5 /* Frameworks */,
+				23BA727C302F095900023EB5 /* Resources */,
+				542C99CF90C1D2C67CE6EEE7 /* [CP] Copy Pods Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				23BA7239302F03A700023EB5 /* SimpleMusic */,
+				23BA7280302F095900023EB5 /* SimpleMusic */,
 			);
 			name = SimpleMusic;
 			productName = SimpleMusic;
-			productReference = 23BA7237302F03A700023EB5 /* SimpleMusic.app */;
+			productReference = 23BA727E302F095900023EB5 /* SimpleMusic.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		23BA722F302F03A700023EB5 /* Project object */ = {
+		23BA7276302F095900023EB5 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2630;
 				LastUpgradeCheck = 2630;
 				TargetAttributes = {
-					23BA7236302F03A700023EB5 = {
+					23BA727D302F095900023EB5 = {
 						CreatedOnToolsVersion = 26.3;
 					};
 				};
 			};
-			buildConfigurationList = 23BA7232302F03A700023EB5 /* Build configuration list for PBXProject "SimpleMusic" */;
+			buildConfigurationList = 23BA7279302F095900023EB5 /* Build configuration list for PBXProject "SimpleMusic" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
 				Base,
 			);
-			mainGroup = 23BA722E302F03A700023EB5;
+			mainGroup = 23BA7275302F095900023EB5;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
-			productRefGroup = 23BA7238302F03A700023EB5 /* Products */;
+			productRefGroup = 23BA727F302F095900023EB5 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				23BA7236302F03A700023EB5 /* SimpleMusic */,
+				23BA727D302F095900023EB5 /* SimpleMusic */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		23BA7235302F03A700023EB5 /* Resources */ = {
+		23BA727C302F095900023EB5 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -155,7 +156,24 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		9269AFEED203CE6BA177EC90 /* [CP] Check Pods Manifest.lock */ = {
+		542C99CF90C1D2C67CE6EEE7 /* [CP] Copy Pods Resources */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-SimpleMusic/Pods-SimpleMusic-resources-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			name = "[CP] Copy Pods Resources";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-SimpleMusic/Pods-SimpleMusic-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-SimpleMusic/Pods-SimpleMusic-resources.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		EF4FEFE1FF0F536A957B2678 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -177,27 +195,10 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		F3072AE827C0BAB5C36808AF /* [CP] Copy Pods Resources */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-SimpleMusic/Pods-SimpleMusic-resources-${CONFIGURATION}-input-files.xcfilelist",
-			);
-			name = "[CP] Copy Pods Resources";
-			outputFileListPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-SimpleMusic/Pods-SimpleMusic-resources-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-SimpleMusic/Pods-SimpleMusic-resources.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		23BA7233302F03A700023EB5 /* Sources */ = {
+		23BA727A302F095900023EB5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -207,9 +208,9 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		23BA7253302F03A800023EB5 /* Debug */ = {
+		23BA7295302F095A00023EB5 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = FD85DCFE12592E432929ECEA /* Pods-SimpleMusic.debug.xcconfig */;
+			baseConfigurationReference = 55DF45A54AE45924626D378B /* Pods-SimpleMusic.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -232,14 +233,18 @@
 				PRODUCT_BUNDLE_IDENTIFIER = DB.SimpleMusic;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
-		23BA7254302F03A800023EB5 /* Release */ = {
+		23BA7296302F095A00023EB5 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 61A8E657B75244B16F4D81A9 /* Pods-SimpleMusic.release.xcconfig */;
+			baseConfigurationReference = 82FEF5096D84D9077E96AF8F /* Pods-SimpleMusic.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -262,12 +267,16 @@
 				PRODUCT_BUNDLE_IDENTIFIER = DB.SimpleMusic;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
-		23BA7255302F03A800023EB5 /* Debug */ = {
+		23BA7297302F095A00023EB5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -326,10 +335,12 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
 			name = Debug;
 		};
-		23BA7256302F03A800023EB5 /* Release */ = {
+		23BA7298302F095A00023EB5 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -381,6 +392,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
@@ -388,25 +400,25 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		23BA7232302F03A700023EB5 /* Build configuration list for PBXProject "SimpleMusic" */ = {
+		23BA7279302F095900023EB5 /* Build configuration list for PBXProject "SimpleMusic" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				23BA7255302F03A800023EB5 /* Debug */,
-				23BA7256302F03A800023EB5 /* Release */,
+				23BA7297302F095A00023EB5 /* Debug */,
+				23BA7298302F095A00023EB5 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		23BA7252302F03A800023EB5 /* Build configuration list for PBXNativeTarget "SimpleMusic" */ = {
+		23BA7294302F095A00023EB5 /* Build configuration list for PBXNativeTarget "SimpleMusic" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				23BA7253302F03A800023EB5 /* Debug */,
-				23BA7254302F03A800023EB5 /* Release */,
+				23BA7295302F095A00023EB5 /* Debug */,
+				23BA7296302F095A00023EB5 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
-	rootObject = 23BA722F302F03A700023EB5 /* Project object */;
+	rootObject = 23BA7276302F095900023EB5 /* Project object */;
 }
