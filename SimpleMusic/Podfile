@@ -1,45 +1,14 @@
-#pod 源
-#source 'https://github.com/CocoaPods/Specs.git'
-#trunk
-#source 'https://cdn.cocoapods.org/'
-
-platform :ios, '12.0'
-
-def sharedPods
-    pod 'Masonry', '~> 1.1.0'
-
-    pod 'IQKeyboardManager', '~> 4.0.13'
-
-    pod 'Toast', '~> 3.1.0'
-    pod 'TBActionSheet', '~> 1.5.4'
- 
-    pod 'Bugly', '2.6.1'
-    #崩溃防护
-#    pod 'ArtAvoidCrash', '~> 1.0.2'
-
-pod 'FBRetainCycleDetector',
-    :git => 'https://github.com/xuwenxindeai/FBRetainCycleDetector.git',
-    :tag => '0.1.4-fixed'
-
-
-end
-
-
-post_install do |installer|
-installer.pods_project.targets.each do |target|
-     target.build_configurations.each do |config|
-       # 默认屏蔽模拟器 arm64 以兼容旧库
-       config.build_settings['ENABLE_BITCODE'] = 'NO'
-       # 添加 libwebp 头文件搜索路径，支持 YYWebImage 的 WebP 功能
-       config.build_settings['HEADER_SEARCH_PATHS'] ||= ['$(inherited)']
-       config.build_settings['HEADER_SEARCH_PATHS'] << '"${PODS_ROOT}/libwebp/src"'
-     end
-   end
-
- end
+platform :ios, '15.0'
+use_frameworks! :linkage => :static
 
 target 'SimpleMusic' do
-  sharedPods
+  pod 'SnapKit', '~> 5.7'
 end
 
-
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+    end
+  end
+end

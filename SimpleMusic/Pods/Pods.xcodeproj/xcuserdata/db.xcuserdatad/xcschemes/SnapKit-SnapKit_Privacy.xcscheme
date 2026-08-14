@@ -14,9 +14,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "55FD3F5D6263A4DE5757EFE36365EF56"
-               BuildableName = "Pods_SimpleMusic.framework"
-               BlueprintName = "Pods-SimpleMusic"
+               BlueprintIdentifier = "8A8DB685241263AFDF5E6B20FE67B93A"
+               BuildableName = "SnapKit_Privacy.bundle"
+               BlueprintName = "SnapKit-SnapKit_Privacy"
                ReferencedContainer = "container:Pods.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>

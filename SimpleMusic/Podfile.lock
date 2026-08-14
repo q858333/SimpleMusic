@@ -1,45 +1,16 @@
 PODS:
-  - Bugly (2.6.1)
-  - FBRetainCycleDetector (0.1.4)
-  - IQKeyboardManager (4.0.13)
-  - Masonry (1.1.0)
-  - TBActionSheet (1.5.6)
-  - Toast (3.1.0)
+  - SnapKit (5.7.1)
 
 DEPENDENCIES:
-  - Bugly (= 2.6.1)
-  - FBRetainCycleDetector (from `https://github.com/xuwenxindeai/FBRetainCycleDetector.git`, tag `0.1.4-fixed`)
-  - IQKeyboardManager (~> 4.0.13)
-  - Masonry (~> 1.1.0)
-  - TBActionSheet (~> 1.5.4)
-  - Toast (~> 3.1.0)
+  - SnapKit (~> 5.7)
 
 SPEC REPOS:
   trunk:
-    - Bugly
-    - IQKeyboardManager
-    - Masonry
-    - TBActionSheet
-    - Toast
-
-EXTERNAL SOURCES:
-  FBRetainCycleDetector:
-    :git: https://github.com/xuwenxindeai/FBRetainCycleDetector.git
-    :tag: 0.1.4-fixed
-
-CHECKOUT OPTIONS:
-  FBRetainCycleDetector:
-    :git: https://github.com/xuwenxindeai/FBRetainCycleDetector.git
-    :tag: 0.1.4-fixed
+    - SnapKit
 
 SPEC CHECKSUMS:
-  Bugly: 217ac2ce5f0f2626d43dbaa4f70764c953a26a31
-  FBRetainCycleDetector: bc6530617a4cb3df625e20f5c95729dd52105cbe
-  IQKeyboardManager: 8eab4d8111418414619d1df8e4779ce5d0f8d7e2
-  Masonry: 678fab65091a9290e40e2832a55e7ab731aad201
-  TBActionSheet: d3c23727ee2d5c573245eef51b9980bb801e8bef
-  Toast: 14a93686d6c8bfe2727afd342414e35660a8a1f3
+  SnapKit: d612e99e678a2d3b95bf60b0705ed0a35c03484a
 
-PODFILE CHECKSUM: 032b531d9053129472c58b32f46e170555ee425e
+PODFILE CHECKSUM: c74f6654342c1635a216cb00e928a0f5f827fc0e
 
 COCOAPODS: 1.16.2
