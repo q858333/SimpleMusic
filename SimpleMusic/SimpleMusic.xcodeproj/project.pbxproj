@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		A1B2C3D4E5F60718293A4B5C /* MusicTrackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5B /* MusicTrackTests.swift */; };
 		A1B2C3D4E5F60718293A4B6B /* SettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B6A /* SettingsStoreTests.swift */; };
+		A1B2C3D4E5F60718293A4B7B /* AudioDownloadValidatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B7A /* AudioDownloadValidatorTests.swift */; };
+		A1B2C3D4E5F60718293A4B8B /* DownloadFileStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B8A /* DownloadFileStoreTests.swift */; };
 		BC6F521D00C13F6116232C2D /* Pods_SimpleMusic.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6A34C52A1ABF5C26C9601CDD /* Pods_SimpleMusic.framework */; };
 /* End PBXBuildFile section */
 
@@ -29,6 +31,8 @@
 		82FEF5096D84D9077E96AF8F /* Pods-SimpleMusic.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SimpleMusic.release.xcconfig"; path = "Target Support Files/Pods-SimpleMusic/Pods-SimpleMusic.release.xcconfig"; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5B /* MusicTrackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicTrackTests.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B6A /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B7A /* AudioDownloadValidatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDownloadValidatorTests.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B8A /* DownloadFileStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadFileStoreTests.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5D /* SimpleMusicTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SimpleMusicTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -107,6 +111,8 @@
 			children = (
 				A1B2C3D4E5F60718293A4B5B /* MusicTrackTests.swift */,
 				A1B2C3D4E5F60718293A4B6A /* SettingsStoreTests.swift */,
+				A1B2C3D4E5F60718293A4B7A /* AudioDownloadValidatorTests.swift */,
+				A1B2C3D4E5F60718293A4B8A /* DownloadFileStoreTests.swift */,
 			);
 			path = SimpleMusicTests;
 			sourceTree = "<group>";
@@ -274,6 +280,8 @@
 			files = (
 				A1B2C3D4E5F60718293A4B5C /* MusicTrackTests.swift in Sources */,
 				A1B2C3D4E5F60718293A4B6B /* SettingsStoreTests.swift in Sources */,
+				A1B2C3D4E5F60718293A4B7B /* AudioDownloadValidatorTests.swift in Sources */,
+				A1B2C3D4E5F60718293A4B8B /* DownloadFileStoreTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
