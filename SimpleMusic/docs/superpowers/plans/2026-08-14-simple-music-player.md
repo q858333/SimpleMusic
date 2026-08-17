@@ -15,6 +15,8 @@
 - CocoaPods 首版仅引入 SnapKit；不恢复旧模板 Pod。
 - 正式界面使用纯代码；只保留 LaunchScreen storyboard。
 - 仅下载 HTTP/HTTPS 的 MP3、M4A、WAV 直链，不解析网页或音乐平台。
+- DownloadManager 最多同时执行 3 个下载任务，超出任务排队等待。
+- 新增生产代码为职责、API 边界和非显然状态转换添加简洁中文注释，避免逐行解释。
 - 不实现账号、云同步、后台断点下载、歌词、均衡器或在线曲库。
 - 命令均从 `/Users/db/Documents/git/my/music/SimpleMusic/SimpleMusic` 执行。
 - 用户已有的 Swift 迁移与 CocoaPods 删除记录属于基线；每次提交只暂存任务列出的文件，禁止重置或恢复其它变更。
@@ -345,6 +347,7 @@ git commit -m "feat: validate and store audio downloads"
 - Create: `SimpleMusic/Persistence/LocalMusicStore.swift`
 - Create: `SimpleMusic/Downloads/DownloadManager.swift`
 - Create: `SimpleMusicTests/LocalMusicStoreTests.swift`
+- Create: `SimpleMusicTests/DownloadManagerConcurrencyTests.swift`
 - Modify: `SimpleMusic/App/AppEnvironment.swift`
 
 **Interfaces:**
@@ -362,6 +365,8 @@ func testInsertFetchAndDeleteDownloadedTrack() throws {
     XCTAssertTrue(try store.fetchTracks().isEmpty)
 }
 ```
+
+使用可控的 `AudioDownloadClient` fake 同时提交 4 个下载，断言开始执行的任务始终不超过 3；释放一个任务后第 4 个才开始。另测取消等待中的第 4 个任务不会占用名额。
 
 - [ ] **Step 2: 运行并确认失败**
 
@@ -384,6 +389,8 @@ func download(from url: URL, progress: @escaping (Double) -> Void) async throws 
 
 实现顺序固定为：URL 校验 → 创建遵守 `allowsCellularAccess` 的 URLSession → 下载临时文件 → 响应校验 → 移动到 DownloadFileStore → AVAsset 读取元数据 → Core Data 写入。失败时删除目标文件，成功后返回持久化后的 `MusicTrack`。
 
+使用 actor 管理活动下载计数和 FIFO 等待队列，硬上限为 3；成功、失败和取消都必须在 defer 路径释放名额并唤醒下一项。
+
 - [ ] **Step 6: 运行测试与构建并提交**
 
 Run: `xcodebuild -workspace SimpleMusic.xcworkspace -scheme SimpleMusic -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test CODE_SIGNING_ALLOWED=NO`
@@ -391,7 +398,7 @@ Run: `xcodebuild -workspace SimpleMusic.xcworkspace -scheme SimpleMusic -destina
 Expected: PASS。
 
 ```bash
-git add SimpleMusic/SimpleMusic.xcdatamodeld SimpleMusic/Persistence SimpleMusic/Downloads/DownloadManager.swift SimpleMusic/App/AppEnvironment.swift SimpleMusicTests/LocalMusicStoreTests.swift
+git add SimpleMusic/SimpleMusic.xcdatamodeld SimpleMusic/Persistence SimpleMusic/Downloads/DownloadManager.swift SimpleMusic/App/AppEnvironment.swift SimpleMusicTests/LocalMusicStoreTests.swift SimpleMusicTests/DownloadManagerConcurrencyTests.swift
 git commit -m "feat: persist downloaded music"
 ```
 

@@ -39,6 +39,10 @@
 
 使用 `URLSessionDownloadTask` 下载 HTTP/HTTPS 音频直链。下载前校验协议和扩展名，收到响应后校验 MIME 类型，只接受 MP3、M4A 和 WAV。
 
+下载管理器最多同时执行 3 个下载任务，超出的任务进入应用内等待队列；取消等待任务不会占用并发名额。
+
+新增生产代码需要为组件职责、API 边界和不直观的状态转换添加简洁中文注释，不使用逐行翻译式注释。
+
 文件保存到 App 私有 Application Support 目录。文件名经过清理；同名文件使用唯一标识避免覆盖。禁止蜂窝网络下载时，通过 `URLSessionConfiguration.allowsCellularAccess` 执行。首版不承诺 App 被系统终止后的续传。
 
 ### LocalMusicStore
