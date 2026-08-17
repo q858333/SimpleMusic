@@ -43,7 +43,7 @@ final class MusicLibraryService {
         return MPMediaQuery(filterPredicates: [predicate]).items?.first
     }
 
-    nonisolated static func makeTrack(from metadata: SystemTrackMetadata) -> MusicTrack {
+    static func makeTrack(from metadata: SystemTrackMetadata) -> MusicTrack {
         let identifier = "system-\(metadata.persistentID)"
         return MusicTrack(
             id: identifier,

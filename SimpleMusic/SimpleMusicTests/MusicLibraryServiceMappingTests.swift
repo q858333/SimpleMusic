@@ -3,6 +3,7 @@ import XCTest
 
 final class MusicLibraryServiceMappingTests: XCTestCase {
     /// 如果映射不再为缺失元数据提供可展示的默认值，此测试应失败。
+    @MainActor
     func testMissingMetadataUsesSystemIdentifierAndUnknownCopy() {
         let track = MusicLibraryService.makeTrack(from: .init(
             persistentID: 42,
@@ -22,6 +23,7 @@ final class MusicLibraryServiceMappingTests: XCTestCase {
     }
 
     /// 如果系统音乐已有元数据却被默认文案覆盖，此测试应失败。
+    @MainActor
     func testMetadataKeepsSystemMusicValues() {
         let track = MusicLibraryService.makeTrack(from: .init(
             persistentID: 7,
