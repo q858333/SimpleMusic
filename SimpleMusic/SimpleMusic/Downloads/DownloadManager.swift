@@ -33,6 +33,12 @@ nonisolated final class URLSessionAudioDownloadClient: AudioDownloadClient, @unc
     }
 }
 
+/// 下载主阶段失败且回滚也失败时，同时暴露两类错误，避免清理故障被静默丢弃。
+struct DownloadRollbackError: Error {
+    let originalError: Error
+    let cleanupErrors: [Error]
+}
+
 private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     private let progress: @MainActor @Sendable (Double) -> Void
 
@@ -65,11 +71,16 @@ private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelega
 @MainActor
 final class DownloadManager {
     typealias ClientFactory = (URLSessionConfiguration) -> any AudioDownloadClient
+    typealias MetadataReader = (URL, String) async throws -> DownloadedTrackMetadata
 
     private let fileStore: DownloadFileStore
     private let musicStore: LocalMusicStore
     private let settingsStore: SettingsStore
     private let clientFactory: ClientFactory
+    private let metadataReader: MetadataReader
+    private let removeFile: (URL) throws -> Void
+    private let discardReservation: (DownloadFileStore.Reservation) throws -> Void
+    private let queueObserver: @Sendable (URL) -> Void
     private let validator = AudioDownloadValidator()
     private let permitPool = DownloadPermitPool(limit: 3)
     private let fileManager: FileManager
@@ -81,13 +92,25 @@ final class DownloadManager {
         fileManager: FileManager = .default,
         clientFactory: @escaping ClientFactory = { configuration in
             URLSessionAudioDownloadClient(configuration: configuration)
-        }
+        },
+        metadataReader: MetadataReader? = nil,
+        removeFile: @escaping (URL) throws -> Void = { url in
+            try FileManager.default.removeItem(at: url)
+        },
+        discardReservation: ((DownloadFileStore.Reservation) throws -> Void)? = nil,
+        queueObserver: @escaping @Sendable (URL) -> Void = { _ in }
     ) {
         self.fileStore = fileStore
         self.musicStore = musicStore
         self.settingsStore = settingsStore
         self.fileManager = fileManager
         self.clientFactory = clientFactory
+        self.metadataReader = metadataReader ?? Self.readMetadata
+        self.removeFile = removeFile
+        self.discardReservation = discardReservation ?? { reservation in
+            try fileStore.discard(reservation: reservation)
+        }
+        self.queueObserver = queueObserver
     }
 
     func download(
@@ -95,7 +118,9 @@ final class DownloadManager {
         progress: @escaping @MainActor @Sendable (Double) -> Void
     ) async throws -> MusicTrack {
         try validator.validate(url: url)
-        return try await permitPool.withPermit { [self] in
+        return try await permitPool.withPermit(onQueued: { [queueObserver] in
+            queueObserver(url)
+        }) { [self] in
             try await performDownload(from: url, progress: progress)
         }
     }
@@ -107,34 +132,72 @@ final class DownloadManager {
         let configuration = URLSessionConfiguration.default
         configuration.allowsCellularAccess = settingsStore.allowsCellularDownloads
         let payload = try await clientFactory(configuration).download(from: url, progress: progress)
-        defer { try? fileManager.removeItem(at: payload.temporaryFileURL) }
-
-        try validator.validate(response: payload.response, sourceURL: url)
-        let reservation = try fileStore.reserveDestination(suggestedName: url.lastPathComponent)
+        var reservation: DownloadFileStore.Reservation?
         var committed = false
-        var indexed = false
-        defer {
-            if !indexed {
+
+        do {
+            try Task.checkCancellation()
+            try validator.validate(response: payload.response, sourceURL: url)
+            let newReservation = try fileStore.reserveDestination(suggestedName: url.lastPathComponent)
+            reservation = newReservation
+
+            try fileStore.commit(temporaryFileURL: payload.temporaryFileURL, reservation: newReservation)
+            committed = true
+            let metadata = try await metadataReader(
+                newReservation.destinationURL,
+                newReservation.destinationURL.lastPathComponent
+            )
+            // 元数据读取是最后一个挂起点；写索引前必须重新响应取消。
+            try Task.checkCancellation()
+            return try musicStore.insert(metadata)
+        } catch {
+            // 文件与 Reservation 构成同一回滚单元；收集全部清理错误后保留原始阶段错误。
+            let rollbackError = rollback(
+                payload: payload,
+                reservation: reservation,
+                committed: committed,
+                originalError: error
+            )
+            throw rollbackError
+        }
+    }
+
+    private func rollback(
+        payload: AudioDownloadPayload,
+        reservation: DownloadFileStore.Reservation?,
+        committed: Bool,
+        originalError: Error
+    ) -> Error {
+        var cleanupErrors = [Error]()
+
+        if let reservation {
+            do {
                 if committed {
-                    try? fileManager.removeItem(at: reservation.destinationURL)
+                    try removeIfPresent(at: reservation.destinationURL)
                 } else {
-                    try? fileStore.discard(reservation: reservation)
+                    try discardReservation(reservation)
                 }
+            } catch {
+                cleanupErrors.append(error)
             }
         }
 
-        try fileStore.commit(temporaryFileURL: payload.temporaryFileURL, reservation: reservation)
-        committed = true
-        let metadata = try await readMetadata(
-            at: reservation.destinationURL,
-            fileName: reservation.destinationURL.lastPathComponent
-        )
-        let track = try musicStore.insert(metadata)
-        indexed = true
-        return track
+        do {
+            try removeIfPresent(at: payload.temporaryFileURL)
+        } catch {
+            cleanupErrors.append(error)
+        }
+
+        guard !cleanupErrors.isEmpty else { return originalError }
+        return DownloadRollbackError(originalError: originalError, cleanupErrors: cleanupErrors)
     }
 
-    private func readMetadata(at fileURL: URL, fileName: String) async throws -> DownloadedTrackMetadata {
+    private func removeIfPresent(at url: URL) throws {
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        try removeFile(url)
+    }
+
+    private static func readMetadata(at fileURL: URL, fileName: String) async throws -> DownloadedTrackMetadata {
         let asset = AVURLAsset(url: fileURL)
         let duration = try await asset.load(.duration).seconds
         let commonMetadata = try await asset.load(.commonMetadata)
@@ -155,7 +218,7 @@ final class DownloadManager {
         )
     }
 
-    private func metadataValue(
+    private static func metadataValue(
         _ identifier: AVMetadataIdentifier,
         in items: [AVMetadataItem]
     ) async -> String? {
@@ -185,15 +248,16 @@ private actor DownloadPermitPool {
     }
 
     func withPermit<Value: Sendable>(
+        onQueued: @Sendable () -> Void,
         operation: @Sendable () async throws -> Value
     ) async throws -> Value {
-        try await acquire()
+        try await acquire(onQueued: onQueued)
         defer { release() }
         try Task.checkCancellation()
         return try await operation()
     }
 
-    private func acquire() async throws {
+    private func acquire(onQueued: @Sendable () -> Void) async throws {
         try Task.checkCancellation()
         if activeCount < limit {
             activeCount += 1
@@ -204,6 +268,8 @@ private actor DownloadPermitPool {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 waiters.append(Waiter(id: id, continuation: continuation))
+                // 观察点在 waiter 入队后同步发出，测试和诊断无需猜测调度时序。
+                onQueued()
             }
         } onCancel: {
             Task { await self.cancelWaiter(id: id) }

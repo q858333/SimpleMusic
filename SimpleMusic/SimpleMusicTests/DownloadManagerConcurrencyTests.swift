@@ -11,20 +11,21 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
         let firstTasks = firstURLs.map { url in
             Task { try await harness.manager.download(from: url, progress: { _ in }) }
         }
-        await harness.client.waitUntilStarted(count: 3)
+        try await harness.client.waitUntilStarted(count: 3)
 
         let fourthURL = audioURL(index: 3)
         let fourthTask = Task {
             try await harness.manager.download(from: fourthURL, progress: { _ in })
         }
-        await settleScheduling()
+        let queuedFourthURL = try await harness.queueEvents.next()
+        XCTAssertEqual(queuedFourthURL, fourthURL)
 
         var snapshot = await harness.client.snapshot()
         XCTAssertEqual(snapshot.startedURLs.count, 3)
         XCTAssertEqual(snapshot.maximumActiveCount, 3)
 
         await harness.client.failDownload(for: firstURLs[0])
-        await harness.client.waitUntilStarted(count: 4)
+        try await harness.client.waitUntilStarted(count: 4)
 
         snapshot = await harness.client.snapshot()
         XCTAssertEqual(snapshot.startedURLs.last, fourthURL)
@@ -43,26 +44,28 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
         let firstTasks = firstURLs.map { url in
             Task { try await harness.manager.download(from: url, progress: { _ in }) }
         }
-        await harness.client.waitUntilStarted(count: 3)
+        try await harness.client.waitUntilStarted(count: 3)
 
         let fourthURL = audioURL(index: 3)
         let fourthTask = Task {
             try await harness.manager.download(from: fourthURL, progress: { _ in })
         }
-        await settleScheduling()
+        let queuedFourthURL = try await harness.queueEvents.next()
+        XCTAssertEqual(queuedFourthURL, fourthURL)
         let fifthURL = audioURL(index: 4)
         let fifthTask = Task {
             try await harness.manager.download(from: fifthURL, progress: { _ in })
         }
-        await settleScheduling()
+        let queuedFifthURL = try await harness.queueEvents.next()
+        XCTAssertEqual(queuedFifthURL, fifthURL)
 
         await harness.client.failDownload(for: firstURLs[0])
-        await harness.client.waitUntilStarted(count: 4)
+        try await harness.client.waitUntilStarted(count: 4)
         var snapshot = await harness.client.snapshot()
         XCTAssertEqual(snapshot.startedURLs.last, fourthURL)
 
         await harness.client.failDownload(for: fourthURL)
-        await harness.client.waitUntilStarted(count: 5)
+        try await harness.client.waitUntilStarted(count: 5)
         snapshot = await harness.client.snapshot()
         XCTAssertEqual(snapshot.startedURLs.last, fifthURL)
 
@@ -79,13 +82,14 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
         let firstTasks = firstURLs.map { url in
             Task { try await harness.manager.download(from: url, progress: { _ in }) }
         }
-        await harness.client.waitUntilStarted(count: 3)
+        try await harness.client.waitUntilStarted(count: 3)
 
         let cancelledURL = audioURL(index: 3)
         let cancelledTask = Task {
             try await harness.manager.download(from: cancelledURL, progress: { _ in })
         }
-        await settleScheduling()
+        let queuedCancelledURL = try await harness.queueEvents.next()
+        XCTAssertEqual(queuedCancelledURL, cancelledURL)
         cancelledTask.cancel()
         let cancelledResult = await cancelledTask.result
         guard case .failure(let error) = cancelledResult else {
@@ -97,9 +101,10 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
         let fifthTask = Task {
             try await harness.manager.download(from: fifthURL, progress: { _ in })
         }
-        await settleScheduling()
+        let queuedFifthURL = try await harness.queueEvents.next()
+        XCTAssertEqual(queuedFifthURL, fifthURL)
         await harness.client.failDownload(for: firstURLs[0])
-        await harness.client.waitUntilStarted(count: 4)
+        try await harness.client.waitUntilStarted(count: 4)
 
         let snapshot = await harness.client.snapshot()
         XCTAssertFalse(snapshot.startedURLs.contains(cancelledURL))
@@ -119,16 +124,17 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
         let firstTasks = firstURLs.map { url in
             Task { try await harness.manager.download(from: url, progress: { _ in }) }
         }
-        await harness.client.waitUntilStarted(count: 3)
+        try await harness.client.waitUntilStarted(count: 3)
         let fourthURL = audioURL(index: 3)
         let fourthTask = Task {
             try await harness.manager.download(from: fourthURL, progress: { _ in })
         }
-        await settleScheduling()
+        let queuedFourthURL = try await harness.queueEvents.next()
+        XCTAssertEqual(queuedFourthURL, fourthURL)
 
         firstTasks[0].cancel()
         _ = await firstTasks[0].result
-        await harness.client.waitUntilStarted(count: 4)
+        try await harness.client.waitUntilStarted(count: 4)
 
         let snapshot = await harness.client.snapshot()
         XCTAssertEqual(snapshot.startedURLs.last, fourthURL)
@@ -137,6 +143,218 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
         await harness.client.failAllDownloads()
         for task in Array(firstTasks.dropFirst()) + [fourthTask] {
             _ = await task.result
+        }
+    }
+
+    func testCancellationAfterPayloadReturnsStopsBeforeDestinationReservation() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let temporaryFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("wav")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: temporaryFile)
+        }
+        let fileStore = try DownloadFileStore(rootURL: root)
+        try FileManager.default.removeItem(at: root)
+        try Data().write(to: root)
+        try makeWaveData().write(to: temporaryFile)
+        let sourceURL = URL(string: "https://example.com/cancelled.wav")!
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: sourceURL,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "audio/wav"]
+        ))
+        let musicStore = try LocalMusicStore.inMemory()
+        let manager = DownloadManager(
+            fileStore: fileStore,
+            musicStore: musicStore,
+            settingsStore: SettingsStore(defaults: .standard),
+            clientFactory: { _ in
+                SelfCancellingPayloadDownloadClient(payload: AudioDownloadPayload(
+                    temporaryFileURL: temporaryFile,
+                    response: response
+                ))
+            }
+        )
+
+        do {
+            _ = try await manager.download(from: sourceURL, progress: { _ in })
+            XCTFail("payload 返回后已取消的下载不应继续创建目标预留")
+        } catch {
+            XCTAssertTrue(error is CancellationError, "实际错误：\(error)")
+            XCTAssertTrue(try musicStore.fetchTracks().isEmpty)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: temporaryFile.path))
+        }
+    }
+
+    func testCancellationAfterMetadataReturnsRollsBackFileBeforeIndexWrite() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let temporaryFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("wav")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: temporaryFile)
+        }
+        try makeWaveData().write(to: temporaryFile)
+        let sourceURL = URL(string: "https://example.com/cancelled-after-metadata.wav")!
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: sourceURL,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "audio/wav"]
+        ))
+        let musicStore = try LocalMusicStore.inMemory()
+        let manager = DownloadManager(
+            fileStore: try DownloadFileStore(rootURL: root),
+            musicStore: musicStore,
+            settingsStore: SettingsStore(defaults: .standard),
+            clientFactory: { _ in
+                FixedPayloadDownloadClient(payload: AudioDownloadPayload(
+                    temporaryFileURL: temporaryFile,
+                    response: response
+                ))
+            },
+            metadataReader: { _, fileName in
+                withUnsafeCurrentTask { $0?.cancel() }
+                return DownloadedTrackMetadata(
+                    id: "cancelled",
+                    fileName: fileName,
+                    title: "Cancelled",
+                    artist: "A",
+                    album: "B",
+                    duration: 1
+                )
+            }
+        )
+
+        do {
+            _ = try await manager.download(from: sourceURL, progress: { _ in })
+            XCTFail("元数据返回后已取消的下载不应写入索引")
+        } catch {
+            XCTAssertTrue(error is CancellationError, "实际错误：\(error)")
+            XCTAssertTrue(try musicStore.fetchTracks().isEmpty)
+            XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+        }
+    }
+
+    func testTemporaryFileCleanupFailurePreservesResponseErrorAndReportsRollbackFailure() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let temporaryFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: temporaryFile)
+        }
+        try Data("not audio".utf8).write(to: temporaryFile)
+        let sourceURL = audioURL(index: 0)
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: sourceURL,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "text/html"]
+        ))
+        let manager = DownloadManager(
+            fileStore: try DownloadFileStore(rootURL: root),
+            musicStore: try LocalMusicStore.inMemory(),
+            settingsStore: SettingsStore(defaults: .standard),
+            clientFactory: { _ in
+                FixedPayloadDownloadClient(payload: AudioDownloadPayload(
+                    temporaryFileURL: temporaryFile,
+                    response: response
+                ))
+            },
+            removeFile: { _ in throw ControlledCleanupError.failed }
+        )
+
+        do {
+            _ = try await manager.download(from: sourceURL, progress: { _ in })
+            XCTFail("响应校验和临时文件清理均失败时不应成功")
+        } catch let rollback as DownloadRollbackError {
+            XCTAssertTrue(rollback.originalError is DownloadError)
+            XCTAssertEqual(rollback.cleanupErrors.count, 1)
+            XCTAssertTrue(rollback.cleanupErrors[0] is ControlledCleanupError)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: temporaryFile.path))
+        }
+    }
+
+    func testReservationDiscardFailurePreservesCommitErrorAndReportsRollbackFailure() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let missingTemporaryFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let sourceURL = audioURL(index: 0)
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: sourceURL,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "audio/mpeg"]
+        ))
+        let manager = DownloadManager(
+            fileStore: try DownloadFileStore(rootURL: root),
+            musicStore: try LocalMusicStore.inMemory(),
+            settingsStore: SettingsStore(defaults: .standard),
+            clientFactory: { _ in
+                FixedPayloadDownloadClient(payload: AudioDownloadPayload(
+                    temporaryFileURL: missingTemporaryFile,
+                    response: response
+                ))
+            },
+            discardReservation: { _ in throw ControlledCleanupError.failed }
+        )
+
+        do {
+            _ = try await manager.download(from: sourceURL, progress: { _ in })
+            XCTFail("提交和 Reservation 回滚均失败时不应成功")
+        } catch let rollback as DownloadRollbackError {
+            XCTAssertEqual((rollback.originalError as NSError).domain, NSCocoaErrorDomain)
+            XCTAssertEqual(rollback.cleanupErrors.count, 1)
+            XCTAssertTrue(rollback.cleanupErrors[0] is ControlledCleanupError)
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path).count, 1)
+        }
+    }
+
+    func testFinalFileCleanupFailurePreservesMetadataErrorAndReportsRollbackFailure() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let temporaryFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("wav")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: temporaryFile)
+        }
+        try makeWaveData().write(to: temporaryFile)
+        let sourceURL = URL(string: "https://example.com/metadata-fails.wav")!
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: sourceURL,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "audio/wav"]
+        ))
+        let musicStore = try LocalMusicStore.inMemory()
+        let manager = DownloadManager(
+            fileStore: try DownloadFileStore(rootURL: root),
+            musicStore: musicStore,
+            settingsStore: SettingsStore(defaults: .standard),
+            clientFactory: { _ in
+                FixedPayloadDownloadClient(payload: AudioDownloadPayload(
+                    temporaryFileURL: temporaryFile,
+                    response: response
+                ))
+            },
+            metadataReader: { _, _ in throw ControlledDownloadError.failed },
+            removeFile: { _ in throw ControlledCleanupError.failed }
+        )
+
+        do {
+            _ = try await manager.download(from: sourceURL, progress: { _ in })
+            XCTFail("元数据和最终文件回滚均失败时不应成功")
+        } catch let rollback as DownloadRollbackError {
+            XCTAssertTrue(rollback.originalError is ControlledDownloadError)
+            XCTAssertEqual(rollback.cleanupErrors.count, 1)
+            XCTAssertTrue(rollback.cleanupErrors[0] is ControlledCleanupError)
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), ["metadata-fails.wav"])
+            XCTAssertTrue(try musicStore.fetchTracks().isEmpty)
         }
     }
 
@@ -258,23 +476,25 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
         defaults.removePersistentDomain(forName: suiteName)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let client = ControllableAudioDownloadClient()
+        let queueEvents = QueueEventProbe()
         let manager = DownloadManager(
             fileStore: try DownloadFileStore(rootURL: root),
             musicStore: try LocalMusicStore.inMemory(),
             settingsStore: SettingsStore(defaults: defaults),
-            clientFactory: { _ in client }
+            clientFactory: { _ in client },
+            queueObserver: { queueEvents.record($0) }
         )
-        return DownloadHarness(manager: manager, client: client, rootURL: root, defaultsSuiteName: suiteName)
+        return DownloadHarness(
+            manager: manager,
+            client: client,
+            queueEvents: queueEvents,
+            rootURL: root,
+            defaultsSuiteName: suiteName
+        )
     }
 
     private func audioURL(index: Int) -> URL {
         URL(string: "https://example.com/song-\(index).mp3")!
-    }
-
-    private func settleScheduling() async {
-        for _ in 0..<20 {
-            await Task.yield()
-        }
     }
 
     private func makeWaveData() -> Data {
@@ -301,6 +521,7 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
 private struct DownloadHarness {
     let manager: DownloadManager
     let client: ControllableAudioDownloadClient
+    let queueEvents: QueueEventProbe
     let rootURL: URL
     let defaultsSuiteName: String
 
@@ -308,11 +529,13 @@ private struct DownloadHarness {
     init(
         manager: DownloadManager,
         client: ControllableAudioDownloadClient,
+        queueEvents: QueueEventProbe,
         rootURL: URL,
         defaultsSuiteName: String
     ) {
         self.manager = manager
         self.client = client
+        self.queueEvents = queueEvents
         self.rootURL = rootURL
         self.defaultsSuiteName = defaultsSuiteName
     }
@@ -327,6 +550,75 @@ private enum ControlledDownloadError: Error {
     case failed
 }
 
+private enum ControlledCleanupError: Error {
+    case failed
+}
+
+private struct TestTimeoutError: LocalizedError {
+    let operation: String
+
+    var errorDescription: String? {
+        "等待超时：\(operation)"
+    }
+}
+
+private func withTestTimeout<Value: Sendable>(
+    _ operationDescription: String,
+    seconds: TimeInterval = 2,
+    operation: @escaping @Sendable () async throws -> Value
+) async throws -> Value {
+    try await withThrowingTaskGroup(of: Value.self) { group in
+        group.addTask(operation: operation)
+        group.addTask {
+            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            throw TestTimeoutError(operation: operationDescription)
+        }
+        let result = try await group.next()!
+        group.cancelAll()
+        return result
+    }
+}
+
+private final class QueueEventProbe: @unchecked Sendable {
+    private let continuation: AsyncStream<URL>.Continuation
+    private let reader: QueueEventReader
+
+    init() {
+        var streamContinuation: AsyncStream<URL>.Continuation!
+        let stream = AsyncStream<URL> { streamContinuation = $0 }
+        continuation = streamContinuation
+        reader = QueueEventReader(iterator: stream.makeAsyncIterator())
+    }
+
+    func record(_ url: URL) {
+        continuation.yield(url)
+    }
+
+    func next(timeout: TimeInterval = 2) async throws -> URL {
+        try await withTestTimeout("下载进入 FIFO 等待队列", seconds: timeout) { [reader] in
+            guard let url = await reader.next() else {
+                throw CancellationError()
+            }
+            return url
+        }
+    }
+}
+
+private actor QueueEventReader {
+    private var iterator: AsyncStream<URL>.AsyncIterator
+
+    init(iterator: AsyncStream<URL>.AsyncIterator) {
+        self.iterator = iterator
+    }
+
+    func next() async -> URL? {
+        var currentIterator = iterator
+        let value = await currentIterator.next()
+        iterator = currentIterator
+        return value
+    }
+}
+
 private actor ControllableAudioDownloadClient: AudioDownloadClient {
     struct Snapshot {
         let startedURLs: [URL]
@@ -337,7 +629,13 @@ private actor ControllableAudioDownloadClient: AudioDownloadClient {
     private var startedURLs = [URL]()
     private var activeCount = 0
     private var maximumActiveCount = 0
-    private var startWaiters = [(count: Int, continuation: CheckedContinuation<Void, Never>)]()
+    private struct StartWaiter {
+        let id: UUID
+        let count: Int
+        let continuation: CheckedContinuation<Void, Error>
+    }
+
+    private var startWaiters = [StartWaiter]()
 
     func download(
         from url: URL,
@@ -358,10 +656,9 @@ private actor ControllableAudioDownloadClient: AudioDownloadClient {
         }
     }
 
-    func waitUntilStarted(count: Int) async {
-        guard startedURLs.count < count else { return }
-        await withCheckedContinuation { continuation in
-            startWaiters.append((count, continuation))
+    func waitUntilStarted(count: Int, timeout: TimeInterval = 2) async throws {
+        try await withTestTimeout("client 开始第 \(count) 个下载", seconds: timeout) { [self] in
+            try await waitForStarted(count: count)
         }
     }
 
@@ -383,8 +680,26 @@ private actor ControllableAudioDownloadClient: AudioDownloadClient {
         continuations.removeValue(forKey: url)?.resume(throwing: CancellationError())
     }
 
+    private func waitForStarted(count: Int) async throws {
+        try Task.checkCancellation()
+        guard startedURLs.count < count else { return }
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                startWaiters.append(StartWaiter(id: id, count: count, continuation: continuation))
+            }
+        } onCancel: {
+            Task { await self.cancelStartWaiter(id: id) }
+        }
+    }
+
+    private func cancelStartWaiter(id: UUID) {
+        guard let index = startWaiters.firstIndex(where: { $0.id == id }) else { return }
+        startWaiters.remove(at: index).continuation.resume(throwing: CancellationError())
+    }
+
     private func resumeSatisfiedStartWaiters() {
-        var remaining = [(count: Int, continuation: CheckedContinuation<Void, Never>)]()
+        var remaining = [StartWaiter]()
         for waiter in startWaiters {
             if startedURLs.count >= waiter.count {
                 waiter.continuation.resume()
@@ -413,6 +728,20 @@ private struct FixedPayloadDownloadClient: AudioDownloadClient {
         progress: @escaping @MainActor @Sendable (Double) -> Void
     ) async throws -> AudioDownloadPayload {
         payload
+    }
+}
+
+private struct SelfCancellingPayloadDownloadClient: AudioDownloadClient {
+    let payload: AudioDownloadPayload
+
+    func download(
+        from url: URL,
+        progress: @escaping @MainActor @Sendable (Double) -> Void
+    ) async throws -> AudioDownloadPayload {
+        withUnsafeCurrentTask { task in
+            task?.cancel()
+        }
+        return payload
     }
 }
 
