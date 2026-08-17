@@ -5,6 +5,7 @@ final class AppEnvironment {
     static let shared = AppEnvironment()
 
     let settingsStore = SettingsStore(defaults: .standard)
+    let musicLibraryService = MusicLibraryService()
 
     lazy var localMusicStore: LocalMusicStore = {
         guard let appDelegate = UIApplication.shared.delegate as? AppDelegate else {
