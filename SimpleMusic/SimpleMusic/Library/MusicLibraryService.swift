@@ -48,8 +48,8 @@ final class MusicLibraryService {
         return MusicTrack(
             id: identifier,
             title: displayValue(metadata.title) ?? identifier,
-            artist: displayValue(metadata.artist) ?? "未知艺人",
-            album: displayValue(metadata.album) ?? "未知专辑",
+            artist: displayValue(metadata.artist) ?? MusicTrack.unknownArtist,
+            album: displayValue(metadata.album) ?? MusicTrack.unknownAlbum,
             duration: metadata.duration,
             artworkData: metadata.artworkData,
             source: .system(persistentID: metadata.persistentID)
