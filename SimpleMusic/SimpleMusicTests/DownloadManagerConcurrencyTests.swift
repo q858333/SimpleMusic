@@ -4,6 +4,46 @@ import XCTest
 
 @MainActor
 final class DownloadManagerConcurrencyTests: XCTestCase {
+    func testTaskResultTimeoutReturnsAndCancelsUnfinishedTask() async throws {
+        let gate = ManualTaskGate()
+        let task = Task<Void, Error> {
+            await gate.wait()
+        }
+
+        do {
+            _ = try await taskResult(task, operation: "受控未完成任务", timeout: 0.01)
+            XCTFail("未完成任务必须在截止时间返回超时")
+        } catch let error as TestTimeoutError {
+            XCTAssertEqual(error.operation, "受控未完成任务")
+            XCTAssertTrue(task.isCancelled)
+        }
+
+        await gate.open()
+        _ = try await taskResult(task, operation: "释放受控任务", timeout: 1)
+    }
+
+    func testCancellationBeforeStartWaiterEnqueueResumesWithoutHanging() async throws {
+        let gate = ManualTaskGate()
+        let waitingTask = Task<Void, Error> {
+            await gate.wait()
+            try await withCheckedThrowingContinuation { continuation in
+                XCTAssertTrue(resumeCancellationIfNeeded(continuation))
+            }
+        }
+        waitingTask.cancel()
+        await gate.open()
+
+        let result = try await taskResult(
+            waitingTask,
+            operation: "入队前取消 started waiter",
+            timeout: 0.2
+        )
+        guard case .failure(let error) = result else {
+            return XCTFail("入队前取消的 waiter 不应成功")
+        }
+        XCTAssertTrue(error is CancellationError)
+    }
+
     func testFourthDownloadStartsOnlyAfterOneOfThreeActiveDownloadsFinishes() async throws {
         let harness = try makeHarness()
         defer { harness.cleanup() }
@@ -32,9 +72,10 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
         XCTAssertEqual(snapshot.maximumActiveCount, 3)
 
         await harness.client.failAllDownloads()
-        for task in firstTasks + [fourthTask] {
-            _ = await task.result
-        }
+        try await waitForTaskResults(
+            firstTasks + [fourthTask],
+            operation: "并发上限测试收尾"
+        )
     }
 
     func testQueuedDownloadsStartInSubmissionOrder() async throws {
@@ -70,9 +111,10 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
         XCTAssertEqual(snapshot.startedURLs.last, fifthURL)
 
         await harness.client.failAllDownloads()
-        for task in firstTasks + [fourthTask, fifthTask] {
-            _ = await task.result
-        }
+        try await waitForTaskResults(
+            firstTasks + [fourthTask, fifthTask],
+            operation: "FIFO 测试收尾"
+        )
     }
 
     func testCancellingQueuedFourthDownloadDoesNotConsumePermitOrBlockFifth() async throws {
@@ -91,7 +133,10 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
         let queuedCancelledURL = try await harness.queueEvents.next()
         XCTAssertEqual(queuedCancelledURL, cancelledURL)
         cancelledTask.cancel()
-        let cancelledResult = await cancelledTask.result
+        let cancelledResult = try await taskResult(
+            cancelledTask,
+            operation: "等待队列中的下载取消"
+        )
         guard case .failure(let error) = cancelledResult else {
             return XCTFail("等待中的下载取消后不应成功")
         }
@@ -112,9 +157,10 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
         XCTAssertEqual(snapshot.maximumActiveCount, 3)
 
         await harness.client.failAllDownloads()
-        for task in firstTasks + [fifthTask] {
-            _ = await task.result
-        }
+        try await waitForTaskResults(
+            firstTasks + [fifthTask],
+            operation: "等待取消测试收尾"
+        )
     }
 
     func testCancellingActiveDownloadReleasesPermitForQueuedFourth() async throws {
@@ -133,7 +179,10 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
         XCTAssertEqual(queuedFourthURL, fourthURL)
 
         firstTasks[0].cancel()
-        _ = await firstTasks[0].result
+        _ = try await taskResult(
+            firstTasks[0],
+            operation: "活动下载取消"
+        )
         try await harness.client.waitUntilStarted(count: 4)
 
         let snapshot = await harness.client.snapshot()
@@ -141,9 +190,10 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
         XCTAssertEqual(snapshot.maximumActiveCount, 3)
 
         await harness.client.failAllDownloads()
-        for task in Array(firstTasks.dropFirst()) + [fourthTask] {
-            _ = await task.result
-        }
+        try await waitForTaskResults(
+            Array(firstTasks.dropFirst()) + [fourthTask],
+            operation: "活动取消测试收尾"
+        )
     }
 
     func testCancellationAfterPayloadReturnsStopsBeforeDestinationReservation() async throws {
@@ -562,21 +612,100 @@ private struct TestTimeoutError: LocalizedError {
     }
 }
 
+private actor ManualTaskGate {
+    private var isOpen = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func open() {
+        isOpen = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
 private func withTestTimeout<Value: Sendable>(
     _ operationDescription: String,
     seconds: TimeInterval = 2,
+    cancellationAction: @escaping @Sendable () -> Void = {},
     operation: @escaping @Sendable () async throws -> Value
 ) async throws -> Value {
-    try await withThrowingTaskGroup(of: Value.self) { group in
-        group.addTask(operation: operation)
-        group.addTask {
-            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-            throw TestTimeoutError(operation: operationDescription)
+    let (stream, streamContinuation) = AsyncStream<Result<Value, Error>>.makeStream()
+    let operationTask = Task {
+        do {
+            streamContinuation.yield(.success(try await operation()))
+        } catch {
+            streamContinuation.yield(.failure(error))
         }
-        let result = try await group.next()!
-        group.cancelAll()
-        return result
     }
+    let timeoutTask = Task {
+        do {
+            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        } catch {
+            return
+        }
+        streamContinuation.yield(.failure(TestTimeoutError(operation: operationDescription)))
+        cancellationAction()
+    }
+    defer {
+        streamContinuation.finish()
+        operationTask.cancel()
+        timeoutTask.cancel()
+    }
+
+    return try await withTaskCancellationHandler {
+        var iterator = stream.makeAsyncIterator()
+        guard let result = await iterator.next() else { throw CancellationError() }
+        return try result.get()
+    } onCancel: {
+        cancellationAction()
+        streamContinuation.finish()
+    }
+}
+
+private func taskResult<Success: Sendable>(
+    _ task: Task<Success, Error>,
+    operation: String,
+    timeout: TimeInterval = 2
+) async throws -> Result<Success, Error> {
+    try await withTestTimeout(
+        operation,
+        seconds: timeout,
+        cancellationAction: { task.cancel() }
+    ) {
+        await task.result
+    }
+}
+
+private func waitForTaskResults<Success: Sendable>(
+    _ tasks: [Task<Success, Error>],
+    operation: String,
+    timeout: TimeInterval = 2
+) async throws {
+    do {
+        for (index, task) in tasks.enumerated() {
+            _ = try await taskResult(
+                task,
+                operation: "\(operation) #\(index + 1)",
+                timeout: timeout
+            )
+        }
+    } catch {
+        tasks.forEach { $0.cancel() }
+        throw error
+    }
+}
+
+private func resumeCancellationIfNeeded(
+    _ continuation: CheckedContinuation<Void, Error>
+) -> Bool {
+    guard Task.isCancelled else { return false }
+    continuation.resume(throwing: CancellationError())
+    return true
 }
 
 private final class QueueEventProbe: @unchecked Sendable {
@@ -686,7 +815,10 @@ private actor ControllableAudioDownloadClient: AudioDownloadClient {
         let id = UUID()
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                startWaiters.append(StartWaiter(id: id, count: count, continuation: continuation))
+                // 取消若早于 continuation 安装则同步恢复；安装后的竞态由 actor 队列串行裁决。
+                if !resumeCancellationIfNeeded(continuation) {
+                    startWaiters.append(StartWaiter(id: id, count: count, continuation: continuation))
+                }
             }
         } onCancel: {
             Task { await self.cancelStartWaiter(id: id) }
