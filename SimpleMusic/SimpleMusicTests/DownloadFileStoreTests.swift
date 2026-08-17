@@ -3,6 +3,65 @@ import XCTest
 @testable import SimpleMusic
 
 final class DownloadFileStoreTests: XCTestCase {
+    /// 若播放层无法通过存储边界解析已下载文件，就只能绕过根目录约束自行拼路径。
+    func testResolvesExistingRegularFileInsideStoreRoot() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try DownloadFileStore(rootURL: root)
+        let fileURL = root.appendingPathComponent("song.mp3")
+        try Data("audio".utf8).write(to: fileURL)
+
+        XCTAssertEqual(try store.fileURL(for: "song.mp3"), fileURL.standardizedFileURL)
+    }
+
+    /// 若不存在的索引文件仍可解析，AVPlayer 会在远离存储边界处才失败。
+    func testFileURLRejectsMissingFile() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try DownloadFileStore(rootURL: root)
+
+        XCTAssertThrowsError(try store.fileURL(for: "missing.mp3"))
+    }
+
+    /// 若文件名可含分隔符或标准化越界，播放索引就能读取下载根目录外的文件。
+    func testFileURLRejectsEmptySeparatorsAndTraversal() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try DownloadFileStore(rootURL: root)
+
+        for fileName in ["", " ", "../outside.mp3", "folder/song.mp3", "folder\\song.mp3", ".", ".."] {
+            XCTAssertThrowsError(try store.fileURL(for: fileName), fileName)
+        }
+    }
+
+    /// 若符号链接被视为普通下载文件，可借其读取根目录外的目标。
+    func testFileURLRejectsSymbolicLink() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let outside = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: outside)
+        }
+        try Data("outside".utf8).write(to: outside)
+        let store = try DownloadFileStore(rootURL: root)
+        try FileManager.default.createSymbolicLink(
+            at: root.appendingPathComponent("linked.mp3"),
+            withDestinationURL: outside
+        )
+
+        XCTAssertThrowsError(try store.fileURL(for: "linked.mp3"))
+    }
+
+    /// 若目录被当作可播放文件返回，后端会获得无效的 AVPlayerItem。
+    func testFileURLRejectsDirectory() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try DownloadFileStore(rootURL: root)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("folder"), withIntermediateDirectories: false)
+
+        XCTAssertThrowsError(try store.fileURL(for: "folder"))
+    }
+
     func testConcurrentReservationsProduceThreeDifferentDestinations() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

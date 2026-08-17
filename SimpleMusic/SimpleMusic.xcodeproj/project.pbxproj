@@ -14,6 +14,7 @@
 		B4C0D0A00000000000000001 /* LocalMusicStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C0D0A00000000000000011 /* LocalMusicStoreTests.swift */; };
 		B5E000000000000000000001 /* MusicLibraryServiceMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5E000000000000000000002 /* MusicLibraryServiceMappingTests.swift */; };
 		B4C0D0A00000000000000002 /* DownloadManagerConcurrencyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C0D0A00000000000000012 /* DownloadManagerConcurrencyTests.swift */; };
+		C60000000000000000000001 /* PlaybackCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60000000000000000000002 /* PlaybackCoordinatorTests.swift */; };
 		BC6F521D00C13F6116232C2D /* Pods_SimpleMusic.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6A34C52A1ABF5C26C9601CDD /* Pods_SimpleMusic.framework */; };
 /* End PBXBuildFile section */
 
@@ -39,6 +40,7 @@
 		B4C0D0A00000000000000011 /* LocalMusicStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalMusicStoreTests.swift; sourceTree = "<group>"; };
 		B4C0D0A00000000000000012 /* DownloadManagerConcurrencyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadManagerConcurrencyTests.swift; sourceTree = "<group>"; };
 		B5E000000000000000000002 /* MusicLibraryServiceMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicLibraryServiceMappingTests.swift; sourceTree = "<group>"; };
+		C60000000000000000000002 /* PlaybackCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackCoordinatorTests.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5D /* SimpleMusicTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SimpleMusicTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -122,6 +124,7 @@
 				B4C0D0A00000000000000011 /* LocalMusicStoreTests.swift */,
 				B4C0D0A00000000000000012 /* DownloadManagerConcurrencyTests.swift */,
 				B5E000000000000000000002 /* MusicLibraryServiceMappingTests.swift */,
+				C60000000000000000000002 /* PlaybackCoordinatorTests.swift */,
 			);
 			path = SimpleMusicTests;
 			sourceTree = "<group>";
@@ -294,6 +297,7 @@
 				B4C0D0A00000000000000001 /* LocalMusicStoreTests.swift in Sources */,
 				B5E000000000000000000001 /* MusicLibraryServiceMappingTests.swift in Sources */,
 				B4C0D0A00000000000000002 /* DownloadManagerConcurrencyTests.swift in Sources */,
+				C60000000000000000000001 /* PlaybackCoordinatorTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

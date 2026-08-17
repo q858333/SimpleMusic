@@ -14,7 +14,7 @@ final class AppEnvironment {
         return LocalMusicStore(container: appDelegate.persistentContainer)
     }()
 
-    lazy var downloadManager: DownloadManager = {
+    lazy var downloadFileStore: DownloadFileStore = {
         do {
             let root = try FileManager.default.url(
                 for: .applicationSupportDirectory,
@@ -22,15 +22,24 @@ final class AppEnvironment {
                 appropriateFor: nil,
                 create: true
             ).appendingPathComponent("Downloads", isDirectory: true)
-            return DownloadManager(
-                fileStore: try DownloadFileStore(rootURL: root),
-                musicStore: localMusicStore,
-                settingsStore: settingsStore
-            )
+            return try DownloadFileStore(rootURL: root)
         } catch {
             fatalError("无法创建下载目录：\(error)")
         }
     }()
+
+    lazy var downloadManager: DownloadManager = {
+        DownloadManager(
+            fileStore: downloadFileStore,
+            musicStore: localMusicStore,
+            settingsStore: settingsStore
+        )
+    }()
+
+    lazy var playbackCoordinator = PlaybackCoordinator(
+        localBackend: LocalPlaybackBackend(fileStore: downloadFileStore),
+        systemBackend: SystemPlaybackBackend(libraryService: musicLibraryService)
+    )
 
     private init() {}
 }

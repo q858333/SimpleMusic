@@ -4,6 +4,9 @@ import Foundation
 enum DownloadFileStoreError: Error {
     case invalidReservation
     case reservationConsumed
+    case invalidFileName
+    case fileNotFound
+    case notRegularFile
 }
 
 /// 下载文件的受限目录存储；所有建议文件名都会归一为根目录内的单一文件名。
@@ -35,6 +38,35 @@ struct DownloadFileStore {
     init(rootURL: URL) throws {
         self.rootURL = rootURL
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+    }
+
+    /// 播放层只能解析下载根目录内已存在的普通文件；路径校验和符号链接拒绝均留在存储边界。
+    func fileURL(for fileName: String) throws -> URL {
+        let trimmedName = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty,
+              !fileName.contains("/"),
+              !fileName.contains("\\"),
+              fileName != ".",
+              fileName != ".." else {
+            throw DownloadFileStoreError.invalidFileName
+        }
+
+        let standardizedRoot = rootURL.standardizedFileURL
+        let candidate = standardizedRoot.appendingPathComponent(fileName, isDirectory: false).standardizedFileURL
+        guard candidate.deletingLastPathComponent() == standardizedRoot else {
+            throw DownloadFileStoreError.invalidFileName
+        }
+
+        let attributes: [FileAttributeKey: Any]
+        do {
+            attributes = try FileManager.default.attributesOfItem(atPath: candidate.path)
+        } catch let error as CocoaError where error.code == .fileNoSuchFile {
+            throw DownloadFileStoreError.fileNotFound
+        }
+        guard attributes[.type] as? FileAttributeType == .typeRegular else {
+            throw DownloadFileStoreError.notRegularFile
+        }
+        return candidate
     }
 
     /// 原子创建空占位文件；Task 4 持有返回凭证，并在成功或失败路径恰好消费一次。
