@@ -11,7 +11,10 @@ final class DownloadFileStoreTests: XCTestCase {
         let fileURL = root.appendingPathComponent("song.mp3")
         try Data("audio".utf8).write(to: fileURL)
 
-        XCTAssertEqual(try store.fileURL(for: "song.mp3"), fileURL.standardizedFileURL)
+        let lease = try store.playbackLease(for: "song.mp3")
+
+        XCTAssertNotEqual(lease.fileURL, fileURL.standardizedFileURL)
+        XCTAssertEqual(try Data(contentsOf: lease.fileURL), Data("audio".utf8))
     }
 
     /// 若不存在的索引文件仍可解析，AVPlayer 会在远离存储边界处才失败。
@@ -20,7 +23,7 @@ final class DownloadFileStoreTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try DownloadFileStore(rootURL: root)
 
-        XCTAssertThrowsError(try store.fileURL(for: "missing.mp3"))
+        XCTAssertThrowsError(try store.playbackLease(for: "missing.mp3"))
     }
 
     /// 若文件名可含分隔符或标准化越界，播放索引就能读取下载根目录外的文件。
@@ -30,7 +33,7 @@ final class DownloadFileStoreTests: XCTestCase {
         let store = try DownloadFileStore(rootURL: root)
 
         for fileName in ["", " ", "../outside.mp3", "folder/song.mp3", "folder\\song.mp3", ".", ".."] {
-            XCTAssertThrowsError(try store.fileURL(for: fileName), fileName)
+            XCTAssertThrowsError(try store.playbackLease(for: fileName), fileName)
         }
     }
 
@@ -49,7 +52,7 @@ final class DownloadFileStoreTests: XCTestCase {
             withDestinationURL: outside
         )
 
-        XCTAssertThrowsError(try store.fileURL(for: "linked.mp3"))
+        XCTAssertThrowsError(try store.playbackLease(for: "linked.mp3"))
     }
 
     /// 若目录被当作可播放文件返回，后端会获得无效的 AVPlayerItem。
@@ -59,7 +62,56 @@ final class DownloadFileStoreTests: XCTestCase {
         let store = try DownloadFileStore(rootURL: root)
         try FileManager.default.createDirectory(at: root.appendingPathComponent("folder"), withIntermediateDirectories: false)
 
-        XCTAssertThrowsError(try store.fileURL(for: "folder"))
+        XCTAssertThrowsError(try store.playbackLease(for: "folder"))
+    }
+
+    /// 若 lease 仍指向可替换的源路径，解析后替换为越界 symlink 会读到外部内容。
+    func testPlaybackLeaseKeepsOriginalBytesAfterSourceIsReplacedBySymbolicLink() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let outside = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: outside)
+        }
+        let store = try DownloadFileStore(rootURL: root)
+        let source = root.appendingPathComponent("song.mp3")
+        try Data("trusted".utf8).write(to: source)
+        try Data("outside".utf8).write(to: outside)
+
+        let lease = try store.playbackLease(for: "song.mp3")
+        try FileManager.default.removeItem(at: source)
+        try FileManager.default.createSymbolicLink(at: source, withDestinationURL: outside)
+
+        XCTAssertEqual(try Data(contentsOf: lease.fileURL), Data("trusted".utf8))
+    }
+
+    /// 若显式释放不清理 staging 文件，连续切歌会永久累积副本。
+    func testPlaybackLeaseReleaseRemovesStagingFileIdempotently() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try DownloadFileStore(rootURL: root)
+        try Data("audio".utf8).write(to: root.appendingPathComponent("song.mp3"))
+        let lease = try store.playbackLease(for: "song.mp3")
+        let stagingURL = lease.fileURL
+
+        lease.release()
+        lease.release()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stagingURL.path))
+    }
+
+    /// 若 lease 析构不清理 staging 文件，异常退出当前播放也会泄漏副本。
+    func testPlaybackLeaseDeinitRemovesStagingFile() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try DownloadFileStore(rootURL: root)
+        try Data("audio".utf8).write(to: root.appendingPathComponent("song.mp3"))
+        var lease: PlaybackFileLease? = try store.playbackLease(for: "song.mp3")
+        let stagingURL = try XCTUnwrap(lease?.fileURL)
+
+        lease = nil
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stagingURL.path))
     }
 
     func testConcurrentReservationsProduceThreeDifferentDestinations() throws {

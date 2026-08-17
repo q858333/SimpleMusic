@@ -13,15 +13,21 @@ final class PlaybackCoordinatorTests: XCTestCase {
 
     /// 若跨来源切歌未先停止旧后端，两个系统播放器可能同时出声。
     func testCrossSourceNextStopsOldBackendBeforeLoadingNewBackend() throws {
-        let local = SpyBackend(kind: .local)
-        let system = SpyBackend(kind: .system)
+        let eventLog = SharedEventLog()
+        let local = SpyBackend(kind: .local, name: "local", eventLog: eventLog)
+        let system = SpyBackend(kind: .system, name: "system", eventLog: eventLog)
         let sut = PlaybackCoordinator(localBackend: local, systemBackend: system)
 
         try sut.play(queue: [downloadedTrack(id: "local"), systemTrack(id: "system")], startAt: 0)
         try sut.next()
 
-        XCTAssertEqual(local.events, [.load("local"), .play, .stop])
-        XCTAssertEqual(system.events, [.load("system"), .play])
+        XCTAssertEqual(eventLog.values, [
+            "local.load(local)",
+            "local.play",
+            "local.stop",
+            "system.load(system)",
+            "system.play"
+        ])
     }
 
     /// 若 previous 错误地只修改快照而未激活前一项，此测试应失败。
@@ -185,11 +191,62 @@ final class PlaybackCoordinatorTests: XCTestCase {
         try sut.play(queue: [downloadedTrack(id: "local"), systemTrack(id: "system")], startAt: 0)
         try sut.next()
 
-        local.reportElapsed(99, duration: 100)
-        local.reportFailure(TestError.staleFailure)
+        let oldGeneration = try XCTUnwrap(local.loadedGenerations.first)
+        local.reportElapsed(99, duration: 100, generation: oldGeneration)
+        local.reportFailure(TestError.staleFailure, generation: oldGeneration)
 
         XCTAssertEqual(snapshots.value.track?.id, "system")
         XCTAssertEqual(snapshots.value.elapsed, 0)
+        XCTAssertEqual(snapshots.value.status, .playing)
+    }
+
+    /// 若同一后端上一首的迟到进度沿用当前身份，第二首快照会被旧时间污染。
+    func testSameBackendStaleElapsedIsIgnoredAfterNext() throws {
+        let local = SpyBackend(kind: .local)
+        let sut = PlaybackCoordinator(localBackend: local, systemBackend: SpyBackend(kind: .system))
+        let snapshots = observe(sut)
+        try sut.play(queue: [downloadedTrack(id: "first"), downloadedTrack(id: "second")], startAt: 0)
+        let firstGeneration = try XCTUnwrap(local.loadedGenerations.first)
+        try sut.next()
+
+        local.reportElapsed(59, duration: 60, generation: firstGeneration)
+
+        XCTAssertEqual(snapshots.value.track?.id, "second")
+        XCTAssertEqual(snapshots.value.elapsed, 0)
+    }
+
+    /// 若同一后端上一首的迟到完成仍被接收，队列会从第二首错误跳到第三首。
+    func testSameBackendStaleFinishDoesNotAdvanceAgain() throws {
+        let local = SpyBackend(kind: .local)
+        let sut = PlaybackCoordinator(localBackend: local, systemBackend: SpyBackend(kind: .system))
+        let snapshots = observe(sut)
+        try sut.play(queue: [
+            downloadedTrack(id: "first"),
+            downloadedTrack(id: "second"),
+            downloadedTrack(id: "third")
+        ], startAt: 0)
+        let firstGeneration = try XCTUnwrap(local.loadedGenerations.first)
+        try sut.next()
+
+        local.reportFinished(generation: firstGeneration)
+
+        XCTAssertEqual(snapshots.value.track?.id, "second")
+        XCTAssertEqual(snapshots.value.queueIndex, 1)
+        XCTAssertEqual(local.loadedTrackIDs, ["first", "second"])
+    }
+
+    /// 若同一后端上一首的迟到失败仍被接收，当前第二首会被错误标记失败。
+    func testSameBackendStaleFailureIsIgnoredAfterNext() throws {
+        let local = SpyBackend(kind: .local)
+        let sut = PlaybackCoordinator(localBackend: local, systemBackend: SpyBackend(kind: .system))
+        let snapshots = observe(sut)
+        try sut.play(queue: [downloadedTrack(id: "first"), downloadedTrack(id: "second")], startAt: 0)
+        let firstGeneration = try XCTUnwrap(local.loadedGenerations.first)
+        try sut.next()
+
+        local.reportFailure(TestError.staleFailure, generation: firstGeneration)
+
+        XCTAssertEqual(snapshots.value.track?.id, "second")
         XCTAssertEqual(snapshots.value.status, .playing)
     }
 
@@ -232,6 +289,15 @@ private final class SnapshotRecorder {
 }
 
 @MainActor
+private final class SharedEventLog {
+    private(set) var values = [String]()
+
+    func append(_ value: String) {
+        values.append(value)
+    }
+}
+
+@MainActor
 private final class SpyBackend: PlaybackBackend {
     enum Event: Equatable {
         case load(String)
@@ -244,6 +310,9 @@ private final class SpyBackend: PlaybackBackend {
     let kind: PlaybackBackendKind
     weak var delegate: PlaybackBackendDelegate?
     private(set) var events = [Event]()
+    private(set) var loadedGenerations = [PlaybackGeneration]()
+    private let name: String?
+    private let eventLog: SharedEventLog?
 
     var loadedTrackIDs: [String] {
         events.compactMap { event in
@@ -261,26 +330,60 @@ private final class SpyBackend: PlaybackBackend {
         }
     }
 
-    init(kind: PlaybackBackendKind) {
+    init(kind: PlaybackBackendKind, name: String? = nil, eventLog: SharedEventLog? = nil) {
         self.kind = kind
+        self.name = name
+        self.eventLog = eventLog
     }
 
-    func load(_ track: MusicTrack) throws { events.append(.load(track.id)) }
-    func play() { events.append(.play) }
+    func load(_ track: MusicTrack, generation: PlaybackGeneration) throws {
+        loadedGenerations.append(generation)
+        events.append(.load(track.id))
+        record("load(\(track.id))")
+    }
+
+    func play() {
+        events.append(.play)
+        record("play")
+    }
     func pause() { events.append(.pause) }
-    func stop() { events.append(.stop) }
+    func stop() {
+        events.append(.stop)
+        record("stop")
+    }
     func seek(to seconds: TimeInterval) { events.append(.seek(seconds)) }
 
-    func reportElapsed(_ elapsed: TimeInterval, duration: TimeInterval) {
-        delegate?.playbackBackend(self, didUpdateElapsed: elapsed, duration: duration)
+    func reportElapsed(
+        _ elapsed: TimeInterval,
+        duration: TimeInterval,
+        generation: PlaybackGeneration? = nil
+    ) {
+        delegate?.playbackBackend(
+            self,
+            generation: generation ?? loadedGenerations.last!,
+            didUpdateElapsed: elapsed,
+            duration: duration
+        )
     }
 
-    func reportFinished() {
-        delegate?.playbackBackendDidFinish(self)
+    func reportFinished(generation: PlaybackGeneration? = nil) {
+        delegate?.playbackBackendDidFinish(
+            self,
+            generation: generation ?? loadedGenerations.last!
+        )
     }
 
-    func reportFailure(_ error: Error) {
-        delegate?.playbackBackend(self, didFail: error)
+    func reportFailure(_ error: Error, generation: PlaybackGeneration? = nil) {
+        delegate?.playbackBackend(
+            self,
+            generation: generation ?? loadedGenerations.last!,
+            didFail: error
+        )
+    }
+
+    private func record(_ event: String) {
+        guard let name else { return }
+        eventLog?.append("\(name).\(event)")
     }
 }
 

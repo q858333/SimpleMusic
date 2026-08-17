@@ -14,6 +14,8 @@ final class PlaybackCoordinator: PlaybackBackendDelegate {
     private var queue = [MusicTrack]()
     private var currentIndex: Int?
     private weak var activeBackend: (any PlaybackBackend)?
+    private var activeGeneration: PlaybackGeneration?
+    private var nextGenerationRawValue: UInt64 = 0
 
     var snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never> {
         snapshotSubject.eraseToAnyPublisher()
@@ -90,18 +92,22 @@ final class PlaybackCoordinator: PlaybackBackendDelegate {
 
     func playbackBackend(
         _ backend: any PlaybackBackend,
+        generation: PlaybackGeneration,
         didUpdateElapsed elapsed: TimeInterval,
         duration: TimeInterval
     ) {
-        guard isActive(backend) else { return }
+        guard isActive(backend, generation: generation) else { return }
         updateSnapshot {
             $0.elapsed = max(0, elapsed)
             $0.duration = max(0, duration)
         }
     }
 
-    func playbackBackendDidFinish(_ backend: any PlaybackBackend) {
-        guard isActive(backend) else { return }
+    func playbackBackendDidFinish(
+        _ backend: any PlaybackBackend,
+        generation: PlaybackGeneration
+    ) {
+        guard isActive(backend, generation: generation) else { return }
         do {
             try next()
         } catch {
@@ -109,20 +115,26 @@ final class PlaybackCoordinator: PlaybackBackendDelegate {
         }
     }
 
-    func playbackBackend(_ backend: any PlaybackBackend, didFail error: Error) {
-        guard isActive(backend) else { return }
+    func playbackBackend(
+        _ backend: any PlaybackBackend,
+        generation: PlaybackGeneration,
+        didFail error: Error
+    ) {
+        guard isActive(backend, generation: generation) else { return }
         publishFailure(error)
     }
 
     private func activate(index: Int) throws {
         let track = queue[index]
         let backend = backend(for: track.source)
+        let generation = makeGeneration()
 
         // 跨来源必须先停旧后端，再加载新后端，避免两个系统播放器短暂重叠出声。
         if let activeBackend, activeBackend !== backend {
             activeBackend.stop()
         }
         activeBackend = backend
+        activeGeneration = generation
         currentIndex = index
         snapshotSubject.send(PlaybackSnapshot(
             status: .loading,
@@ -134,7 +146,7 @@ final class PlaybackCoordinator: PlaybackBackendDelegate {
         ))
 
         do {
-            try backend.load(track)
+            try backend.load(track, generation: generation)
             backend.play()
             updateSnapshot { $0.status = .playing }
         } catch {
@@ -156,6 +168,7 @@ final class PlaybackCoordinator: PlaybackBackendDelegate {
     private func stopAtQueueEnd() {
         activeBackend?.stop()
         activeBackend = nil
+        activeGeneration = nil
         currentIndex = nil
         updateSnapshot {
             $0.status = .idle
@@ -167,6 +180,7 @@ final class PlaybackCoordinator: PlaybackBackendDelegate {
     private func stopAndResetQueue() {
         activeBackend?.stop()
         activeBackend = nil
+        activeGeneration = nil
         queue = []
         currentIndex = nil
         snapshotSubject.send(PlaybackSnapshot())
@@ -182,8 +196,16 @@ final class PlaybackCoordinator: PlaybackBackendDelegate {
         snapshotSubject.send(snapshot)
     }
 
-    private func isActive(_ backend: any PlaybackBackend) -> Bool {
+    private func isActive(
+        _ backend: any PlaybackBackend,
+        generation: PlaybackGeneration
+    ) -> Bool {
         guard let activeBackend else { return false }
-        return activeBackend === backend
+        return activeBackend === backend && activeGeneration == generation
+    }
+
+    private func makeGeneration() -> PlaybackGeneration {
+        nextGenerationRawValue &+= 1
+        return PlaybackGeneration(rawValue: nextGenerationRawValue)
     }
 }
