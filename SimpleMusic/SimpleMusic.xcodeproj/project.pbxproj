@@ -11,6 +11,8 @@
 		A1B2C3D4E5F60718293A4B6B /* SettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B6A /* SettingsStoreTests.swift */; };
 		A1B2C3D4E5F60718293A4B7B /* AudioDownloadValidatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B7A /* AudioDownloadValidatorTests.swift */; };
 		A1B2C3D4E5F60718293A4B8B /* DownloadFileStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B8A /* DownloadFileStoreTests.swift */; };
+		B4C0D0A00000000000000001 /* LocalMusicStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C0D0A00000000000000011 /* LocalMusicStoreTests.swift */; };
+		B4C0D0A00000000000000002 /* DownloadManagerConcurrencyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C0D0A00000000000000012 /* DownloadManagerConcurrencyTests.swift */; };
 		BC6F521D00C13F6116232C2D /* Pods_SimpleMusic.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6A34C52A1ABF5C26C9601CDD /* Pods_SimpleMusic.framework */; };
 /* End PBXBuildFile section */
 
@@ -33,6 +35,8 @@
 		A1B2C3D4E5F60718293A4B6A /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B7A /* AudioDownloadValidatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDownloadValidatorTests.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B8A /* DownloadFileStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadFileStoreTests.swift; sourceTree = "<group>"; };
+		B4C0D0A00000000000000011 /* LocalMusicStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalMusicStoreTests.swift; sourceTree = "<group>"; };
+		B4C0D0A00000000000000012 /* DownloadManagerConcurrencyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadManagerConcurrencyTests.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5D /* SimpleMusicTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SimpleMusicTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -113,6 +117,8 @@
 				A1B2C3D4E5F60718293A4B6A /* SettingsStoreTests.swift */,
 				A1B2C3D4E5F60718293A4B7A /* AudioDownloadValidatorTests.swift */,
 				A1B2C3D4E5F60718293A4B8A /* DownloadFileStoreTests.swift */,
+				B4C0D0A00000000000000011 /* LocalMusicStoreTests.swift */,
+				B4C0D0A00000000000000012 /* DownloadManagerConcurrencyTests.swift */,
 			);
 			path = SimpleMusicTests;
 			sourceTree = "<group>";
@@ -282,6 +288,8 @@
 				A1B2C3D4E5F60718293A4B6B /* SettingsStoreTests.swift in Sources */,
 				A1B2C3D4E5F60718293A4B7B /* AudioDownloadValidatorTests.swift in Sources */,
 				A1B2C3D4E5F60718293A4B8B /* DownloadFileStoreTests.swift in Sources */,
+				B4C0D0A00000000000000001 /* LocalMusicStoreTests.swift in Sources */,
+				B4C0D0A00000000000000002 /* DownloadManagerConcurrencyTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
