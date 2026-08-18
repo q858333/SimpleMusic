@@ -58,6 +58,23 @@ final class PlayerViewController: UIViewController {
         color: .label
     )
 
+    private lazy var closeButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.accessibilityIdentifier = "player.close"
+        button.accessibilityLabel = "关闭正在播放"
+        button.setImage(UIImage(systemName: "chevron.down"), for: .normal)
+        button.tintColor = .label
+        button.addAction(UIAction { [weak self] _ in
+            self?.onDismiss?()
+        }, for: .touchUpInside)
+        return button
+    }()
+
+    var initialAccessibilityFocusView: UIView {
+        loadViewIfNeeded()
+        return closeButton
+    }
+
     private lazy var progressSlider: UISlider = {
         let slider = UISlider()
         slider.accessibilityIdentifier = "player.progress"
@@ -66,6 +83,7 @@ final class PlayerViewController: UIViewController {
         slider.minimumValue = 0
         slider.maximumValue = 1
         slider.addTarget(self, action: #selector(beginSeeking), for: .touchDown)
+        slider.addTarget(self, action: #selector(progressValueChanged), for: .valueChanged)
         slider.addTarget(self, action: #selector(endSeeking), for: [
             .touchUpInside,
             .touchUpOutside,
@@ -160,15 +178,6 @@ final class PlayerViewController: UIViewController {
             make.edges.equalTo(scrollView.contentLayoutGuide)
             make.width.equalTo(scrollView.frameLayoutGuide)
         }
-
-        let closeButton = UIButton(type: .system)
-        closeButton.accessibilityIdentifier = "player.close"
-        closeButton.accessibilityLabel = "关闭正在播放"
-        closeButton.setImage(UIImage(systemName: "chevron.down"), for: .normal)
-        closeButton.tintColor = .label
-        closeButton.addAction(UIAction { [weak self] _ in
-            self?.onDismiss?()
-        }, for: .touchUpInside)
 
         let headerLabel = Self.label(style: .caption1, weight: .semibold, color: .secondaryLabel)
         headerLabel.text = "正在播放"
@@ -289,7 +298,7 @@ final class PlayerViewController: UIViewController {
             UIImage(systemName: isPlaying ? "pause.fill" : "play.fill"),
             for: .normal
         )
-        setPlaybackControlsEnabled(true)
+        setPlaybackControlsEnabled(snapshot.queueIndex != nil)
         elapsedLabel.text = Self.timeText(snapshot.elapsed)
         remainingLabel.text = "-\(Self.timeText(max(0, snapshot.duration - snapshot.elapsed)))"
         queuePositionLabel.text = Self.queueText(snapshot)
@@ -333,6 +342,11 @@ final class PlayerViewController: UIViewController {
     @objc private func endSeeking() {
         guard isSeeking else { return }
         isSeeking = false
+        onSeek(TimeInterval(progressSlider.value))
+    }
+
+    @objc private func progressValueChanged() {
+        guard progressSlider.isEnabled, !isSeeking, !progressSlider.isTracking else { return }
         onSeek(TimeInterval(progressSlider.value))
     }
 
@@ -380,9 +394,8 @@ final class PlayerViewController: UIViewController {
     }
 
     private static func queueText(_ snapshot: PlaybackSnapshot) -> String {
-        guard let index = snapshot.queueIndex, snapshot.queueCount > 0 else {
-            return "队列为空"
-        }
+        guard snapshot.queueCount > 0 else { return "队列为空" }
+        guard let index = snapshot.queueIndex else { return "队列已结束" }
         return "第 \(index + 1) / \(snapshot.queueCount) 首"
     }
 }

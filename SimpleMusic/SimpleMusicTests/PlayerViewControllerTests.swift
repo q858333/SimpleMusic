@@ -62,11 +62,50 @@ final class PlayerViewControllerTests: XCTestCase {
         XCTAssertEqual(queue.text, "第 2 / 4 首")
     }
 
+    /// 如果队列结束后仍保留的歌曲让无效控制继续可用，或文案误报为空，此测试应失败。
+    func testQueueEndSnapshotKeepsMetadataButDisablesControlsAndShowsEndedState() async throws {
+        let track = makeTrack(title: "最后一首")
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
+            PlaybackSnapshot(
+                status: .idle,
+                track: track,
+                elapsed: 0,
+                duration: 180,
+                queueIndex: nil,
+                queueCount: 3
+            )
+        )
+        let sut = makePlayer(snapshots: snapshots)
+        sut.loadViewIfNeeded()
+        let queue = try XCTUnwrap(findView(identifier: "player.queue", in: sut.view) as? UILabel)
+        await waitUntil { queue.text != nil }
+
+        let title = try XCTUnwrap(findView(identifier: "player.title", in: sut.view) as? UILabel)
+        let slider = try XCTUnwrap(findView(identifier: "player.progress", in: sut.view) as? UISlider)
+        let previous = try XCTUnwrap(findView(identifier: "player.previous", in: sut.view) as? UIButton)
+        let toggle = try XCTUnwrap(findView(identifier: "player.toggle", in: sut.view) as? UIButton)
+        let next = try XCTUnwrap(findView(identifier: "player.next", in: sut.view) as? UIButton)
+
+        XCTAssertEqual(title.text, track.title)
+        XCTAssertEqual(queue.text, "队列已结束")
+        XCTAssertFalse(slider.isEnabled)
+        XCTAssertFalse(previous.isEnabled)
+        XCTAssertFalse(toggle.isEnabled)
+        XCTAssertFalse(next.isEnabled)
+    }
+
     /// 如果拖动期间快照把滑块抢回，或结束拖动没有 seek，此测试应失败。
     func testSeekingKeepsDraggedValueUntilReleaseThenSeeks() async throws {
         let track = makeTrack()
         let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
-            PlaybackSnapshot(status: .playing, track: track, elapsed: 10, duration: 100)
+            PlaybackSnapshot(
+                status: .playing,
+                track: track,
+                elapsed: 10,
+                duration: 100,
+                queueIndex: 0,
+                queueCount: 1
+            )
         )
         var seekValues = [TimeInterval]()
         let sut = makePlayer(snapshots: snapshots, onSeek: { seekValues.append($0) })
@@ -77,7 +116,14 @@ final class PlayerViewControllerTests: XCTestCase {
         slider.sendActions(for: .touchDown)
         slider.value = 44
         slider.sendActions(for: .valueChanged)
-        snapshots.send(PlaybackSnapshot(status: .paused, track: track, elapsed: 70, duration: 100))
+        snapshots.send(PlaybackSnapshot(
+            status: .paused,
+            track: track,
+            elapsed: 70,
+            duration: 100,
+            queueIndex: 0,
+            queueCount: 1
+        ))
         let toggle = try XCTUnwrap(findView(identifier: "player.toggle", in: sut.view) as? UIButton)
         await waitUntil { toggle.accessibilityLabel == "播放" }
 
@@ -86,10 +132,39 @@ final class PlayerViewControllerTests: XCTestCase {
         XCTAssertEqual(seekValues, [44])
     }
 
+    /// 如果辅助功能只发送 valueChanged 时没有立即 seek，此测试应失败。
+    func testNonTrackingProgressChangeSeeksImmediately() async throws {
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
+            PlaybackSnapshot(
+                status: .paused,
+                track: makeTrack(),
+                elapsed: 10,
+                duration: 100,
+                queueIndex: 0,
+                queueCount: 1
+            )
+        )
+        var seekValues = [TimeInterval]()
+        let sut = makePlayer(snapshots: snapshots, onSeek: { seekValues.append($0) })
+        sut.loadViewIfNeeded()
+        let slider = try XCTUnwrap(findView(identifier: "player.progress", in: sut.view) as? UISlider)
+        await waitUntil { slider.maximumValue == 100 }
+
+        slider.value = 36
+        slider.sendActions(for: .valueChanged)
+
+        XCTAssertEqual(seekValues, [36])
+    }
+
     /// 如果按钮没有转发统一播放协调器动作，或系统音量和 AirPlay 入口缺失，此测试应失败。
     func testPlayerRoutesControlsAndIncludesSystemAudioUtilities() throws {
         let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
-            PlaybackSnapshot(status: .paused, track: makeTrack())
+            PlaybackSnapshot(
+                status: .paused,
+                track: makeTrack(),
+                queueIndex: 0,
+                queueCount: 1
+            )
         )
         var toggleCount = 0
         var previousCount = 0
@@ -156,6 +231,46 @@ final class PlayerViewControllerTests: XCTestCase {
         let mask = try XCTUnwrap(findView(identifier: "player.mask", in: panel.view) as? UIButton)
         mask.sendActions(for: .touchUpInside)
         XCTAssertFalse(panel.isPresented)
+    }
+
+    /// 如果面板显示时没有建立模态辅助功能边界，或关闭后没有撤销，此测试应失败。
+    func testPadPanelAccessibilityModalStateFollowsPresentationLifecycle() throws {
+        let pad = PadRootViewController(dependencies: makeDependencies())
+        pad.loadViewIfNeeded()
+        let panel = try XCTUnwrap(descendant(NowPlayingPanelController.self, in: pad))
+
+        panel.show(animated: false)
+        XCTAssertTrue(panel.view.accessibilityViewIsModal)
+
+        panel.dismissPanel(animated: false)
+        XCTAssertFalse(panel.view.accessibilityViewIsModal)
+        XCTAssertTrue(panel.view.isHidden)
+    }
+
+    /// 如果“减弱动态效果”仍启动侧栏动画，关闭后的隐藏状态不会同步完成，此测试应失败。
+    func testPadPanelCompletesTransitionsImmediatelyWhenReduceMotionIsEnabled() throws {
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot())
+        let player = makePlayer(snapshots: snapshots)
+        let panel = NowPlayingPanelController(
+            playerViewController: player,
+            isReduceMotionEnabled: { true }
+        )
+        let host = UIViewController()
+        host.loadViewIfNeeded()
+        host.view.frame = CGRect(x: 0, y: 0, width: 834, height: 1194)
+        host.addChild(panel)
+        host.view.addSubview(panel.view)
+        panel.view.frame = host.view.bounds
+        panel.didMove(toParent: host)
+
+        panel.show()
+        host.view.layoutIfNeeded()
+        let surface = try XCTUnwrap(findView(identifier: "player.panel", in: panel.view))
+        XCTAssertEqual(surface.frame.maxX, panel.view.bounds.width, accuracy: 0.5)
+
+        panel.dismissPanel()
+        XCTAssertTrue(panel.view.isHidden)
+        XCTAssertFalse(panel.view.accessibilityViewIsModal)
     }
 
     private func makePlayer(

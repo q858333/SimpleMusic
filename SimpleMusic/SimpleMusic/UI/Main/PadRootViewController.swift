@@ -60,7 +60,9 @@ final class PadRootViewController: UIViewController {
             onOpenPlayer: {},
             dependencyIdentity: dependencies.identity
         )
-        onOpenPlayer = { [weak panel] in panel?.show() }
+        onOpenPlayer = { [weak self, weak panel] in
+            panel?.show(returnFocusTo: self?.miniPlayerView)
+        }
     }
 
     /// 保留 Task 8 注入点，后续完整播放页仍可使用同一 child containment 边界。

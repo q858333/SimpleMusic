@@ -4,8 +4,10 @@ import UIKit
 /// iPad 正在播放遮罩容器；播放内容始终复用 PlayerViewController。
 final class NowPlayingPanelController: UIViewController {
     private let playerViewController: PlayerViewController
+    private let isReduceMotionEnabled: () -> Bool
     private var trailingConstraint: Constraint?
     private var transitionGeneration = 0
+    private weak var focusReturnView: UIView?
     private(set) var isPresented = false
 
     private lazy var maskButton: UIButton = {
@@ -30,8 +32,12 @@ final class NowPlayingPanelController: UIViewController {
         return view
     }()
 
-    init(playerViewController: PlayerViewController) {
+    init(
+        playerViewController: PlayerViewController,
+        isReduceMotionEnabled: @escaping () -> Bool = { UIAccessibility.isReduceMotionEnabled }
+    ) {
         self.playerViewController = playerViewController
+        self.isReduceMotionEnabled = isReduceMotionEnabled
         super.init(nibName: nil, bundle: nil)
         playerViewController.onDismiss = { [weak self] in
             self?.dismissPanel()
@@ -50,16 +56,25 @@ final class NowPlayingPanelController: UIViewController {
         buildView()
     }
 
-    func show(animated: Bool = true) {
+    func show(animated: Bool = true, returnFocusTo view: UIView? = nil) {
         loadViewIfNeeded()
         guard !isPresented else { return }
         isPresented = true
         transitionGeneration += 1
-        view.isHidden = false
-        view.superview?.bringSubviewToFront(view)
-        view.superview?.layoutIfNeeded()
+        let generation = transitionGeneration
+        focusReturnView = view
+        self.view.isHidden = false
+        self.view.accessibilityViewIsModal = true
+        self.view.superview?.bringSubviewToFront(self.view)
+        self.view.superview?.layoutIfNeeded()
         trailingConstraint?.update(offset: 0)
-        animateLayout(animated: animated)
+        animateLayout(animated: animated) { [weak self] in
+            guard let self, generation == transitionGeneration, isPresented else { return }
+            UIAccessibility.post(
+                notification: .screenChanged,
+                argument: playerViewController.initialAccessibilityFocusView
+            )
+        }
     }
 
     func dismissPanel(animated: Bool = true) {
@@ -72,6 +87,9 @@ final class NowPlayingPanelController: UIViewController {
             guard let self, generation == transitionGeneration, !isPresented else { return }
             // 只隐藏最新一次关闭，避免快速重开后被旧动画 completion 盖掉。
             view.isHidden = true
+            view.accessibilityViewIsModal = false
+            UIAccessibility.post(notification: .screenChanged, argument: focusReturnView)
+            focusReturnView = nil
         }
     }
 
@@ -99,7 +117,7 @@ final class NowPlayingPanelController: UIViewController {
         let animations: () -> Void = { [weak self] in
             self?.view.layoutIfNeeded()
         }
-        guard animated else {
+        guard animated, !isReduceMotionEnabled() else {
             animations()
             completion?()
             return
