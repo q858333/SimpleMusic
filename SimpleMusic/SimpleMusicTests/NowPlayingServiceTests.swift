@@ -79,6 +79,21 @@ final class NowPlayingServiceTests: XCTestCase {
         XCTAssertTrue(harness.controls.events.isEmpty)
     }
 
+    /// 已移除 target 的延迟回调不能借用新一轮 start 的状态控制播放器。
+    func testRemovedHandlerFromPreviousStartCannotControlRestartedService() throws {
+        let harness = makeHarness(initial: snapshot(status: .paused))
+        try harness.sut.start()
+        harness.sut.stop()
+        let oldHandler = try XCTUnwrap(harness.commands.removedHandler(for: .play))
+
+        try harness.sut.start()
+
+        XCTAssertEqual(oldHandler(.none), .commandFailed)
+        XCTAssertTrue(harness.controls.events.isEmpty)
+        XCTAssertEqual(harness.commands.invoke(.play), .success)
+        XCTAssertEqual(harness.controls.events, [.play])
+    }
+
     /// 若协调器切歌失败仍回报成功，系统会误以为远程命令已执行。
     func testThrowingPlaybackControlReturnsCommandFailed() throws {
         let harness = makeHarness(initial: snapshot(status: .playing))
@@ -312,7 +327,12 @@ private struct TestHarness {
 
 @MainActor
 private final class FakeRemoteCommandRegister: RemoteCommandRegistering, @unchecked Sendable {
-    private nonisolated let handlers = LockedValue([RemotePlaybackCommand: RemoteCommandHandler]())
+    private struct HandlerStore {
+        var active = [RemotePlaybackCommand: RemoteCommandHandler]()
+        var removed = [RemotePlaybackCommand: [RemoteCommandHandler]]()
+    }
+
+    private nonisolated let handlers = LockedValue(HandlerStore())
     private var commandsByToken = [ObjectIdentifier: RemotePlaybackCommand]()
     private(set) var addedCommands = Set<RemotePlaybackCommand>()
     private(set) var removedCommands = Set<RemotePlaybackCommand>()
@@ -324,7 +344,7 @@ private final class FakeRemoteCommandRegister: RemoteCommandRegistering, @unchec
         handler: @escaping RemoteCommandHandler
     ) -> AnyObject {
         let token = NSObject()
-        handlers.withLock { $0[command] = handler }
+        handlers.withLock { $0.active[command] = handler }
         commandsByToken[ObjectIdentifier(token)] = command
         addedCommands.insert(command)
         addCount += 1
@@ -335,7 +355,10 @@ private final class FakeRemoteCommandRegister: RemoteCommandRegistering, @unchec
         guard commandsByToken.removeValue(forKey: ObjectIdentifier(token)) == command else {
             return
         }
-        handlers.withLock { $0.removeValue(forKey: command) }
+        handlers.withLock { store in
+            guard let handler = store.active.removeValue(forKey: command) else { return }
+            store.removed[command, default: []].append(handler)
+        }
         removedCommands.insert(command)
         removeCount += 1
     }
@@ -344,8 +367,12 @@ private final class FakeRemoteCommandRegister: RemoteCommandRegistering, @unchec
         _ command: RemotePlaybackCommand,
         payload: RemoteCommandPayload = .none
     ) -> MPRemoteCommandHandlerStatus {
-        let handler = handlers.withLock { $0[command] }
+        let handler = handlers.withLock { $0.active[command] }
         return handler?(payload) ?? .commandFailed
+    }
+
+    nonisolated func removedHandler(for command: RemotePlaybackCommand) -> RemoteCommandHandler? {
+        handlers.withLock { $0.removed[command]?.last }
     }
 }
 

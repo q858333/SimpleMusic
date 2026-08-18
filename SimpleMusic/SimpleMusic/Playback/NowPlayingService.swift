@@ -29,16 +29,19 @@ nonisolated private enum RemoteCommandPlaybackState: Sendable {
     case failed
 }
 
+/// 每次 start 使用新的引用身份，避免计数器回绕让陈旧注册重新生效。
+nonisolated private final class RemoteCommandGeneration: @unchecked Sendable {}
+
 nonisolated private struct RemoteCommandDecision: Sendable {
     let status: MPRemoteCommandHandlerStatus
-    let actionGeneration: UInt64?
+    let actionGeneration: RemoteCommandGeneration?
 }
 
 /// 后台 MediaPlayer 回调只能在锁内读取这份值状态，绝不触碰 MainActor 播放器对象。
 nonisolated private final class RemoteCommandStateCache: @unchecked Sendable {
     private struct State {
         var isStarted = false
-        var generation: UInt64 = 0
+        var generation: RemoteCommandGeneration?
         var playbackState = RemoteCommandPlaybackState.idle
         var hasTrack = false
         var queueIndex: Int?
@@ -48,15 +51,15 @@ nonisolated private final class RemoteCommandStateCache: @unchecked Sendable {
     private let lock = NSLock()
     private var state = State()
 
-    func start(generation: UInt64) {
+    func start(generation: RemoteCommandGeneration) {
         withLock {
             $0 = State(isStarted: true, generation: generation)
         }
     }
 
-    func stop(generation: UInt64) {
+    func stop() {
         withLock {
-            $0 = State(isStarted: false, generation: generation)
+            $0 = State()
         }
     }
 
@@ -77,10 +80,13 @@ nonisolated private final class RemoteCommandStateCache: @unchecked Sendable {
 
     func decision(
         for command: RemotePlaybackCommand,
-        payload: RemoteCommandPayload
+        payload: RemoteCommandPayload,
+        expectedGeneration: RemoteCommandGeneration
     ) -> RemoteCommandDecision {
         withLock { state in
-            guard state.isStarted else {
+            guard state.isStarted,
+                  let currentGeneration = state.generation,
+                  currentGeneration === expectedGeneration else {
                 return RemoteCommandDecision(status: .commandFailed, actionGeneration: nil)
             }
 
@@ -122,7 +128,7 @@ nonisolated private final class RemoteCommandStateCache: @unchecked Sendable {
                 }
             }
 
-            return RemoteCommandDecision(status: .success, actionGeneration: state.generation)
+            return RemoteCommandDecision(status: .success, actionGeneration: currentGeneration)
         }
     }
 
@@ -179,7 +185,7 @@ final class NowPlayingService {
     private var snapshotCancellable: AnyCancellable?
     private var latestSnapshot = PlaybackSnapshot()
     private var isStarted = false
-    private var lifecycleGeneration: UInt64 = 0
+    private var lifecycleGeneration: RemoteCommandGeneration?
 
     init(
         snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>,
@@ -200,13 +206,18 @@ final class NowPlayingService {
         guard !isStarted else { return }
         try audioSession.activatePlayback()
 
-        lifecycleGeneration &+= 1
+        let registrationGeneration = RemoteCommandGeneration()
+        lifecycleGeneration = registrationGeneration
         isStarted = true
-        commandState.start(generation: lifecycleGeneration)
+        commandState.start(generation: registrationGeneration)
         for command in RemotePlaybackCommand.allCases {
             let commandState = self.commandState
             commandTokens[command] = commands.addTarget(for: command) { [weak self] payload in
-                let decision = commandState.decision(for: command, payload: payload)
+                let decision = commandState.decision(
+                    for: command,
+                    payload: payload,
+                    expectedGeneration: registrationGeneration
+                )
                 guard let generation = decision.actionGeneration else {
                     return decision.status
                 }
@@ -237,9 +248,9 @@ final class NowPlayingService {
 
     func stop() {
         guard isStarted else { return }
-        lifecycleGeneration &+= 1
         isStarted = false
-        commandState.stop(generation: lifecycleGeneration)
+        lifecycleGeneration = nil
+        commandState.stop()
         snapshotCancellable?.cancel()
         snapshotCancellable = nil
         for (command, token) in commandTokens {
@@ -255,9 +266,9 @@ final class NowPlayingService {
     private func execute(
         _ command: RemotePlaybackCommand,
         payload: RemoteCommandPayload,
-        generation: UInt64
+        generation: RemoteCommandGeneration
     ) -> MPRemoteCommandHandlerStatus {
-        guard isStarted, lifecycleGeneration == generation else { return .commandFailed }
+        guard isStarted, lifecycleGeneration === generation else { return .commandFailed }
 
         switch command {
         case .play:
