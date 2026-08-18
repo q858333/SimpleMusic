@@ -18,21 +18,25 @@ struct AppRootDependencies {
     let onPrevious: () -> Void
     let onNext: () -> Void
     let onSeek: (TimeInterval) -> Void
+    let makeDownloadViewController: () -> UIViewController
+    let makeSettingsViewController: () -> UIViewController
 
     init(environment: AppEnvironment) {
-        identity = ObjectIdentifier(environment)
-        libraryViewModel = LibraryViewModel(
+        let viewModel = LibraryViewModel(
             library: environment.musicLibraryService,
             localStore: environment.localMusicStore
         )
-        snapshotPublisher = environment.playbackCoordinator.snapshotPublisher
-        onPlay = { [playbackCoordinator = environment.playbackCoordinator] queue, index in
+        let play: ([MusicTrack], Int) -> Void = { [playbackCoordinator = environment.playbackCoordinator] queue, index in
             do {
                 try playbackCoordinator.play(queue: queue, startAt: index)
             } catch {
                 NSLog("无法开始播放：%@", String(describing: error))
             }
         }
+        identity = ObjectIdentifier(environment)
+        libraryViewModel = viewModel
+        snapshotPublisher = environment.playbackCoordinator.snapshotPublisher
+        onPlay = play
         onTogglePlay = { [playbackCoordinator = environment.playbackCoordinator] in
             playbackCoordinator.togglePlay()
         }
@@ -53,6 +57,20 @@ struct AppRootDependencies {
         onSeek = { [playbackCoordinator = environment.playbackCoordinator] seconds in
             playbackCoordinator.seek(to: seconds)
         }
+        makeDownloadViewController = {
+            DownloadSheetViewController(
+                downloadManager: environment.downloadManager,
+                settingsStore: environment.settingsStore,
+                libraryViewModel: viewModel,
+                onPlay: { track in play([track], 0) }
+            )
+        }
+        makeSettingsViewController = {
+            SettingsViewController(
+                settingsStore: environment.settingsStore,
+                libraryService: environment.musicLibraryService
+            )
+        }
     }
 
     init(
@@ -63,7 +81,9 @@ struct AppRootDependencies {
         onTogglePlay: @escaping () -> Void,
         onPrevious: @escaping () -> Void = {},
         onNext: @escaping () -> Void = {},
-        onSeek: @escaping (TimeInterval) -> Void = { _ in }
+        onSeek: @escaping (TimeInterval) -> Void = { _ in },
+        makeDownloadViewController: @escaping () -> UIViewController = { UIViewController() },
+        makeSettingsViewController: @escaping () -> UIViewController = { UIViewController() }
     ) {
         self.identity = ObjectIdentifier(identity)
         self.libraryViewModel = libraryViewModel
@@ -73,6 +93,8 @@ struct AppRootDependencies {
         self.onPrevious = onPrevious
         self.onNext = onNext
         self.onSeek = onSeek
+        self.makeDownloadViewController = makeDownloadViewController
+        self.makeSettingsViewController = makeSettingsViewController
     }
 }
 
@@ -151,6 +173,7 @@ final class AppCoordinator {
         dependencies: AppRootDependencies
     ) -> MainViewControllerFactory {
         { kind in
+            let root: UIViewController
             switch kind {
             case .phone:
                 let controller = MainTabBarController(dependencies: dependencies)
@@ -163,11 +186,45 @@ final class AppCoordinator {
                     }
                     controller.present(player, animated: true)
                 }
-                return controller
+                root = controller
             case .pad:
-                return PadRootViewController(dependencies: dependencies)
+                root = PadRootViewController(dependencies: dependencies)
+            }
+            root.loadViewIfNeeded()
+            wireLibraryActions(in: root, dependencies: dependencies)
+            return root
+        }
+    }
+
+    private static func wireLibraryActions(
+        in root: UIViewController,
+        dependencies: AppRootDependencies
+    ) {
+        guard let library = descendantLibraryController(in: root) else { return }
+        library.onDownload = { [weak library] in
+            guard let library, library.presentedViewController == nil else { return }
+            let content = dependencies.makeDownloadViewController()
+            let navigation = UINavigationController(rootViewController: content)
+            navigation.modalPresentationStyle = .pageSheet
+            library.present(navigation, animated: true)
+        }
+        library.onSettings = { [weak library] in
+            guard let library else { return }
+            let settings = dependencies.makeSettingsViewController()
+            if let navigation = library.navigationController {
+                navigation.pushViewController(settings, animated: true)
+            } else {
+                library.present(UINavigationController(rootViewController: settings), animated: true)
             }
         }
+    }
+
+    private static func descendantLibraryController(in root: UIViewController) -> LibraryViewController? {
+        if let library = root as? LibraryViewController { return library }
+        for child in root.children {
+            if let library = descendantLibraryController(in: child) { return library }
+        }
+        return nil
     }
 
     private static func makePlayerViewController(

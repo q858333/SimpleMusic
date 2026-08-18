@@ -20,6 +20,7 @@
 		D80000000000000000000001 /* AppCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D80000000000000000000002 /* AppCoordinatorTests.swift */; };
 		E90000000000000000000001 /* LibraryViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90000000000000000000002 /* LibraryViewModelTests.swift */; };
 		F10000000000000000000001 /* PlayerViewControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* PlayerViewControllerTests.swift */; };
+		F20000000000000000000001 /* DownloadAndSettingsFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000002 /* DownloadAndSettingsFlowTests.swift */; };
 		BC6F521D00C13F6116232C2D /* Pods_SimpleMusic.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6A34C52A1ABF5C26C9601CDD /* Pods_SimpleMusic.framework */; };
 /* End PBXBuildFile section */
 
@@ -51,6 +52,7 @@
 		D80000000000000000000002 /* AppCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinatorTests.swift; sourceTree = "<group>"; };
 		E90000000000000000000002 /* LibraryViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryViewModelTests.swift; sourceTree = "<group>"; };
 		F10000000000000000000002 /* PlayerViewControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerViewControllerTests.swift; sourceTree = "<group>"; };
+		F20000000000000000000002 /* DownloadAndSettingsFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadAndSettingsFlowTests.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5D /* SimpleMusicTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SimpleMusicTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -140,6 +142,7 @@
 				D80000000000000000000002 /* AppCoordinatorTests.swift */,
 				E90000000000000000000002 /* LibraryViewModelTests.swift */,
 				F10000000000000000000002 /* PlayerViewControllerTests.swift */,
+				F20000000000000000000002 /* DownloadAndSettingsFlowTests.swift */,
 			);
 			path = SimpleMusicTests;
 			sourceTree = "<group>";
@@ -318,6 +321,7 @@
 				D80000000000000000000001 /* AppCoordinatorTests.swift in Sources */,
 				E90000000000000000000001 /* LibraryViewModelTests.swift in Sources */,
 				F10000000000000000000001 /* PlayerViewControllerTests.swift in Sources */,
+				F20000000000000000000001 /* DownloadAndSettingsFlowTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

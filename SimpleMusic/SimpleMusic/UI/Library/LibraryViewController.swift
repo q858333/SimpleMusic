@@ -6,6 +6,8 @@ import UIKit
 final class LibraryViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegate {
     let viewModel: LibraryViewModel
     var onSelectTrack: (([MusicTrack], Int) -> Void)?
+    var onDownload: (() -> Void)?
+    var onSettings: (() -> Void)?
 
     private var collectionView: UICollectionView!
     private var sections = [Section]()
@@ -26,9 +28,44 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
         title = "资料库"
         navigationController?.navigationBar.prefersLargeTitles = true
         view.backgroundColor = Theme.background
+        configureNavigationActions()
         buildCollectionView()
         bindViewModel()
         rebuildSections()
+    }
+
+    private func configureNavigationActions() {
+        let download = navigationButton(
+            symbol: "arrow.down.circle",
+            accessibilityLabel: "下载音频",
+            action: { [weak self] in self?.onDownload?() }
+        )
+        let settings = navigationButton(
+            symbol: "gearshape",
+            accessibilityLabel: "打开设置",
+            action: { [weak self] in self?.onSettings?() }
+        )
+        navigationItem.rightBarButtonItems = [
+            UIBarButtonItem(customView: settings),
+            UIBarButtonItem(customView: download)
+        ]
+    }
+
+    private func navigationButton(
+        symbol: String,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> UIButton {
+        var configuration = UIButton.Configuration.plain()
+        configuration.image = UIImage(systemName: symbol)
+        configuration.baseForegroundColor = Theme.accent
+        let button = UIButton(configuration: configuration)
+        button.accessibilityLabel = accessibilityLabel
+        button.addAction(UIAction { _ in action() }, for: .touchUpInside)
+        button.snp.makeConstraints { make in
+            make.width.height.greaterThanOrEqualTo(44)
+        }
+        return button
     }
 
     func numberOfSections(in collectionView: UICollectionView) -> Int {
