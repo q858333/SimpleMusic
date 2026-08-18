@@ -15,6 +15,9 @@ struct AppRootDependencies {
     let snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>
     let onPlay: ([MusicTrack], Int) -> Void
     let onTogglePlay: () -> Void
+    let onPrevious: () -> Void
+    let onNext: () -> Void
+    let onSeek: (TimeInterval) -> Void
 
     init(environment: AppEnvironment) {
         identity = ObjectIdentifier(environment)
@@ -33,6 +36,23 @@ struct AppRootDependencies {
         onTogglePlay = { [playbackCoordinator = environment.playbackCoordinator] in
             playbackCoordinator.togglePlay()
         }
+        onPrevious = { [playbackCoordinator = environment.playbackCoordinator] in
+            do {
+                try playbackCoordinator.previous()
+            } catch {
+                NSLog("无法播放上一首：%@", String(describing: error))
+            }
+        }
+        onNext = { [playbackCoordinator = environment.playbackCoordinator] in
+            do {
+                try playbackCoordinator.next()
+            } catch {
+                NSLog("无法播放下一首：%@", String(describing: error))
+            }
+        }
+        onSeek = { [playbackCoordinator = environment.playbackCoordinator] seconds in
+            playbackCoordinator.seek(to: seconds)
+        }
     }
 
     init(
@@ -40,13 +60,19 @@ struct AppRootDependencies {
         libraryViewModel: LibraryViewModel,
         snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>,
         onPlay: @escaping ([MusicTrack], Int) -> Void,
-        onTogglePlay: @escaping () -> Void
+        onTogglePlay: @escaping () -> Void,
+        onPrevious: @escaping () -> Void = {},
+        onNext: @escaping () -> Void = {},
+        onSeek: @escaping (TimeInterval) -> Void = { _ in }
     ) {
         self.identity = ObjectIdentifier(identity)
         self.libraryViewModel = libraryViewModel
         self.snapshotPublisher = snapshotPublisher
         self.onPlay = onPlay
         self.onTogglePlay = onTogglePlay
+        self.onPrevious = onPrevious
+        self.onNext = onNext
+        self.onSeek = onSeek
     }
 }
 
@@ -81,19 +107,13 @@ final class AppCoordinator {
         environment: AppEnvironment,
         userInterfaceIdiom: UIUserInterfaceIdiom
     ) {
+        let dependencies = AppRootDependencies(environment: environment)
         self.init(
             window: window,
             authorizationStatus: { environment.musicLibraryService.authorizationStatus },
             requestAuthorization: { await environment.musicLibraryService.requestAuthorization() },
             rootKind: Self.rootKind(for: userInterfaceIdiom),
-            makeMainViewController: { kind in
-                switch kind {
-                case .phone:
-                    return MainTabBarController(environment: environment)
-                case .pad:
-                    return PadRootViewController(environment: environment)
-                }
-            }
+            makeMainViewController: Self.makeMainViewControllerFactory(dependencies: dependencies)
         )
     }
 
@@ -133,11 +153,33 @@ final class AppCoordinator {
         { kind in
             switch kind {
             case .phone:
-                return MainTabBarController(dependencies: dependencies)
+                let controller = MainTabBarController(dependencies: dependencies)
+                controller.onOpenPlayer = { [weak controller] in
+                    guard let controller, controller.presentedViewController == nil else { return }
+                    let player = Self.makePlayerViewController(dependencies: dependencies)
+                    player.modalPresentationStyle = .fullScreen
+                    player.onDismiss = { [weak player] in
+                        player?.dismiss(animated: true)
+                    }
+                    controller.present(player, animated: true)
+                }
+                return controller
             case .pad:
                 return PadRootViewController(dependencies: dependencies)
             }
         }
+    }
+
+    private static func makePlayerViewController(
+        dependencies: AppRootDependencies
+    ) -> PlayerViewController {
+        PlayerViewController(
+            snapshotPublisher: dependencies.snapshotPublisher,
+            onTogglePlay: dependencies.onTogglePlay,
+            onPrevious: dependencies.onPrevious,
+            onNext: dependencies.onNext,
+            onSeek: dependencies.onSeek
+        )
     }
 
     private func showPermission() {

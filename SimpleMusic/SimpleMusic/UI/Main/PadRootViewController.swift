@@ -43,10 +43,16 @@ final class PadRootViewController: UIViewController {
     }
 
     convenience init(dependencies: AppRootDependencies) {
-        let nowPlayingContainer = UIViewController()
-        nowPlayingContainer.view.backgroundColor = Theme.background
+        let player = PlayerViewController(
+            snapshotPublisher: dependencies.snapshotPublisher,
+            onTogglePlay: dependencies.onTogglePlay,
+            onPrevious: dependencies.onPrevious,
+            onNext: dependencies.onNext,
+            onSeek: dependencies.onSeek
+        )
+        let panel = NowPlayingPanelController(playerViewController: player)
         self.init(
-            nowPlayingViewController: nowPlayingContainer,
+            nowPlayingViewController: panel,
             libraryViewModel: dependencies.libraryViewModel,
             snapshotPublisher: dependencies.snapshotPublisher,
             onPlay: dependencies.onPlay,
@@ -54,6 +60,7 @@ final class PadRootViewController: UIViewController {
             onOpenPlayer: {},
             dependencyIdentity: dependencies.identity
         )
+        onOpenPlayer = { [weak panel] in panel?.show() }
     }
 
     /// 保留 Task 8 注入点，后续完整播放页仍可使用同一 child containment 边界。
@@ -127,12 +134,15 @@ final class PadRootViewController: UIViewController {
     private func installNowPlayingChild() {
         // UIKit child containment 顺序必须是 addChild → 挂载 view → didMove。
         addChild(nowPlayingViewController)
-        contentView.addSubview(nowPlayingViewController.view)
+        let hostView = nowPlayingViewController is NowPlayingPanelController ? view! : contentView
+        hostView.addSubview(nowPlayingViewController.view)
         nowPlayingViewController.view.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
         nowPlayingViewController.didMove(toParent: self)
-        nowPlayingViewController.view.isHidden = libraryViewModel != nil
+        if !(nowPlayingViewController is NowPlayingPanelController) {
+            nowPlayingViewController.view.isHidden = libraryViewModel != nil
+        }
     }
 
     private func buildSidebar() {
