@@ -1,9 +1,10 @@
 import AVFAudio
 import Combine
+import Foundation
 import MediaPlayer
 import UIKit
 
-enum RemotePlaybackCommand: CaseIterable, Hashable, Sendable {
+nonisolated enum RemotePlaybackCommand: CaseIterable, Hashable, Sendable {
     case play
     case pause
     case next
@@ -11,14 +12,126 @@ enum RemotePlaybackCommand: CaseIterable, Hashable, Sendable {
     case changePlaybackPosition
 }
 
-enum RemoteCommandPayload: Sendable {
+nonisolated enum RemoteCommandPayload: Sendable {
     case none
     case position(TimeInterval)
 }
 
-typealias RemoteCommandHandler = @MainActor @Sendable (
+typealias RemoteCommandHandler = @Sendable (
     RemoteCommandPayload
 ) -> MPRemoteCommandHandlerStatus
+
+nonisolated private enum RemoteCommandPlaybackState: Sendable {
+    case idle
+    case loading
+    case playing
+    case paused
+    case failed
+}
+
+nonisolated private struct RemoteCommandDecision: Sendable {
+    let status: MPRemoteCommandHandlerStatus
+    let actionGeneration: UInt64?
+}
+
+/// 后台 MediaPlayer 回调只能在锁内读取这份值状态，绝不触碰 MainActor 播放器对象。
+nonisolated private final class RemoteCommandStateCache: @unchecked Sendable {
+    private struct State {
+        var isStarted = false
+        var generation: UInt64 = 0
+        var playbackState = RemoteCommandPlaybackState.idle
+        var hasTrack = false
+        var queueIndex: Int?
+        var queueCount = 0
+    }
+
+    private let lock = NSLock()
+    private var state = State()
+
+    func start(generation: UInt64) {
+        withLock {
+            $0 = State(isStarted: true, generation: generation)
+        }
+    }
+
+    func stop(generation: UInt64) {
+        withLock {
+            $0 = State(isStarted: false, generation: generation)
+        }
+    }
+
+    func update(
+        playbackState: RemoteCommandPlaybackState,
+        hasTrack: Bool,
+        queueIndex: Int?,
+        queueCount: Int
+    ) {
+        withLock {
+            guard $0.isStarted else { return }
+            $0.playbackState = playbackState
+            $0.hasTrack = hasTrack
+            $0.queueIndex = queueIndex
+            $0.queueCount = queueCount
+        }
+    }
+
+    func decision(
+        for command: RemotePlaybackCommand,
+        payload: RemoteCommandPayload
+    ) -> RemoteCommandDecision {
+        withLock { state in
+            guard state.isStarted else {
+                return RemoteCommandDecision(status: .commandFailed, actionGeneration: nil)
+            }
+
+            switch command {
+            case .play:
+                guard state.hasTrack, state.playbackState != .idle else {
+                    return RemoteCommandDecision(status: .noSuchContent, actionGeneration: nil)
+                }
+                if state.playbackState == .playing {
+                    return RemoteCommandDecision(status: .success, actionGeneration: nil)
+                }
+                guard state.playbackState == .paused else {
+                    return RemoteCommandDecision(status: .commandFailed, actionGeneration: nil)
+                }
+            case .pause:
+                guard state.hasTrack, state.playbackState != .idle else {
+                    return RemoteCommandDecision(status: .noSuchContent, actionGeneration: nil)
+                }
+                if state.playbackState == .paused {
+                    return RemoteCommandDecision(status: .success, actionGeneration: nil)
+                }
+                guard state.playbackState == .playing else {
+                    return RemoteCommandDecision(status: .commandFailed, actionGeneration: nil)
+                }
+            case .next, .previous:
+                guard state.hasTrack,
+                      state.playbackState != .idle,
+                      state.queueIndex != nil,
+                      state.queueCount > 0 else {
+                    return RemoteCommandDecision(status: .noSuchContent, actionGeneration: nil)
+                }
+            case .changePlaybackPosition:
+                guard case let .position(position) = payload,
+                      position.isFinite,
+                      position >= 0,
+                      state.hasTrack,
+                      state.playbackState == .playing || state.playbackState == .paused else {
+                    return RemoteCommandDecision(status: .commandFailed, actionGeneration: nil)
+                }
+            }
+
+            return RemoteCommandDecision(status: .success, actionGeneration: state.generation)
+        }
+    }
+
+    private func withLock<Result>(_ body: (inout State) -> Result) -> Result {
+        lock.lock()
+        defer { lock.unlock() }
+        return body(&state)
+    }
+}
 
 /// 隔离 MPRemoteCommandCenter 的 target 生命周期，使注册和清理可独立验证。
 @MainActor
@@ -61,10 +174,12 @@ final class NowPlayingService {
     private let infoCenter: any NowPlayingInfoWriting
     private let audioSession: any PlaybackAudioSessionConfiguring
     private let controls: NowPlayingControls
+    private let commandState = RemoteCommandStateCache()
     private var commandTokens = [RemotePlaybackCommand: AnyObject]()
     private var snapshotCancellable: AnyCancellable?
     private var latestSnapshot = PlaybackSnapshot()
     private var isStarted = false
+    private var lifecycleGeneration: UInt64 = 0
 
     init(
         snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>,
@@ -85,10 +200,30 @@ final class NowPlayingService {
         guard !isStarted else { return }
         try audioSession.activatePlayback()
 
+        lifecycleGeneration &+= 1
         isStarted = true
+        commandState.start(generation: lifecycleGeneration)
         for command in RemotePlaybackCommand.allCases {
+            let commandState = self.commandState
             commandTokens[command] = commands.addTarget(for: command) { [weak self] payload in
-                self?.handle(command, payload: payload) ?? .commandFailed
+                let decision = commandState.decision(for: command, payload: payload)
+                guard let generation = decision.actionGeneration else {
+                    return decision.status
+                }
+
+                if Thread.isMainThread {
+                    // iOS 的 MainActor 运行在主线程；仅此已验证分支允许同步返回真实控制结果。
+                    return MainActor.assumeIsolated {
+                        self?.execute(command, payload: payload, generation: generation)
+                            ?? .commandFailed
+                    }
+                }
+
+                // 后台 handler 绝不等待主线程；缓存已决定返回值，真实动作异步投递。
+                Task { @MainActor [weak self] in
+                    _ = self?.execute(command, payload: payload, generation: generation)
+                }
+                return decision.status
             }
         }
 
@@ -102,53 +237,71 @@ final class NowPlayingService {
 
     func stop() {
         guard isStarted else { return }
+        lifecycleGeneration &+= 1
+        isStarted = false
+        commandState.stop(generation: lifecycleGeneration)
         snapshotCancellable?.cancel()
         snapshotCancellable = nil
         for (command, token) in commandTokens {
             commands.removeTarget(token, for: command)
         }
         commandTokens.removeAll()
-        isStarted = false
     }
 
     isolated deinit {
         stop()
     }
 
-    private func handle(
+    private func execute(
         _ command: RemotePlaybackCommand,
-        payload: RemoteCommandPayload
+        payload: RemoteCommandPayload,
+        generation: UInt64
     ) -> MPRemoteCommandHandlerStatus {
-        guard latestSnapshot.track != nil, latestSnapshot.status != .idle else {
-            return .noSuchContent
-        }
+        guard isStarted, lifecycleGeneration == generation else { return .commandFailed }
 
         switch command {
         case .play:
+            guard latestSnapshot.track != nil, latestSnapshot.status != .idle else {
+                return .noSuchContent
+            }
             guard latestSnapshot.status == .paused else {
                 return latestSnapshot.status == .playing ? .success : .commandFailed
             }
             controls.play()
             return .success
         case .pause:
+            guard latestSnapshot.track != nil, latestSnapshot.status != .idle else {
+                return .noSuchContent
+            }
             guard latestSnapshot.status == .playing else {
                 return latestSnapshot.status == .paused ? .success : .commandFailed
             }
             controls.pause()
             return .success
         case .next:
+            guard hasCurrentQueueItem else { return .noSuchContent }
             return runThrowingControl(controls.next)
         case .previous:
+            guard hasCurrentQueueItem else { return .noSuchContent }
             return runThrowingControl(controls.previous)
         case .changePlaybackPosition:
             guard case let .position(position) = payload,
                   position.isFinite,
-                  position >= 0 else {
+                  position >= 0,
+                  latestSnapshot.track != nil,
+                  latestSnapshot.status == .playing || latestSnapshot.status == .paused else {
                 return .commandFailed
             }
             controls.seek(position)
             return .success
         }
+    }
+
+    private var hasCurrentQueueItem: Bool {
+        latestSnapshot.track != nil
+            && latestSnapshot.status != .idle
+            && latestSnapshot.queueIndex != nil
+            && latestSnapshot.queueCount > 0
     }
 
     private func runThrowingControl(_ control: () throws -> Void) -> MPRemoteCommandHandlerStatus {
@@ -162,6 +315,12 @@ final class NowPlayingService {
 
     private func consume(_ snapshot: PlaybackSnapshot) {
         latestSnapshot = snapshot
+        commandState.update(
+            playbackState: remoteCommandState(for: snapshot.status),
+            hasTrack: snapshot.track != nil,
+            queueIndex: snapshot.queueIndex,
+            queueCount: snapshot.queueCount
+        )
         guard snapshot.status != .idle, let track = snapshot.track else {
             infoCenter.nowPlayingInfo = nil
             return
@@ -184,6 +343,21 @@ final class NowPlayingService {
         }
         infoCenter.nowPlayingInfo = info
     }
+
+    private func remoteCommandState(for status: PlaybackStatus) -> RemoteCommandPlaybackState {
+        switch status {
+        case .idle:
+            .idle
+        case .loading:
+            .loading
+        case .playing:
+            .playing
+        case .paused:
+            .paused
+        case .failed:
+            .failed
+        }
+    }
 }
 
 @MainActor
@@ -205,9 +379,7 @@ final class SystemRemoteCommandRegister: RemoteCommandRegistering {
             } else {
                 payload = .none
             }
-            return Self.runOnMainActor {
-                handler(payload)
-            }
+            return handler(payload)
         } as AnyObject
     }
 
@@ -230,17 +402,6 @@ final class SystemRemoteCommandRegister: RemoteCommandRegistering {
         }
     }
 
-    /// MediaPlayer 不保证回调队列；同步切回主线程才能安全读取 MainActor 播放状态并返回结果。
-    private nonisolated static func runOnMainActor<T: Sendable>(
-        _ operation: @escaping @MainActor @Sendable () -> T
-    ) -> T {
-        if Thread.isMainThread {
-            return MainActor.assumeIsolated(operation)
-        }
-        return DispatchQueue.main.sync {
-            MainActor.assumeIsolated(operation)
-        }
-    }
 }
 
 extension MPNowPlayingInfoCenter: NowPlayingInfoWriting {}

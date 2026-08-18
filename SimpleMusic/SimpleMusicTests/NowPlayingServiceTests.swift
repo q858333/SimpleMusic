@@ -34,6 +34,51 @@ final class NowPlayingServiceTests: XCTestCase {
         ])
     }
 
+    /// 后台系统回调不能等待被测试占用的主线程；动作应在主线程恢复后只执行一次。
+    func testOffMainCommandReturnsBeforeMainActorDrainsThenExecutesOnce() async throws {
+        let harness = makeHarness(initial: snapshot(status: .paused))
+        let returned = expectation(description: "后台 handler 已返回")
+        let action = expectation(description: "MainActor 执行控制动作")
+        let returnedStatus = LockedValue<MPRemoteCommandHandlerStatus?>(nil)
+        harness.controls.onEvent = { _ in action.fulfill() }
+        try harness.sut.start()
+        let commands = harness.commands
+
+        DispatchQueue.global().async {
+            returnedStatus.withLock { value in
+                value = commands.invoke(.play)
+            }
+            returned.fulfill()
+        }
+
+        XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 1), .completed)
+        XCTAssertTrue(harness.controls.events.isEmpty)
+        await fulfillment(of: [action], timeout: 1)
+        XCTAssertEqual(returnedStatus.value, .success)
+        XCTAssertEqual(harness.controls.events, [.play])
+    }
+
+    /// stop 后即使队列中已有 MainActor 动作，也不能再触发协调器控制。
+    func testQueuedOffMainCommandDoesNotExecuteAfterStop() async throws {
+        let harness = makeHarness(initial: snapshot(status: .paused))
+        let returned = expectation(description: "后台 handler 已返回")
+        let action = expectation(description: "stop 后不应执行")
+        action.isInverted = true
+        harness.controls.onEvent = { _ in action.fulfill() }
+        try harness.sut.start()
+        let commands = harness.commands
+
+        DispatchQueue.global().async {
+            _ = commands.invoke(.play)
+            returned.fulfill()
+        }
+
+        XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 1), .completed)
+        harness.sut.stop()
+        await fulfillment(of: [action], timeout: 0.2)
+        XCTAssertTrue(harness.controls.events.isEmpty)
+    }
+
     /// 若协调器切歌失败仍回报成功，系统会误以为远程命令已执行。
     func testThrowingPlaybackControlReturnsCommandFailed() throws {
         let harness = makeHarness(initial: snapshot(status: .playing))
@@ -50,8 +95,29 @@ final class NowPlayingServiceTests: XCTestCase {
         try harness.sut.start()
 
         XCTAssertEqual(harness.commands.invoke(.play), .noSuchContent)
+        XCTAssertEqual(
+            harness.commands.invoke(.changePlaybackPosition, payload: .position(12)),
+            .commandFailed
+        )
         harness.snapshots.send(snapshot(status: .playing))
         XCTAssertEqual(harness.commands.invoke(.changePlaybackPosition), .commandFailed)
+    }
+
+    /// 加载或失败状态没有稳定播放时间，拖动进度必须失败且不能调用 seek。
+    func testChangePositionRejectsLoadingAndFailedSnapshots() throws {
+        let harness = makeHarness(initial: snapshot(status: .loading))
+        try harness.sut.start()
+
+        XCTAssertEqual(
+            harness.commands.invoke(.changePlaybackPosition, payload: .position(18)),
+            .commandFailed
+        )
+        harness.snapshots.send(snapshot(status: .failed("offline")))
+        XCTAssertEqual(
+            harness.commands.invoke(.changePlaybackPosition, payload: .position(24)),
+            .commandFailed
+        )
+        XCTAssertTrue(harness.controls.events.isEmpty)
     }
 
     /// 若暂停、失败或加载状态发布非零速率，锁屏会错误显示仍在播放。
@@ -245,8 +311,8 @@ private struct TestHarness {
 }
 
 @MainActor
-private final class FakeRemoteCommandRegister: RemoteCommandRegistering {
-    private var handlers = [RemotePlaybackCommand: RemoteCommandHandler]()
+private final class FakeRemoteCommandRegister: RemoteCommandRegistering, @unchecked Sendable {
+    private nonisolated let handlers = LockedValue([RemotePlaybackCommand: RemoteCommandHandler]())
     private var commandsByToken = [ObjectIdentifier: RemotePlaybackCommand]()
     private(set) var addedCommands = Set<RemotePlaybackCommand>()
     private(set) var removedCommands = Set<RemotePlaybackCommand>()
@@ -258,7 +324,7 @@ private final class FakeRemoteCommandRegister: RemoteCommandRegistering {
         handler: @escaping RemoteCommandHandler
     ) -> AnyObject {
         let token = NSObject()
-        handlers[command] = handler
+        handlers.withLock { $0[command] = handler }
         commandsByToken[ObjectIdentifier(token)] = command
         addedCommands.insert(command)
         addCount += 1
@@ -269,16 +335,17 @@ private final class FakeRemoteCommandRegister: RemoteCommandRegistering {
         guard commandsByToken.removeValue(forKey: ObjectIdentifier(token)) == command else {
             return
         }
-        handlers.removeValue(forKey: command)
+        handlers.withLock { $0.removeValue(forKey: command) }
         removedCommands.insert(command)
         removeCount += 1
     }
 
-    func invoke(
+    nonisolated func invoke(
         _ command: RemotePlaybackCommand,
         payload: RemoteCommandPayload = .none
     ) -> MPRemoteCommandHandlerStatus {
-        handlers[command]?(payload) ?? .commandFailed
+        let handler = handlers.withLock { $0[command] }
+        return handler?(payload) ?? .commandFailed
     }
 }
 
@@ -308,23 +375,49 @@ private final class FakePlaybackControls {
 
     var events = [Event]()
     var error: Error?
+    var onEvent: ((Event) -> Void)?
 
     var controls: NowPlayingControls {
         NowPlayingControls(
-            play: { [weak self] in self?.events.append(.play) },
-            pause: { [weak self] in self?.events.append(.pause) },
+            play: { [weak self] in self?.record(.play) },
+            pause: { [weak self] in self?.record(.pause) },
             next: { [weak self] in
                 guard let self else { return }
                 if let error { throw error }
-                events.append(.next)
+                record(.next)
             },
             previous: { [weak self] in
                 guard let self else { return }
                 if let error { throw error }
-                events.append(.previous)
+                record(.previous)
             },
-            seek: { [weak self] elapsed in self?.events.append(.seek(elapsed)) }
+            seek: { [weak self] elapsed in self?.record(.seek(elapsed)) }
         )
+    }
+
+    private func record(_ event: Event) {
+        events.append(event)
+        onEvent?(event)
+    }
+}
+
+private final class LockedValue<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedValue: Value
+
+    init(_ value: Value) {
+        storedValue = value
+    }
+
+    var value: Value {
+        withLock { $0 }
+    }
+
+    @discardableResult
+    func withLock<Result>(_ body: (inout Value) -> Result) -> Result {
+        lock.lock()
+        defer { lock.unlock() }
+        return body(&storedValue)
     }
 }
 
