@@ -265,7 +265,17 @@ final class SystemPlaybackBackend: NSObject, PlaybackBackend {
     }
 
     func seek(to seconds: TimeInterval) {
-        driver.seek(to: max(0, seconds))
+        let target = max(0, seconds)
+        if var activePlayback {
+            let driverDuration = Self.finiteSeconds(driver.currentDuration)
+            let duration = driverDuration > 0 ? driverDuration : activePlayback.loadedDuration
+            if !Self.isAtTrackEnd(elapsed: target, duration: duration) {
+                activePlayback.lastElapsed = target
+                clearEndEvidence(&activePlayback)
+                self.activePlayback = activePlayback
+            }
+        }
+        driver.seek(to: target)
     }
 
     private func publishProgress() {
@@ -274,9 +284,8 @@ final class SystemPlaybackBackend: NSObject, PlaybackBackend {
         let elapsed = Self.finiteSeconds(driver.currentPlaybackTime)
         let duration = Self.finiteSeconds(driver.currentDuration)
         activePlayback.lastElapsed = elapsed
-        if Self.isAtTrackEnd(elapsed: elapsed, duration: duration) {
-            activePlayback.reachedTrackEnd = true
-        } else {
+        activePlayback.reachedTrackEnd = Self.isAtTrackEnd(elapsed: elapsed, duration: duration)
+        if !activePlayback.reachedTrackEnd {
             // stopped 后仍有当前 persistentID 的中段进度，说明该通知属于旧播放实例。
             activePlayback.observedItemRemoval = false
             activePlayback.observedStopped = false
@@ -305,7 +314,6 @@ final class SystemPlaybackBackend: NSObject, PlaybackBackend {
         case .stopped where activePlayback.observedPlaying
             && (driver.currentPersistentID == activePlayback.persistentID
                 || driver.currentPersistentID == nil):
-            updateEndEvidence(&activePlayback)
             activePlayback.observedStopped = true
         default:
             break
@@ -323,7 +331,6 @@ final class SystemPlaybackBackend: NSObject, PlaybackBackend {
               activePlayback.persistentID == persistentID,
               activePlayback.observedPlaying,
               driver.currentPersistentID == nil else { return }
-        updateEndEvidence(&activePlayback)
         activePlayback.observedItemRemoval = true
         self.activePlayback = activePlayback
         finishIfEvidenceIsComplete()
@@ -371,16 +378,10 @@ final class SystemPlaybackBackend: NSObject, PlaybackBackend {
         timerOwner.invalidate()
     }
 
-    private func updateEndEvidence(_ activePlayback: inout ActivePlayback) {
-        let elapsed = max(
-            activePlayback.lastElapsed,
-            Self.finiteSeconds(driver.currentPlaybackTime)
-        )
-        let driverDuration = Self.finiteSeconds(driver.currentDuration)
-        let duration = driverDuration > 0 ? driverDuration : activePlayback.loadedDuration
-        if Self.isAtTrackEnd(elapsed: elapsed, duration: duration) {
-            activePlayback.reachedTrackEnd = true
-        }
+    private func clearEndEvidence(_ activePlayback: inout ActivePlayback) {
+        activePlayback.reachedTrackEnd = false
+        activePlayback.observedItemRemoval = false
+        activePlayback.observedStopped = false
     }
 
     private static func isAtTrackEnd(elapsed: TimeInterval, duration: TimeInterval) -> Bool {

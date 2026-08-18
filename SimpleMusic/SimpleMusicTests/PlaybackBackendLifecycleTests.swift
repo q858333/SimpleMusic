@@ -135,6 +135,58 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
         XCTAssertTrue(harness.delegate.finishedGenerations.isEmpty)
     }
 
+    /// 末尾 tick 后回到中段时，最新进度必须撤销旧末尾证据。
+    func testSystemBackendDoesNotReuseEndEvidenceAfterMiddleProgress() throws {
+        let harness = SystemBackendHarness()
+        let generation = PlaybackGeneration(rawValue: 36)
+        try harness.backend.load(systemTrack(id: 36), generation: generation)
+        harness.backend.play()
+        harness.driver.publishPlaying(persistentID: 36)
+        harness.driver.currentPlaybackTime = 59.2
+        harness.driver.currentDuration = 60
+        harness.timer.fire()
+
+        harness.driver.currentPlaybackTime = 42
+        harness.timer.fire()
+        harness.driver.publishStopped()
+        harness.driver.publishItemChange(persistentID: nil)
+
+        XCTAssertTrue(harness.delegate.finishedGenerations.isEmpty)
+    }
+
+    /// seek 离开末尾窗口时，旧末尾 tick 不能继续参与完成判定。
+    func testSystemBackendDoesNotReuseEndEvidenceAfterSeekingToMiddle() throws {
+        let harness = SystemBackendHarness()
+        let generation = PlaybackGeneration(rawValue: 37)
+        try harness.backend.load(systemTrack(id: 37), generation: generation)
+        harness.backend.play()
+        harness.driver.publishPlaying(persistentID: 37)
+        harness.driver.currentPlaybackTime = 59.2
+        harness.driver.currentDuration = 60
+        harness.timer.fire()
+
+        harness.backend.seek(to: 42)
+        harness.driver.publishStopped()
+        harness.driver.publishItemChange(persistentID: nil)
+
+        XCTAssertTrue(harness.delegate.finishedGenerations.isEmpty)
+    }
+
+    /// seek 到末尾本身不是自然结束进度；仍须后续 timer 确认。
+    func testSystemBackendSeekToEndDoesNotCreateEndEvidence() throws {
+        let harness = SystemBackendHarness()
+        let generation = PlaybackGeneration(rawValue: 38)
+        try harness.backend.load(systemTrack(id: 38), generation: generation)
+        harness.backend.play()
+        harness.driver.publishPlaying(persistentID: 38)
+
+        harness.backend.seek(to: 59.2)
+        harness.driver.publishStopped()
+        harness.driver.publishItemChange(persistentID: nil)
+
+        XCTAssertTrue(harness.delegate.finishedGenerations.isEmpty)
+    }
+
     /// 外部 stop 即使发生在末尾窗口，只要没有 item removal 就不能完成。
     func testSystemBackendExternalStopWithoutItemRemovalDoesNotFinish() throws {
         let harness = SystemBackendHarness()
