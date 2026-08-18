@@ -94,6 +94,56 @@ final class PlayerViewControllerTests: XCTestCase {
         XCTAssertFalse(next.isEnabled)
     }
 
+    /// 如果控件可用状态没有遵循协调器各动作的真实状态分支，此测试应失败。
+    func testPlaybackControlAvailabilityMatchesCoordinatorActionSemantics() async throws {
+        let track = makeTrack()
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot())
+        let sut = makePlayer(snapshots: snapshots)
+        sut.loadViewIfNeeded()
+        let previous = try XCTUnwrap(findView(identifier: "player.previous", in: sut.view) as? UIButton)
+        let toggle = try XCTUnwrap(findView(identifier: "player.toggle", in: sut.view) as? UIButton)
+        let next = try XCTUnwrap(findView(identifier: "player.next", in: sut.view) as? UIButton)
+        let slider = try XCTUnwrap(findView(identifier: "player.progress", in: sut.view) as? UISlider)
+        let scenarios: [(
+            name: String,
+            status: PlaybackStatus,
+            index: Int,
+            count: Int,
+            previous: Bool,
+            toggle: Bool,
+            next: Bool,
+            seek: Bool
+        )] = [
+            ("loading", .loading, 0, 2, true, false, true, false),
+            ("playing", .playing, 0, 2, true, true, true, true),
+            ("paused", .paused, 0, 2, true, true, true, true),
+            ("failed-first", .failed("失败"), 0, 2, false, false, true, false),
+            ("failed-middle", .failed("失败"), 1, 3, true, false, true, false)
+        ]
+
+        for scenario in scenarios {
+            snapshots.send(PlaybackSnapshot(
+                status: scenario.status,
+                track: track,
+                elapsed: 10,
+                duration: 100,
+                queueIndex: scenario.index,
+                queueCount: scenario.count
+            ))
+            await waitUntil {
+                previous.isEnabled == scenario.previous
+                    && toggle.isEnabled == scenario.toggle
+                    && next.isEnabled == scenario.next
+                    && slider.isEnabled == scenario.seek
+            }
+
+            XCTAssertEqual(previous.isEnabled, scenario.previous, scenario.name)
+            XCTAssertEqual(toggle.isEnabled, scenario.toggle, scenario.name)
+            XCTAssertEqual(next.isEnabled, scenario.next, scenario.name)
+            XCTAssertEqual(slider.isEnabled, scenario.seek, scenario.name)
+        }
+    }
+
     /// 如果拖动期间快照把滑块抢回，或结束拖动没有 seek，此测试应失败。
     func testSeekingKeepsDraggedValueUntilReleaseThenSeeks() async throws {
         let track = makeTrack()

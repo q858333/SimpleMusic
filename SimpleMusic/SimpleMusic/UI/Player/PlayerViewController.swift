@@ -298,7 +298,7 @@ final class PlayerViewController: UIViewController {
             UIImage(systemName: isPlaying ? "pause.fill" : "play.fill"),
             for: .normal
         )
-        setPlaybackControlsEnabled(snapshot.queueIndex != nil)
+        updateControlAvailability(for: snapshot)
         elapsedLabel.text = Self.timeText(snapshot.elapsed)
         remainingLabel.text = "-\(Self.timeText(max(0, snapshot.duration - snapshot.elapsed)))"
         queuePositionLabel.text = Self.queueText(snapshot)
@@ -329,6 +329,37 @@ final class PlayerViewController: UIViewController {
     private func setPlaybackControlsEnabled(_ enabled: Bool) {
         [previousButton, toggleButton, nextButton].forEach { $0.isEnabled = enabled }
         progressSlider.isEnabled = enabled
+        setSystemUtilitiesEnabled(enabled)
+    }
+
+    private func updateControlAvailability(for snapshot: PlaybackSnapshot) {
+        guard let index = snapshot.queueIndex else {
+            setPlaybackControlsEnabled(false)
+            return
+        }
+
+        let isReady: Bool
+        switch snapshot.status {
+        case .playing, .paused:
+            isReady = true
+        case .idle, .loading, .failed:
+            isReady = false
+        }
+
+        // 切歌可从失败中恢复；播放切换和进度只在后端已就绪时开放。
+        if case .failed = snapshot.status {
+            previousButton.isEnabled = index > 0
+            nextButton.isEnabled = index + 1 < snapshot.queueCount
+        } else {
+            previousButton.isEnabled = true
+            nextButton.isEnabled = true
+        }
+        toggleButton.isEnabled = isReady
+        progressSlider.isEnabled = isReady
+        setSystemUtilitiesEnabled(true)
+    }
+
+    private func setSystemUtilitiesEnabled(_ enabled: Bool) {
         volumeView.isUserInteractionEnabled = enabled
         routePickerView.isUserInteractionEnabled = enabled
         volumeView.alpha = enabled ? 1 : 0.45
