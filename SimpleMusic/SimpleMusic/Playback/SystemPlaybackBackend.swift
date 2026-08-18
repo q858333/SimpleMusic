@@ -332,6 +332,7 @@ final class SystemPlaybackBackend: NSObject, PlaybackBackend {
     private func finishIfEvidenceIsComplete() {
         guard let activePlayback,
               activePlayback.observedPlaying,
+              activePlayback.reachedTrackEnd,
               activePlayback.observedItemRemoval,
               activePlayback.observedStopped,
               driver.currentPersistentID == nil else { return }
@@ -383,7 +384,8 @@ final class SystemPlaybackBackend: NSObject, PlaybackBackend {
     }
 
     private static func isAtTrackEnd(elapsed: TimeInterval, duration: TimeInterval) -> Bool {
-        duration > 0 && elapsed >= max(0, duration - 0.5)
+        // 0.5 秒进度周期外再容纳一次调度抖动，避免末次 timer 未正好落在 duration 上。
+        duration > 0 && elapsed >= max(0, duration - 1)
     }
 
     private static func finiteSeconds(_ seconds: TimeInterval) -> TimeInterval {

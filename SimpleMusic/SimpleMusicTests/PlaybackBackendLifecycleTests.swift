@@ -99,15 +99,16 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
         XCTAssertEqual(delegate.finishedGenerations, [secondGeneration])
     }
 
-    /// stopped 可能早于 item-nil 通知；同一 generation 的证据应独立记录后再联合完成。
-    func testSystemBackendFinishesWhenStoppedArrivesBeforeItemRemoval() throws {
+    /// stopped 可能早于 item-nil；已进入一个计时周期内的末尾证据必须保留到 removal 到达。
+    func testSystemBackendFinishesWhenStoppedArrivesBeforeItemRemovalAtEnd() throws {
         let harness = SystemBackendHarness()
         let generation = PlaybackGeneration(rawValue: 3)
         try harness.backend.load(systemTrack(id: 33), generation: generation)
         harness.backend.play()
         harness.driver.publishPlaying(persistentID: 33)
-        harness.driver.currentPlaybackTime = 60
+        harness.driver.currentPlaybackTime = 59.2
         harness.driver.currentDuration = 60
+        harness.timer.fire()
 
         harness.driver.publishStopped()
         XCTAssertTrue(harness.delegate.finishedGenerations.isEmpty)
@@ -116,8 +117,8 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
         XCTAssertEqual(harness.delegate.finishedGenerations, [generation])
     }
 
-    /// item removal 后系统 duration 可能归零；同 generation 的 playing + removal + stopped 仍应完成。
-    func testSystemBackendFinishesWhenItemRemovalPrecedesLastTimerAndStopped() throws {
+    /// 中途外部 stop 即使同时移除 item，也不能冒充自然结束。
+    func testSystemBackendDoesNotFinishExternalStopWithItemRemovalBeforeEnd() throws {
         let harness = SystemBackendHarness()
         let generation = PlaybackGeneration(rawValue: 34)
         try harness.backend.load(systemTrack(id: 34), generation: generation)
@@ -131,7 +132,7 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
         harness.timer.fire()
         harness.driver.publishStopped()
 
-        XCTAssertEqual(harness.delegate.finishedGenerations, [generation])
+        XCTAssertTrue(harness.delegate.finishedGenerations.isEmpty)
     }
 
     /// 外部 stop 即使发生在末尾窗口，只要没有 item removal 就不能完成。
@@ -150,17 +151,37 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
         XCTAssertTrue(harness.delegate.finishedGenerations.isEmpty)
     }
 
-    /// 若真实末尾的 item-nil 与 stopped 证据不能联合完成当前 generation，队列不会自动推进。
-    func testSystemBackendFinishesCurrentGenerationAtRealTrackEnd() throws {
+    /// item removal 后 duration 会归零；保存的末尾进度仍应让 removal→stopped 完成。
+    func testSystemBackendFinishesWhenItemRemovalArrivesBeforeStoppedAtEnd() throws {
         let harness = SystemBackendHarness()
         let generation = PlaybackGeneration(rawValue: 9)
         try harness.backend.load(systemTrack(id: 99), generation: generation)
         harness.backend.play()
         harness.driver.publishPlaying(persistentID: 99)
-        harness.driver.currentPlaybackTime = 59.8
+        harness.driver.currentPlaybackTime = 59.2
         harness.driver.currentDuration = 60
         harness.timer.fire()
 
+        harness.driver.currentDuration = 0
+        harness.driver.publishItemChange(persistentID: nil)
+        harness.driver.publishStopped()
+
+        XCTAssertEqual(harness.delegate.finishedGenerations, [generation])
+    }
+
+    /// 完成后必须先清除 active identity；同 generation 的重复通知只能上报一次。
+    func testSystemBackendFinishesSameGenerationExactlyOnce() throws {
+        let harness = SystemBackendHarness()
+        let generation = PlaybackGeneration(rawValue: 10)
+        try harness.backend.load(systemTrack(id: 100), generation: generation)
+        harness.backend.play()
+        harness.driver.publishPlaying(persistentID: 100)
+        harness.driver.currentPlaybackTime = 59.2
+        harness.driver.currentDuration = 60
+        harness.timer.fire()
+
+        harness.driver.publishItemChange(persistentID: nil)
+        harness.driver.publishStopped()
         harness.driver.publishItemChange(persistentID: nil)
         harness.driver.publishStopped()
 
@@ -258,7 +279,8 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
             fixture.track(id: "first"),
             generation: PlaybackGeneration(rawValue: 1)
         )
-        try await waitUntil { (try? fixture.stagingFileCount()) == 1 }
+        // staging 文件先于 MainActor 安装 AVPlayerItem 出现；必须等 active lease 真正建立后再测 stop。
+        try await waitUntil { fixture.player.currentItem != nil }
         XCTAssertEqual(try fixture.stagingFileCount(), 1)
 
         fixture.backend.stop()
