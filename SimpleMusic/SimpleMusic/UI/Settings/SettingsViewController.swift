@@ -120,7 +120,7 @@ final class SettingsViewController: UIViewController {
         aboutButton.titleLabel?.font = .preferredFont(forTextStyle: .body)
         aboutButton.titleLabel?.adjustsFontForContentSizeCategory = true
         aboutButton.addAction(UIAction { [weak self] _ in
-            self?.navigationController?.pushViewController(AboutViewController(), animated: true)
+            self?.showAbout()
         }, for: .touchUpInside)
 
         content.addArrangedSubview(section(title: "资料库", rows: [permissionButton]))
@@ -197,13 +197,22 @@ final class SettingsViewController: UIViewController {
         permissionStatusLabel.text = Self.permissionText(authorizationStatus())
     }
 
-    private func handlePermission() {
+    private func showAbout() {
+        guard let navigationController,
+              navigationController.transitionCoordinator == nil,
+              !(navigationController.topViewController is AboutViewController) else { return }
+        navigationController.pushViewController(AboutViewController(), animated: true)
+    }
+
+    func handlePermission() {
         switch authorizationStatus() {
         case .notDetermined:
             guard permissionTask == nil else { return }
+            let request = requestAuthorization
             permissionTask = Task { [weak self] in
-                guard let self else { return }
-                _ = await requestAuthorization()
+                _ = await request()
+                // 请求可能长期停在系统弹窗；await 前不持有页面，返回后再核对生命周期。
+                guard !Task.isCancelled, let self else { return }
                 permissionTask = nil
                 syncValues()
             }

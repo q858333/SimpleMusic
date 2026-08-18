@@ -26,6 +26,8 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
     private let onPlay: @MainActor (MusicTrack) -> Void
     private var downloadTask: Task<Void, Never>?
     private var generation: UInt64 = 0
+    private var activeGeneration: UInt64?
+    private var didConsumeSuccess = false
 
     private let inputStateView = UIStackView()
     private let downloadingStateView = UIStackView()
@@ -257,38 +259,47 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
 
     private func startDownload() {
         guard downloadTask == nil else { return }
-        guard let text = urlField.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+        let text = urlField.text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        urlField.resignFirstResponder()
+        guard let text,
               let url = URL(string: text),
               url.scheme != nil else {
             state = .failure(message: "请输入有效的音频文件直链。")
             return
         }
 
-        urlField.resignFirstResponder()
         generation &+= 1
         let currentGeneration = generation
+        activeGeneration = currentGeneration
         state = .downloading(progress: 0)
         let operation = download
         downloadTask = Task { [weak self] in
             do {
                 let track = try await operation(url) { [weak self] progress in
-                    guard let self, generation == currentGeneration else { return }
+                    guard let self, activeGeneration == currentGeneration else { return }
                     state = .downloading(progress: progress)
                 }
-                guard let self, generation == currentGeneration else { return }
+                guard let self, activeGeneration == currentGeneration else { return }
+                // 先封口当前代次，传输层已经排队的进度不能覆盖成功终态。
+                activeGeneration = nil
                 downloadTask = nil
+                didConsumeSuccess = false
                 state = .success(track)
                 onReload()
                 if settingsStore.autoPlayAfterDownload {
+                    didConsumeSuccess = true
                     onPlay(track)
                     dismiss(animated: true)
                 }
             } catch is CancellationError {
-                guard let self, generation == currentGeneration else { return }
+                guard let self, activeGeneration == currentGeneration else { return }
+                activeGeneration = nil
                 downloadTask = nil
                 state = .input
             } catch {
-                guard let self, generation == currentGeneration else { return }
+                guard let self, activeGeneration == currentGeneration else { return }
+                // 失败同样是终态；忽略同一传输随后到达的进度回调。
+                activeGeneration = nil
                 downloadTask = nil
                 state = .failure(message: Self.message(for: error))
             }
@@ -303,6 +314,7 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
     private func cancelActiveDownload(resetToInput: Bool) {
         // generation 先推进，保证不响应取消的传输层迟到后也不能污染下一次下载。
         generation &+= 1
+        activeGeneration = nil
         downloadTask?.cancel()
         downloadTask = nil
         if resetToInput {
@@ -311,7 +323,9 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
     }
 
     private func playDownloadedTrack() {
-        guard case let .success(track) = state else { return }
+        guard case let .success(track) = state, !didConsumeSuccess else { return }
+        // dismiss 动画完成前先同步消费成功态，避免快速连点重复触发播放。
+        didConsumeSuccess = true
         onPlay(track)
         dismiss(animated: true)
     }

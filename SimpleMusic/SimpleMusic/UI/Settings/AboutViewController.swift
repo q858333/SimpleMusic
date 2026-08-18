@@ -38,10 +38,21 @@ final class AboutViewController: UIViewController {
         let content = UIStackView(arrangedSubviews: [hero, format, privacy])
         content.axis = .vertical
         content.spacing = 24
-        view.addSubview(content)
+        content.accessibilityIdentifier = "about.content"
+
+        let scrollView = UIScrollView()
+        scrollView.accessibilityIdentifier = "about.scroll"
+        scrollView.alwaysBounceVertical = true
+        view.addSubview(scrollView)
+        scrollView.addSubview(content)
+        scrollView.snp.makeConstraints { make in
+            make.edges.equalTo(view.safeAreaLayoutGuide)
+        }
         content.snp.makeConstraints { make in
-            make.top.equalTo(view.safeAreaLayoutGuide).offset(28)
-            make.leading.trailing.equalTo(view.safeAreaLayoutGuide).inset(20)
+            make.edges.equalTo(scrollView.contentLayoutGuide).inset(
+                UIEdgeInsets(top: 28, left: 20, bottom: 28, right: 20)
+            )
+            make.width.equalTo(scrollView.frameLayoutGuide).offset(-40)
         }
     }
 

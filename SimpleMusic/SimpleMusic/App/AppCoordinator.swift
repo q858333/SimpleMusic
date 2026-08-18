@@ -210,10 +210,14 @@ final class AppCoordinator {
         }
         library.onSettings = { [weak library] in
             guard let library else { return }
-            let settings = dependencies.makeSettingsViewController()
             if let navigation = library.navigationController {
+                guard navigation.transitionCoordinator == nil,
+                      !(navigation.topViewController is SettingsViewController) else { return }
+                let settings = dependencies.makeSettingsViewController()
                 navigation.pushViewController(settings, animated: true)
             } else {
+                guard library.presentedViewController == nil else { return }
+                let settings = dependencies.makeSettingsViewController()
                 library.present(UINavigationController(rootViewController: settings), animated: true)
             }
         }

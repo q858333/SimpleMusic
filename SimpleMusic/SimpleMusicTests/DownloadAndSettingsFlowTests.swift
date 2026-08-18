@@ -72,6 +72,32 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         XCTAssertEqual(receivedURL?.absoluteString, "https://example.com/not-a-file")
     }
 
+    func testMalformedURLResignsFirstResponderBeforeShowingFailure() throws {
+        let harness = makeDownloadHarness()
+        let navigation = UINavigationController(rootViewController: harness.controller)
+        let windowScene = try XCTUnwrap(
+            UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        )
+        let window = UIWindow(windowScene: windowScene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        window.rootViewController = navigation
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        harness.controller.loadViewIfNeeded()
+        let field = try XCTUnwrap(view("download.url", in: harness.controller.view) as? UITextField)
+        field.text = "not a valid audio URL"
+        _ = field.becomeFirstResponder()
+        waitUntil { field.isFirstResponder }
+
+        try tap("download.submit", in: harness.controller)
+
+        XCTAssertFalse(field.isFirstResponder)
+        if case .failure = harness.controller.state {
+            return
+        }
+        XCTFail("非法 URL 应进入失败态")
+    }
+
     func testCancelThenNewSubmitIgnoresOldProgressAndCompletion() throws {
         let operation = ControlledDownloadOperation()
         let harness = makeDownloadHarness(operation: operation)
@@ -100,6 +126,42 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         XCTAssertEqual(harness.reloadCount(), 1)
     }
 
+    func testSuccessfulDownloadIgnoresLateProgress() throws {
+        let operation = ControlledDownloadOperation()
+        let harness = makeDownloadHarness(operation: operation)
+        harness.controller.loadViewIfNeeded()
+        try setURL("https://example.com/finished.mp3", in: harness.controller)
+
+        try tap("download.submit", in: harness.controller)
+        waitUntil { operation.callCount == 1 }
+        operation.succeed(track: track(id: "finished"), at: 0)
+        waitUntil { harness.controller.state == .success(Self.track(id: "finished")) }
+
+        operation.reportProgress(0.8, at: 0)
+
+        XCTAssertEqual(harness.controller.state, .success(Self.track(id: "finished")))
+    }
+
+    func testFailedDownloadIgnoresLateProgress() throws {
+        let operation = ControlledDownloadOperation()
+        let harness = makeDownloadHarness(operation: operation)
+        harness.controller.loadViewIfNeeded()
+        try setURL("https://example.com/failed.mp3", in: harness.controller)
+
+        try tap("download.submit", in: harness.controller)
+        waitUntil { operation.callCount == 1 }
+        operation.fail(with: DownloadError.unsupportedResponse, at: 0)
+        waitUntil {
+            if case .failure = harness.controller.state { return true }
+            return false
+        }
+        let terminalState = harness.controller.state
+
+        operation.reportProgress(0.8, at: 0)
+
+        XCTAssertEqual(harness.controller.state, terminalState)
+    }
+
     func testSuccessfulDownloadStaysUntilImmediatePlayWhenAutoPlayIsOff() throws {
         let harness = makeDownloadHarness { _, _ in Self.track(id: "manual") }
         harness.controller.loadViewIfNeeded()
@@ -112,6 +174,19 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         XCTAssertTrue(harness.playedTracks().isEmpty)
         try tap("download.play", in: harness.controller)
         XCTAssertEqual(harness.playedTracks().map(\.id), ["manual"])
+    }
+
+    func testImmediatePlayConsumesSuccessOnlyOnce() throws {
+        let harness = makeDownloadHarness { _, _ in Self.track(id: "single-play") }
+        harness.controller.loadViewIfNeeded()
+        try setURL("https://example.com/single-play.m4a", in: harness.controller)
+        try tap("download.submit", in: harness.controller)
+        waitUntil { harness.controller.state == .success(Self.track(id: "single-play")) }
+
+        try tap("download.play", in: harness.controller)
+        try tap("download.play", in: harness.controller)
+
+        XCTAssertEqual(harness.playedTracks().map(\.id), ["single-play"])
     }
 
     func testSuccessfulDownloadAutoPlaysWhenSettingIsOn() throws {
@@ -173,6 +248,17 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         XCTAssertEqual(openSettingsCount, 1)
     }
 
+    func testSettingsReleasesWhilePermissionRequestIsSuspended() throws {
+        let request = SuspendedAuthorizationRequest()
+        let weakController = try startSuspendedPermissionRequest(request)
+
+        let releasedWhileSuspended = weakController.value == nil
+        request.resume(with: .authorized)
+        waitUntil { request.completionCount == 1 }
+
+        XCTAssertTrue(releasedWhileSuspended)
+    }
+
     func testSettingsUsesRealSwitchesDynamicTypeAndAboutContentIsFixed() throws {
         let defaults = UserDefaults(suiteName: #function)!
         defaults.removePersistentDomain(forName: #function)
@@ -193,6 +279,75 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         XCTAssertTrue(copy.contains("MP3、M4A、WAV"))
         XCTAssertTrue(copy.contains("仅保存在本机"))
         XCTAssertTrue(copy.contains("不解析音乐平台或普通网页链接"))
+    }
+
+    func testSettingsActionPushesOnlyOnceOnPhoneAndPad() throws {
+        for kind in [AppRootKind.phone, .pad] {
+            let viewModel = LibraryViewModel(
+                library: FlowStubMusicLibrary(),
+                localStore: FlowStubLocalMusicStore()
+            )
+            let dependencies = AppRootDependencies(
+                identity: NSObject(),
+                libraryViewModel: viewModel,
+                snapshotPublisher: Empty<PlaybackSnapshot, Never>().eraseToAnyPublisher(),
+                onPlay: { _, _ in },
+                onTogglePlay: {},
+                makeSettingsViewController: { self.makeIsolatedSettingsController() }
+            )
+            let root = AppCoordinator.makeMainViewControllerFactory(dependencies: dependencies)(kind)
+            let library = try XCTUnwrap(descendant(LibraryViewController.self, in: root))
+            let navigation = try XCTUnwrap(library.navigationController)
+            let originalCount = navigation.viewControllers.count
+
+            try XCTUnwrap(library.onSettings)()
+            try XCTUnwrap(library.onSettings)()
+
+            XCTAssertEqual(navigation.viewControllers.count, originalCount + 1, "root=\(kind)")
+            XCTAssertTrue(navigation.topViewController is SettingsViewController, "root=\(kind)")
+        }
+    }
+
+    func testAboutButtonPushesOnlyOnce() throws {
+        let settings = makeIsolatedSettingsController()
+        let navigation = UINavigationController(rootViewController: settings)
+        navigation.loadViewIfNeeded()
+        settings.loadViewIfNeeded()
+
+        try tap("settings.about", in: settings)
+        try tap("settings.about", in: settings)
+
+        XCTAssertEqual(navigation.viewControllers.count, 2)
+        XCTAssertTrue(navigation.topViewController is AboutViewController)
+    }
+
+    func testAboutContentScrollsWithoutAmbiguityAtAccessibilityXXXLOnSmallScreen() throws {
+        let host = UIViewController()
+        host.view.frame = CGRect(x: 0, y: 0, width: 320, height: 360)
+        let about = AboutViewController()
+        host.addChild(about)
+        host.setOverrideTraitCollection(
+            UITraitCollection(preferredContentSizeCategory: .accessibilityExtraExtraExtraLarge),
+            forChild: about
+        )
+        let aboutView = about.view!
+        aboutView.translatesAutoresizingMaskIntoConstraints = false
+        host.view.addSubview(aboutView)
+        NSLayoutConstraint.activate([
+            aboutView.topAnchor.constraint(equalTo: host.view.topAnchor),
+            aboutView.leadingAnchor.constraint(equalTo: host.view.leadingAnchor),
+            aboutView.trailingAnchor.constraint(equalTo: host.view.trailingAnchor),
+            aboutView.bottomAnchor.constraint(equalTo: host.view.bottomAnchor)
+        ])
+        about.didMove(toParent: host)
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+
+        let scroll = try XCTUnwrap(view("about.scroll", in: aboutView) as? UIScrollView)
+        let content = try XCTUnwrap(view("about.content", in: aboutView))
+        XCTAssertTrue(allViews(in: aboutView).allSatisfy { !$0.hasAmbiguousLayout })
+        XCTAssertGreaterThan(scroll.contentSize.height, scroll.bounds.height)
+        XCTAssertLessThanOrEqual(content.frame.maxY, scroll.contentSize.height + 0.5)
     }
 
     func testRootFactoryWiresDownloadAndSettingsIntoTheSharedLibraryController() throws {
@@ -278,6 +433,30 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         )
     }
 
+    private func makeIsolatedSettingsController() -> SettingsViewController {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        return makeSettingsController(
+            settingsStore: SettingsStore(defaults: defaults),
+            status: { .authorized }
+        )
+    }
+
+    private func startSuspendedPermissionRequest(
+        _ request: SuspendedAuthorizationRequest
+    ) throws -> WeakReference<SettingsViewController> {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let controller = SettingsViewController(
+            settingsStore: SettingsStore(defaults: defaults),
+            authorizationStatus: { .notDetermined },
+            requestAuthorization: { await request.perform() },
+            openSettings: {}
+        )
+        let weakController = WeakReference(controller)
+        controller.handlePermission()
+        waitUntil { request.callCount == 1 }
+        return weakController
+    }
+
     private func assertVisibleState(
         _ expected: String,
         in controller: DownloadSheetViewController,
@@ -336,6 +515,33 @@ private final class FlowStubLocalMusicStore: LocalMusicLoading {
     func loadTracks() async throws -> [SimpleMusic.MusicTrack] { [] }
 }
 
+private final class WeakReference<Value: AnyObject> {
+    weak var value: Value?
+
+    init(_ value: Value) {
+        self.value = value
+    }
+}
+
+@MainActor
+private final class SuspendedAuthorizationRequest {
+    private var continuation: CheckedContinuation<MPMediaLibraryAuthorizationStatus, Never>?
+    private(set) var callCount = 0
+    private(set) var completionCount = 0
+
+    func perform() async -> MPMediaLibraryAuthorizationStatus {
+        callCount += 1
+        let status = await withCheckedContinuation { continuation = $0 }
+        completionCount += 1
+        return status
+    }
+
+    func resume(with status: MPMediaLibraryAuthorizationStatus) {
+        continuation?.resume(returning: status)
+        continuation = nil
+    }
+}
+
 @MainActor
 private final class ControlledDownloadOperation {
     typealias Progress = @MainActor @Sendable (Double) -> Void
@@ -369,6 +575,11 @@ private final class ControlledDownloadOperation {
     func succeed(track: SimpleMusic.MusicTrack, at index: Int) {
         completionCount += 1
         continuations[index].resume(returning: track)
+    }
+
+    func fail(with error: Error, at index: Int) {
+        completionCount += 1
+        continuations[index].resume(throwing: error)
     }
 }
 
