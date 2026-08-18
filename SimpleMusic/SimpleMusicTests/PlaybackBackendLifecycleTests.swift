@@ -37,6 +37,7 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
 
         // 旧曲迟到的 stopped 不能预先满足新曲的完成证据。
         harness.driver.publishStopped()
+        harness.driver.publishPlaying(persistentID: 22)
         harness.driver.currentPlaybackTime = 1
         harness.driver.currentDuration = 60
         harness.timer.fire()
@@ -184,6 +185,119 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
         harness.driver.publishStopped()
         harness.driver.publishItemChange(persistentID: nil)
 
+        XCTAssertTrue(harness.delegate.finishedGenerations.isEmpty)
+    }
+
+    /// 末尾 tick 后即使 seek 仍落在末尾窗口，也必须撤销旧末尾证据。
+    func testSystemBackendDoesNotReuseEndEvidenceAfterSeekingWithinEndWindow() throws {
+        let harness = SystemBackendHarness()
+        let generation = PlaybackGeneration(rawValue: 39)
+        try harness.backend.load(systemTrack(id: 39), generation: generation)
+        harness.backend.play()
+        harness.driver.publishPlaying(persistentID: 39)
+        harness.driver.currentPlaybackTime = 59.2
+        harness.driver.currentDuration = 60
+        harness.timer.fire()
+
+        harness.backend.seek(to: 59.2)
+        harness.driver.publishStopped()
+        harness.driver.publishItemChange(persistentID: nil)
+
+        XCTAssertTrue(harness.delegate.finishedGenerations.isEmpty)
+    }
+
+    /// seek 后的 stopped 状态下，静态末尾时间不能被 timer 当作真实播放进度。
+    func testSystemBackendStoppedTimerAfterSeekingToEndDoesNotCreateEndEvidence() throws {
+        let harness = SystemBackendHarness()
+        let generation = PlaybackGeneration(rawValue: 40)
+        try harness.backend.load(systemTrack(id: 40), generation: generation)
+        harness.backend.play()
+        harness.driver.publishPlaying(persistentID: 40)
+
+        harness.backend.seek(to: 59.2)
+        harness.driver.publishStopped()
+        harness.timer.fire()
+        harness.driver.publishItemChange(persistentID: nil)
+
+        XCTAssertTrue(harness.delegate.finishedGenerations.isEmpty)
+    }
+
+    /// driver duration 暂时归零时，应回退 loaded duration 并保留末尾证据。
+    func testSystemBackendPreservesEndEvidenceForZeroDurationSample() throws {
+        let harness = SystemBackendHarness()
+        let generation = PlaybackGeneration(rawValue: 46)
+        try harness.backend.load(systemTrack(id: 46), generation: generation)
+        harness.backend.play()
+        harness.driver.publishPlaying(persistentID: 46)
+        harness.driver.currentPlaybackTime = 59.2
+        harness.driver.currentDuration = 60
+        harness.timer.fire()
+
+        harness.driver.currentDuration = 0
+        harness.timer.fire()
+        harness.driver.publishStopped()
+        harness.driver.publishItemChange(persistentID: nil)
+
+        XCTAssertEqual(harness.delegate.finishedGenerations, [generation])
+    }
+
+    /// NaN duration 不能抹除真实末尾证据，removal→stopped 仍只完成一次。
+    func testSystemBackendPreservesEndEvidenceForNaNDurationSample() throws {
+        let harness = SystemBackendHarness()
+        let generation = PlaybackGeneration(rawValue: 47)
+        try harness.backend.load(systemTrack(id: 47), generation: generation)
+        harness.backend.play()
+        harness.driver.publishPlaying(persistentID: 47)
+        harness.driver.currentPlaybackTime = 59.2
+        harness.driver.currentDuration = 60
+        harness.timer.fire()
+
+        harness.driver.currentDuration = .nan
+        harness.timer.fire()
+        harness.driver.publishItemChange(persistentID: nil)
+        harness.driver.publishStopped()
+        harness.driver.publishItemChange(persistentID: nil)
+        harness.driver.publishStopped()
+
+        XCTAssertEqual(harness.delegate.finishedGenerations, [generation])
+    }
+
+    /// 非有限或负 elapsed 样本无效，不能改写已经建立的末尾证据。
+    func testSystemBackendIgnoresInvalidElapsedWithoutClearingEndEvidence() throws {
+        let harness = SystemBackendHarness()
+        let generation = PlaybackGeneration(rawValue: 48)
+        try harness.backend.load(systemTrack(id: 48), generation: generation)
+        harness.backend.play()
+        harness.driver.publishPlaying(persistentID: 48)
+        harness.driver.currentPlaybackTime = 59.2
+        harness.driver.currentDuration = 60
+        harness.timer.fire()
+
+        harness.driver.currentPlaybackTime = -.infinity
+        harness.timer.fire()
+        harness.driver.currentPlaybackTime = -1
+        harness.timer.fire()
+        harness.driver.publishStopped()
+        harness.driver.publishItemChange(persistentID: nil)
+
+        XCTAssertEqual(harness.delegate.finishedGenerations, [generation])
+    }
+
+    /// loaded 与 driver duration 都无效时，样本必须被忽略且不能制造完成证据。
+    func testSystemBackendIgnoresProgressWithoutAnyValidDuration() throws {
+        let harness = SystemBackendHarness()
+        let generation = PlaybackGeneration(rawValue: 49)
+        try harness.backend.load(systemTrack(id: 49, duration: 0), generation: generation)
+        harness.backend.play()
+        harness.driver.publishPlaying(persistentID: 49)
+        harness.driver.currentPlaybackTime = 59.2
+        harness.driver.currentDuration = .nan
+
+        harness.timer.fire()
+        harness.driver.publishStopped()
+        harness.driver.publishItemChange(persistentID: nil)
+
+        XCTAssertTrue(harness.delegate.elapsedEvents.isEmpty)
         XCTAssertTrue(harness.delegate.finishedGenerations.isEmpty)
     }
 
@@ -450,13 +564,16 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
         }
     }
 
-    private func systemTrack(id: UInt64) -> SimpleMusic.MusicTrack {
+    private func systemTrack(
+        id: UInt64,
+        duration: TimeInterval = 60
+    ) -> SimpleMusic.MusicTrack {
         SimpleMusic.MusicTrack(
             id: "system-\(id)",
             title: "system",
             artist: "artist",
             album: "album",
-            duration: 60,
+            duration: duration,
             artworkData: nil,
             source: .system(persistentID: id)
         )

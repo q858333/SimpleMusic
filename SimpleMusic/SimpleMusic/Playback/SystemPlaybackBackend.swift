@@ -265,24 +265,27 @@ final class SystemPlaybackBackend: NSObject, PlaybackBackend {
     }
 
     func seek(to seconds: TimeInterval) {
-        let target = max(0, seconds)
+        let target = Self.finiteSeconds(seconds)
         if var activePlayback {
-            let driverDuration = Self.finiteSeconds(driver.currentDuration)
-            let duration = driverDuration > 0 ? driverDuration : activePlayback.loadedDuration
-            if !Self.isAtTrackEnd(elapsed: target, duration: duration) {
-                activePlayback.lastElapsed = target
-                clearEndEvidence(&activePlayback)
-                self.activePlayback = activePlayback
-            }
+            activePlayback.lastElapsed = target
+            clearEndEvidence(&activePlayback)
+            self.activePlayback = activePlayback
         }
         driver.seek(to: target)
     }
 
-    private func publishProgress() {
+    private func publishProgress(
+        generation: PlaybackGeneration,
+        persistentID: UInt64
+    ) {
         guard var activePlayback,
-              driver.currentPersistentID == activePlayback.persistentID else { return }
-        let elapsed = Self.finiteSeconds(driver.currentPlaybackTime)
-        let duration = Self.finiteSeconds(driver.currentDuration)
+              activePlayback.generation == generation,
+              activePlayback.persistentID == persistentID,
+              driver.currentPersistentID == persistentID,
+              driver.playbackState == .playing,
+              let elapsed = Self.validElapsed(driver.currentPlaybackTime),
+              let duration = Self.validDuration(driver.currentDuration)
+                ?? Self.validDuration(activePlayback.loadedDuration) else { return }
         activePlayback.lastElapsed = elapsed
         activePlayback.reachedTrackEnd = Self.isAtTrackEnd(elapsed: elapsed, duration: duration)
         if !activePlayback.reachedTrackEnd {
@@ -368,8 +371,11 @@ final class SystemPlaybackBackend: NSObject, PlaybackBackend {
 
     private func startProgressTimer() {
         invalidateProgressTimer()
+        guard let activePlayback else { return }
+        let generation = activePlayback.generation
+        let persistentID = activePlayback.persistentID
         let timer = timerFactory { [weak self] in
-            self?.publishProgress()
+            self?.publishProgress(generation: generation, persistentID: persistentID)
         }
         timerOwner.replace(with: timer)
     }
@@ -391,5 +397,13 @@ final class SystemPlaybackBackend: NSObject, PlaybackBackend {
 
     private static func finiteSeconds(_ seconds: TimeInterval) -> TimeInterval {
         seconds.isFinite ? max(0, seconds) : 0
+    }
+
+    private static func validElapsed(_ seconds: TimeInterval) -> TimeInterval? {
+        seconds.isFinite && seconds >= 0 ? seconds : nil
+    }
+
+    private static func validDuration(_ seconds: TimeInterval) -> TimeInterval? {
+        seconds.isFinite && seconds > 0 ? seconds : nil
     }
 }
