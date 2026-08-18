@@ -1,6 +1,7 @@
 {
   "images" : [
     {
+      "filename" : "app-icon-record-v3-1024.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -12,6 +13,7 @@
           "value" : "dark"
         }
       ],
+      "filename" : "app-icon-record-dark-1024.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -23,6 +25,7 @@
           "value" : "tinted"
         }
       ],
+      "filename" : "app-icon-record-tinted-1024.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"

@@ -6,6 +6,7 @@
 platform :ios, '12.0'
 
 def sharedPods
+    pod 'YYKit'
     pod 'Masonry', '~> 1.1.0'
 
     pod 'IQKeyboardManager', '~> 4.0.13'

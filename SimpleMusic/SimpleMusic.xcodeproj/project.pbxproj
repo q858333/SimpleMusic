@@ -74,7 +74,6 @@
 				55DF45A54AE45924626D378B /* Pods-SimpleMusic.debug.xcconfig */,
 				82FEF5096D84D9077E96AF8F /* Pods-SimpleMusic.release.xcconfig */,
 			);
-			name = Pods;
 			path = Pods;
 			sourceTree = "<group>";
 		};
@@ -164,9 +163,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-SimpleMusic/Pods-SimpleMusic-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-SimpleMusic/Pods-SimpleMusic-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -219,6 +222,7 @@
 				DEVELOPMENT_TEAM = LVZF6F7GU2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SimpleMusic/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = DiskTone;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = Main;
@@ -253,6 +257,7 @@
 				DEVELOPMENT_TEAM = LVZF6F7GU2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SimpleMusic/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = DiskTone;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = Main;
