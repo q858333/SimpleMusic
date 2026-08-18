@@ -114,11 +114,18 @@ final class PlayerViewControllerTests: XCTestCase {
             next: Bool,
             seek: Bool
         )] = [
-            ("loading", .loading, 0, 2, true, false, true, false),
-            ("playing", .playing, 0, 2, true, true, true, true),
-            ("paused", .paused, 0, 2, true, true, true, true),
+            ("loading-first", .loading, 0, 3, false, false, true, false),
+            ("loading-middle", .loading, 1, 3, true, false, true, false),
+            ("loading-last", .loading, 2, 3, true, false, false, false),
+            ("playing-first", .playing, 0, 3, false, true, true, true),
+            ("playing-middle", .playing, 1, 3, true, true, true, true),
+            ("playing-last", .playing, 2, 3, true, true, false, true),
+            ("paused-first", .paused, 0, 3, false, true, true, true),
+            ("paused-middle", .paused, 1, 3, true, true, true, true),
+            ("paused-last", .paused, 2, 3, true, true, false, true),
             ("failed-first", .failed("失败"), 0, 2, false, false, true, false),
-            ("failed-middle", .failed("失败"), 1, 3, true, false, true, false)
+            ("failed-middle", .failed("失败"), 1, 3, true, false, true, false),
+            ("failed-last", .failed("失败"), 2, 3, true, false, false, false)
         ]
 
         for scenario in scenarios {
@@ -180,6 +187,80 @@ final class PlayerViewControllerTests: XCTestCase {
         XCTAssertEqual(slider.value, 44, accuracy: 0.01)
         slider.sendActions(for: .touchUpInside)
         XCTAssertEqual(seekValues, [44])
+    }
+
+    /// 如果拖动中播放失败，随后到达的 touchUp 仍提交无效 seek，此测试应失败。
+    func testSeekingDoesNotCommitAfterSnapshotBecomesUnseekable() async throws {
+        let track = makeTrack()
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot(
+            status: .playing,
+            track: track,
+            elapsed: 10,
+            duration: 100,
+            queueIndex: 1,
+            queueCount: 3
+        ))
+        var seekValues = [TimeInterval]()
+        let sut = makePlayer(snapshots: snapshots, onSeek: { seekValues.append($0) })
+        sut.loadViewIfNeeded()
+        let slider = try XCTUnwrap(findView(identifier: "player.progress", in: sut.view) as? UISlider)
+        await waitUntil { slider.value == 10 }
+
+        slider.sendActions(for: .touchDown)
+        slider.value = 44
+        slider.sendActions(for: .valueChanged)
+        snapshots.send(PlaybackSnapshot(
+            status: .failed("失败"),
+            track: track,
+            elapsed: 20,
+            duration: 100,
+            queueIndex: 1,
+            queueCount: 3
+        ))
+        await waitUntil { !slider.isEnabled }
+        slider.sendActions(for: .touchUpInside)
+
+        XCTAssertTrue(seekValues.isEmpty)
+    }
+
+    /// 如果失败快照没有取消拖动，缺少 touchUp 时恢复播放仍会保留旧拖动值，此测试应失败。
+    func testFailedSnapshotCancelsSeekingSoPlayableSnapshotRefreshesProgress() async throws {
+        let track = makeTrack()
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot(
+            status: .playing,
+            track: track,
+            elapsed: 10,
+            duration: 100,
+            queueIndex: 1,
+            queueCount: 3
+        ))
+        let sut = makePlayer(snapshots: snapshots)
+        sut.loadViewIfNeeded()
+        let slider = try XCTUnwrap(findView(identifier: "player.progress", in: sut.view) as? UISlider)
+        await waitUntil { slider.value == 10 }
+
+        slider.sendActions(for: .touchDown)
+        slider.value = 44
+        snapshots.send(PlaybackSnapshot(
+            status: .failed("失败"),
+            track: track,
+            elapsed: 20,
+            duration: 100,
+            queueIndex: 1,
+            queueCount: 3
+        ))
+        await waitUntil { !slider.isEnabled }
+        snapshots.send(PlaybackSnapshot(
+            status: .playing,
+            track: track,
+            elapsed: 76,
+            duration: 100,
+            queueIndex: 1,
+            queueCount: 3
+        ))
+        await waitUntil { slider.isEnabled }
+
+        XCTAssertEqual(slider.value, 76, accuracy: 0.01)
     }
 
     /// 如果辅助功能只发送 valueChanged 时没有立即 seek，此测试应失败。

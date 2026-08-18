@@ -299,6 +299,10 @@ final class PlayerViewController: UIViewController {
             for: .normal
         )
         updateControlAvailability(for: snapshot)
+        // 进入不可 seek 状态即结束本地拖动，避免迟到的终止事件提交失效进度。
+        if !progressSlider.isEnabled {
+            isSeeking = false
+        }
         elapsedLabel.text = Self.timeText(snapshot.elapsed)
         remainingLabel.text = "-\(Self.timeText(max(0, snapshot.duration - snapshot.elapsed)))"
         queuePositionLabel.text = Self.queueText(snapshot)
@@ -333,7 +337,8 @@ final class PlayerViewController: UIViewController {
     }
 
     private func updateControlAvailability(for snapshot: PlaybackSnapshot) {
-        guard let index = snapshot.queueIndex else {
+        guard let index = snapshot.queueIndex,
+              (0..<snapshot.queueCount).contains(index) else {
             setPlaybackControlsEnabled(false)
             return
         }
@@ -346,14 +351,9 @@ final class PlayerViewController: UIViewController {
             isReady = false
         }
 
-        // 切歌可从失败中恢复；播放切换和进度只在后端已就绪时开放。
-        if case .failed = snapshot.status {
-            previousButton.isEnabled = index > 0
-            nextButton.isEnabled = index + 1 < snapshot.queueCount
-        } else {
-            previousButton.isEnabled = true
-            nextButton.isEnabled = true
-        }
+        // 切歌只在真实相邻项存在时开放；播放切换和进度只在后端已就绪时开放。
+        previousButton.isEnabled = index > 0
+        nextButton.isEnabled = index + 1 < snapshot.queueCount
         toggleButton.isEnabled = isReady
         progressSlider.isEnabled = isReady
         setSystemUtilitiesEnabled(true)
@@ -373,6 +373,7 @@ final class PlayerViewController: UIViewController {
     @objc private func endSeeking() {
         guard isSeeking else { return }
         isSeeking = false
+        guard progressSlider.isEnabled else { return }
         onSeek(TimeInterval(progressSlider.value))
     }
 
