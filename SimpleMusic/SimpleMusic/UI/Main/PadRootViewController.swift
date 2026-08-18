@@ -1,9 +1,23 @@
+import Combine
 import SnapKit
 import UIKit
 
-/// iPad 竖屏双栏根壳；固定导航侧栏，右侧 child 容器保持自适应。
+/// iPad 双栏根容器；保留 264pt 侧栏和右侧 Now Playing child 容器边界。
 final class PadRootViewController: UIViewController {
     private let nowPlayingViewController: UIViewController
+    private let libraryViewModel: LibraryViewModel?
+    private let snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>?
+    private let onPlay: (([MusicTrack], Int) -> Void)?
+    private let onTogglePlay: (() -> Void)?
+    private var reloadTask: Task<Void, Never>?
+    private var activeContentController: UIViewController?
+    private var libraryController: LibraryViewController?
+    private var searchController: SearchViewController?
+    private var libraryNavigationController: UINavigationController?
+    private var searchNavigationController: UINavigationController?
+    private var miniPlayerView: MiniPlayerView?
+
+    var onOpenPlayer: (() -> Void)?
 
     private let sidebarView: UIView = {
         let view = UIView()
@@ -20,13 +34,58 @@ final class PadRootViewController: UIViewController {
     }()
 
     convenience init() {
-        let placeholder = UIViewController()
-        placeholder.view.backgroundColor = Theme.background
-        self.init(nowPlayingViewController: placeholder)
+        self.init(environment: .shared)
     }
 
+    convenience init(environment: AppEnvironment) {
+        let viewModel = LibraryViewModel(
+            library: environment.musicLibraryService,
+            localStore: environment.localMusicStore
+        )
+        let nowPlayingContainer = UIViewController()
+        nowPlayingContainer.view.backgroundColor = Theme.background
+        self.init(
+            nowPlayingViewController: nowPlayingContainer,
+            libraryViewModel: viewModel,
+            snapshotPublisher: environment.playbackCoordinator.snapshotPublisher,
+            onPlay: { [playbackCoordinator = environment.playbackCoordinator] queue, index in
+                do {
+                    try playbackCoordinator.play(queue: queue, startAt: index)
+                } catch {
+                    NSLog("无法开始播放：%@", String(describing: error))
+                }
+            },
+            onTogglePlay: { [playbackCoordinator = environment.playbackCoordinator] in
+                playbackCoordinator.togglePlay()
+            },
+            onOpenPlayer: {}
+        )
+    }
+
+    /// 保留 Task 8 注入点，后续完整播放页仍可使用同一 child containment 边界。
     init(nowPlayingViewController: UIViewController) {
         self.nowPlayingViewController = nowPlayingViewController
+        libraryViewModel = nil
+        snapshotPublisher = nil
+        onPlay = nil
+        onTogglePlay = nil
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    init(
+        nowPlayingViewController: UIViewController,
+        libraryViewModel: LibraryViewModel,
+        snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>,
+        onPlay: @escaping ([MusicTrack], Int) -> Void,
+        onTogglePlay: @escaping () -> Void,
+        onOpenPlayer: @escaping () -> Void
+    ) {
+        self.nowPlayingViewController = nowPlayingViewController
+        self.libraryViewModel = libraryViewModel
+        self.snapshotPublisher = snapshotPublisher
+        self.onPlay = onPlay
+        self.onTogglePlay = onTogglePlay
+        self.onOpenPlayer = onOpenPlayer
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -35,12 +94,23 @@ final class PadRootViewController: UIViewController {
         fatalError("PadRootViewController 仅支持纯代码初始化")
     }
 
+    deinit {
+        reloadTask?.cancel()
+        miniPlayerView?.stop()
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = Theme.background
         buildColumns()
         installNowPlayingChild()
-        buildSidebarPlaceholder()
+        buildSidebar()
+        if let libraryViewModel {
+            installLibraryPages(viewModel: libraryViewModel)
+            reloadTask = Task { [weak libraryViewModel] in
+                await libraryViewModel?.reload()
+            }
+        }
     }
 
     private func buildColumns() {
@@ -65,28 +135,101 @@ final class PadRootViewController: UIViewController {
             make.edges.equalToSuperview()
         }
         nowPlayingViewController.didMove(toParent: self)
+        nowPlayingViewController.view.isHidden = libraryViewModel != nil
     }
 
-    private func buildSidebarPlaceholder() {
+    private func buildSidebar() {
         let titleLabel = UILabel()
         titleLabel.font = .preferredFont(forTextStyle: .title2)
         titleLabel.adjustsFontForContentSizeCategory = true
         titleLabel.text = "听见"
         titleLabel.textColor = .label
 
-        let libraryLabel = UILabel()
-        libraryLabel.font = .preferredFont(forTextStyle: .headline)
-        libraryLabel.adjustsFontForContentSizeCategory = true
-        libraryLabel.text = "资料库"
-        libraryLabel.textColor = Theme.accent
+        let libraryButton = sidebarButton(title: "资料库", symbol: "music.note.list")
+        libraryButton.accessibilityIdentifier = "pad.library"
+        libraryButton.addAction(UIAction { [weak self] _ in
+            guard let navigation = self?.libraryNavigationController else { return }
+            self?.showContent(navigation)
+        }, for: .touchUpInside)
 
-        let stack = UIStackView(arrangedSubviews: [titleLabel, libraryLabel])
+        let searchButton = sidebarButton(title: "搜索", symbol: "magnifyingglass")
+        searchButton.accessibilityIdentifier = "pad.search"
+        searchButton.addAction(UIAction { [weak self] _ in
+            guard let navigation = self?.searchNavigationController else { return }
+            self?.showContent(navigation)
+        }, for: .touchUpInside)
+
+        let stack = UIStackView(arrangedSubviews: [titleLabel, libraryButton, searchButton])
         stack.axis = .vertical
-        stack.spacing = 28
+        stack.spacing = 10
+        stack.setCustomSpacing(28, after: titleLabel)
         sidebarView.addSubview(stack)
         stack.snp.makeConstraints { make in
             make.top.equalTo(sidebarView.safeAreaLayoutGuide).offset(28)
-            make.leading.trailing.equalToSuperview().inset(28)
+            make.leading.trailing.equalToSuperview().inset(20)
         }
+    }
+
+    private func installLibraryPages(viewModel: LibraryViewModel) {
+        let library = LibraryViewController(viewModel: viewModel)
+        let search = SearchViewController(viewModel: viewModel)
+        library.onSelectTrack = { [weak self] queue, index in self?.onPlay?(queue, index) }
+        search.onSelectTrack = { [weak self] queue, index in self?.onPlay?(queue, index) }
+        libraryController = library
+        searchController = search
+        let libraryNavigation = UINavigationController(rootViewController: library)
+        let searchNavigation = UINavigationController(rootViewController: search)
+        libraryNavigationController = libraryNavigation
+        searchNavigationController = searchNavigation
+        showContent(libraryNavigation)
+
+        guard let snapshotPublisher, let onTogglePlay else { return }
+        let mini = MiniPlayerView(
+            snapshotPublisher: snapshotPublisher,
+            onTogglePlay: onTogglePlay,
+            onOpenPlayer: { [weak self] in self?.onOpenPlayer?() }
+        )
+        miniPlayerView = mini
+        contentView.addSubview(mini)
+        mini.snp.makeConstraints { make in
+            make.leading.trailing.equalTo(contentView.safeAreaLayoutGuide).inset(12)
+            make.bottom.equalTo(contentView.safeAreaLayoutGuide).inset(12)
+        }
+    }
+
+    private func showContent(_ controller: UIViewController) {
+        guard controller !== activeContentController else { return }
+        if let activeContentController {
+            activeContentController.willMove(toParent: nil)
+            activeContentController.view.removeFromSuperview()
+            activeContentController.removeFromParent()
+        }
+        addChild(controller)
+        contentView.addSubview(controller.view)
+        controller.view.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        controller.didMove(toParent: self)
+        activeContentController = controller
+        if let miniPlayerView {
+            contentView.bringSubviewToFront(miniPlayerView)
+        }
+    }
+
+    private func sidebarButton(title: String, symbol: String) -> UIButton {
+        var configuration = UIButton.Configuration.plain()
+        configuration.title = title
+        configuration.image = UIImage(systemName: symbol)
+        configuration.imagePadding = 12
+        configuration.baseForegroundColor = Theme.accent
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12)
+        let button = UIButton(configuration: configuration)
+        button.contentHorizontalAlignment = .leading
+        button.titleLabel?.font = .preferredFont(forTextStyle: .headline)
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
+        button.snp.makeConstraints { make in
+            make.height.greaterThanOrEqualTo(44)
+        }
+        return button
     }
 }
