@@ -263,6 +263,45 @@ final class PlayerViewControllerTests: XCTestCase {
         XCTAssertEqual(slider.value, 76, accuracy: 0.01)
     }
 
+    /// 如果空快照没有取消拖动，新歌曲进度会被旧手势锁住且迟到 touchUp 会误 seek。
+    func testEmptySnapshotCancelsSeekingBeforeNextTrackSnapshot() async throws {
+        let firstTrack = makeTrack(title: "第一首")
+        let nextTrack = makeTrack(title: "第二首")
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot(
+            status: .playing,
+            track: firstTrack,
+            elapsed: 10,
+            duration: 100,
+            queueIndex: 0,
+            queueCount: 2
+        ))
+        var seekValues = [TimeInterval]()
+        let sut = makePlayer(snapshots: snapshots, onSeek: { seekValues.append($0) })
+        sut.loadViewIfNeeded()
+        let slider = try XCTUnwrap(findView(identifier: "player.progress", in: sut.view) as? UISlider)
+        let title = try XCTUnwrap(findView(identifier: "player.title", in: sut.view) as? UILabel)
+        await waitUntil { slider.value == 10 }
+
+        slider.sendActions(for: .touchDown)
+        slider.value = 44
+        slider.sendActions(for: .valueChanged)
+        snapshots.send(PlaybackSnapshot())
+        await waitUntil { title.text == "尚未播放" }
+        snapshots.send(PlaybackSnapshot(
+            status: .playing,
+            track: nextTrack,
+            elapsed: 76,
+            duration: 120,
+            queueIndex: 0,
+            queueCount: 1
+        ))
+        await waitUntil { title.text == nextTrack.title && slider.isEnabled }
+
+        XCTAssertEqual(slider.value, 76, accuracy: 0.01)
+        slider.sendActions(for: .touchUpInside)
+        XCTAssertTrue(seekValues.isEmpty)
+    }
+
     /// 如果辅助功能只发送 valueChanged 时没有立即 seek，此测试应失败。
     func testNonTrackingProgressChangeSeeksImmediately() async throws {
         let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(

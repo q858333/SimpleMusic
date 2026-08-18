@@ -315,6 +315,8 @@ final class PlayerViewController: UIViewController {
     }
 
     private func renderEmptyState() {
+        // 空快照结束上一首的本地拖动，迟到 touchUp 不得作用于下一首。
+        isSeeking = false
         titleLabel.text = "尚未播放"
         artistLabel.text = "选择一首歌曲开始播放"
         albumLabel.text = nil
