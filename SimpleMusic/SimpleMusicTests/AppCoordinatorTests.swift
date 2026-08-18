@@ -1,3 +1,4 @@
+import Combine
 import MediaPlayer
 import UIKit
 import XCTest
@@ -9,6 +10,37 @@ final class AppCoordinatorTests: XCTestCase {
     func testRootKindMatchesPhoneAndPadIdioms() {
         XCTAssertEqual(AppCoordinator.rootKind(for: .phone), .phone)
         XCTAssertEqual(AppCoordinator.rootKind(for: .pad), .pad)
+    }
+
+    /// 如果默认根工厂忽略注入依赖并回退 AppEnvironment.shared，此测试应失败。
+    @MainActor
+    func testDefaultRootFactoryKeepsInjectedDependenciesForPhoneAndPad() throws {
+        let identity = NSObject()
+        let viewModel = LibraryViewModel(
+            library: CoordinatorStubMusicLibrary(),
+            localStore: CoordinatorStubLocalMusicStore()
+        )
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot())
+        let dependencies = AppRootDependencies(
+            identity: identity,
+            libraryViewModel: viewModel,
+            snapshotPublisher: snapshots.eraseToAnyPublisher(),
+            onPlay: { _, _ in },
+            onTogglePlay: {}
+        )
+        let factory = AppCoordinator.makeMainViewControllerFactory(dependencies: dependencies)
+
+        let phone = try XCTUnwrap(factory(.phone) as? MainTabBarController)
+        phone.loadViewIfNeeded()
+        let phoneLibrary = try XCTUnwrap(descendant(LibraryViewController.self, in: phone))
+        XCTAssertEqual(phone.dependencyIdentity, ObjectIdentifier(identity))
+        XCTAssertTrue(phoneLibrary.viewModel === viewModel)
+
+        let pad = try XCTUnwrap(factory(.pad) as? PadRootViewController)
+        pad.loadViewIfNeeded()
+        let padLibrary = try XCTUnwrap(descendant(LibraryViewController.self, in: pad))
+        XCTAssertEqual(pad.dependencyIdentity, ObjectIdentifier(identity))
+        XCTAssertTrue(padLibrary.viewModel === viewModel)
     }
 
     /// 如果非首次授权状态仍展示授权页，或首次状态跳过授权页，此测试应失败。
@@ -222,9 +254,29 @@ final class AppCoordinatorTests: XCTestCase {
         return root.subviews.lazy.compactMap { self.findView(identifier: identifier, in: $0) }.first
     }
 
+    private func descendant<T: UIViewController>(
+        _ type: T.Type,
+        in root: UIViewController
+    ) -> T? {
+        if let match = root as? T { return match }
+        return root.children.lazy.compactMap { self.descendant(type, in: $0) }.first
+    }
+
     private func hasMinimumHeight(_ height: CGFloat, view: UIView) -> Bool {
         view.constraints.contains {
             $0.firstAttribute == .height && $0.relation == .greaterThanOrEqual && $0.constant >= height
         }
     }
+}
+
+@MainActor
+private final class CoordinatorStubMusicLibrary: MusicLibraryLoading {
+    let authorizationStatus = MPMediaLibraryAuthorizationStatus.authorized
+
+    func loadTracks() async throws -> [SimpleMusic.MusicTrack] { [] }
+}
+
+@MainActor
+private final class CoordinatorStubLocalMusicStore: LocalMusicLoading {
+    func loadTracks() async throws -> [SimpleMusic.MusicTrack] { [] }
 }

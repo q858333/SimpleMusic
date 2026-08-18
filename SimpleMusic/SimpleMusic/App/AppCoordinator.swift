@@ -1,9 +1,53 @@
+import Combine
 import MediaPlayer
 import UIKit
 
 enum AppRootKind: Equatable {
     case phone
     case pad
+}
+
+/// 根容器所需的最小依赖包；identity 让测试无需构造第二个真实 AppEnvironment。
+@MainActor
+struct AppRootDependencies {
+    let identity: ObjectIdentifier
+    let libraryViewModel: LibraryViewModel
+    let snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>
+    let onPlay: ([MusicTrack], Int) -> Void
+    let onTogglePlay: () -> Void
+
+    init(environment: AppEnvironment) {
+        identity = ObjectIdentifier(environment)
+        libraryViewModel = LibraryViewModel(
+            library: environment.musicLibraryService,
+            localStore: environment.localMusicStore
+        )
+        snapshotPublisher = environment.playbackCoordinator.snapshotPublisher
+        onPlay = { [playbackCoordinator = environment.playbackCoordinator] queue, index in
+            do {
+                try playbackCoordinator.play(queue: queue, startAt: index)
+            } catch {
+                NSLog("无法开始播放：%@", String(describing: error))
+            }
+        }
+        onTogglePlay = { [playbackCoordinator = environment.playbackCoordinator] in
+            playbackCoordinator.togglePlay()
+        }
+    }
+
+    init(
+        identity: AnyObject,
+        libraryViewModel: LibraryViewModel,
+        snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>,
+        onPlay: @escaping ([MusicTrack], Int) -> Void,
+        onTogglePlay: @escaping () -> Void
+    ) {
+        self.identity = ObjectIdentifier(identity)
+        self.libraryViewModel = libraryViewModel
+        self.snapshotPublisher = snapshotPublisher
+        self.onPlay = onPlay
+        self.onTogglePlay = onTogglePlay
+    }
 }
 
 /// 负责首次权限分流和设备根容器选择；业务页面由后续模块注入根壳。
@@ -42,7 +86,14 @@ final class AppCoordinator {
             authorizationStatus: { environment.musicLibraryService.authorizationStatus },
             requestAuthorization: { await environment.musicLibraryService.requestAuthorization() },
             rootKind: Self.rootKind(for: userInterfaceIdiom),
-            makeMainViewController: Self.makeMainViewController(for:)
+            makeMainViewController: { kind in
+                switch kind {
+                case .phone:
+                    return MainTabBarController(environment: environment)
+                case .pad:
+                    return PadRootViewController(environment: environment)
+                }
+            }
         )
     }
 
@@ -76,12 +127,16 @@ final class AppCoordinator {
         idiom == .pad ? .pad : .phone
     }
 
-    private static func makeMainViewController(for kind: AppRootKind) -> UIViewController {
-        switch kind {
-        case .phone:
-            return MainTabBarController()
-        case .pad:
-            return PadRootViewController()
+    static func makeMainViewControllerFactory(
+        dependencies: AppRootDependencies
+    ) -> MainViewControllerFactory {
+        { kind in
+            switch kind {
+            case .phone:
+                return MainTabBarController(dependencies: dependencies)
+            case .pad:
+                return PadRootViewController(dependencies: dependencies)
+            }
         }
     }
 

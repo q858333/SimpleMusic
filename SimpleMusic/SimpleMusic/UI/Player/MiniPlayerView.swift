@@ -37,6 +37,13 @@ final class MiniPlayerView: UIView {
         return label
     }()
 
+    private lazy var metadataStack: UIStackView = {
+        let stack = UIStackView(arrangedSubviews: [titleLabel, artistLabel])
+        stack.axis = .vertical
+        stack.spacing = 2
+        return stack
+    }()
+
     private lazy var toggleButton: UIButton = {
         let button = UIButton(type: .system)
         button.accessibilityIdentifier = "mini.toggle"
@@ -83,6 +90,23 @@ final class MiniPlayerView: UIView {
         snapshotCancellable?.cancel()
     }
 
+    override var intrinsicContentSize: CGSize {
+        let artworkHeight: CGFloat = 46 + 18
+        let metadataHeight = titleLabel.font.lineHeight + artistLabel.font.lineHeight + 2 + 18
+        return CGSize(
+            width: UIView.noIntrinsicMetric,
+            height: max(64, max(artworkHeight, metadataHeight))
+        )
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if previousTraitCollection?.preferredContentSizeCategory
+            != traitCollection.preferredContentSizeCategory {
+            invalidateIntrinsicContentSize()
+        }
+    }
+
     func stop() {
         snapshotCancellable?.cancel()
         snapshotCancellable = nil
@@ -97,8 +121,7 @@ final class MiniPlayerView: UIView {
 
         addSubview(openButton)
         addSubview(artworkView)
-        addSubview(titleLabel)
-        addSubview(artistLabel)
+        addSubview(metadataStack)
         addSubview(toggleButton)
 
         openButton.snp.makeConstraints { make in
@@ -108,20 +131,20 @@ final class MiniPlayerView: UIView {
             make.leading.equalToSuperview().offset(9)
             make.centerY.equalToSuperview()
             make.size.equalTo(46)
+            make.top.greaterThanOrEqualToSuperview().offset(9)
+            make.bottom.lessThanOrEqualToSuperview().inset(9)
         }
         toggleButton.snp.makeConstraints { make in
             make.trailing.equalToSuperview().inset(8)
             make.centerY.equalToSuperview()
             make.size.greaterThanOrEqualTo(44)
         }
-        titleLabel.snp.makeConstraints { make in
+        metadataStack.snp.makeConstraints { make in
             make.leading.equalTo(artworkView.snp.trailing).offset(10)
             make.trailing.lessThanOrEqualTo(toggleButton.snp.leading).offset(-8)
-            make.top.equalToSuperview().offset(11)
-        }
-        artistLabel.snp.makeConstraints { make in
-            make.leading.trailing.equalTo(titleLabel)
-            make.top.equalTo(titleLabel.snp.bottom).offset(2)
+            make.centerY.equalToSuperview()
+            make.top.greaterThanOrEqualToSuperview().offset(9)
+            make.bottom.lessThanOrEqualToSuperview().inset(9)
         }
         snp.makeConstraints { make in
             make.height.greaterThanOrEqualTo(64)

@@ -4,6 +4,7 @@ import UIKit
 
 /// iPad 双栏根容器；保留 264pt 侧栏和右侧 Now Playing child 容器边界。
 final class PadRootViewController: UIViewController {
+    let dependencyIdentity: ObjectIdentifier?
     private let nowPlayingViewController: UIViewController
     private let libraryViewModel: LibraryViewModel?
     private let snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>?
@@ -38,32 +39,26 @@ final class PadRootViewController: UIViewController {
     }
 
     convenience init(environment: AppEnvironment) {
-        let viewModel = LibraryViewModel(
-            library: environment.musicLibraryService,
-            localStore: environment.localMusicStore
-        )
+        self.init(dependencies: AppRootDependencies(environment: environment))
+    }
+
+    convenience init(dependencies: AppRootDependencies) {
         let nowPlayingContainer = UIViewController()
         nowPlayingContainer.view.backgroundColor = Theme.background
         self.init(
             nowPlayingViewController: nowPlayingContainer,
-            libraryViewModel: viewModel,
-            snapshotPublisher: environment.playbackCoordinator.snapshotPublisher,
-            onPlay: { [playbackCoordinator = environment.playbackCoordinator] queue, index in
-                do {
-                    try playbackCoordinator.play(queue: queue, startAt: index)
-                } catch {
-                    NSLog("无法开始播放：%@", String(describing: error))
-                }
-            },
-            onTogglePlay: { [playbackCoordinator = environment.playbackCoordinator] in
-                playbackCoordinator.togglePlay()
-            },
-            onOpenPlayer: {}
+            libraryViewModel: dependencies.libraryViewModel,
+            snapshotPublisher: dependencies.snapshotPublisher,
+            onPlay: dependencies.onPlay,
+            onTogglePlay: dependencies.onTogglePlay,
+            onOpenPlayer: {},
+            dependencyIdentity: dependencies.identity
         )
     }
 
     /// 保留 Task 8 注入点，后续完整播放页仍可使用同一 child containment 边界。
     init(nowPlayingViewController: UIViewController) {
+        dependencyIdentity = nil
         self.nowPlayingViewController = nowPlayingViewController
         libraryViewModel = nil
         snapshotPublisher = nil
@@ -78,8 +73,10 @@ final class PadRootViewController: UIViewController {
         snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>,
         onPlay: @escaping ([MusicTrack], Int) -> Void,
         onTogglePlay: @escaping () -> Void,
-        onOpenPlayer: @escaping () -> Void
+        onOpenPlayer: @escaping () -> Void,
+        dependencyIdentity: ObjectIdentifier? = nil
     ) {
+        self.dependencyIdentity = dependencyIdentity
         self.nowPlayingViewController = nowPlayingViewController
         self.libraryViewModel = libraryViewModel
         self.snapshotPublisher = snapshotPublisher

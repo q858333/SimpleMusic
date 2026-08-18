@@ -4,6 +4,7 @@ import UIKit
 
 /// iPhone 根容器：资料库和搜索共享同一份列表，迷你播放器只转发播放动作。
 final class MainTabBarController: UITabBarController {
+    let dependencyIdentity: ObjectIdentifier?
     private let libraryViewModel: LibraryViewModel
     private let snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>
     private let onPlay: ([MusicTrack], Int) -> Void
@@ -25,24 +26,17 @@ final class MainTabBarController: UITabBarController {
     }
 
     convenience init(environment: AppEnvironment) {
-        let viewModel = LibraryViewModel(
-            library: environment.musicLibraryService,
-            localStore: environment.localMusicStore
-        )
+        self.init(dependencies: AppRootDependencies(environment: environment))
+    }
+
+    convenience init(dependencies: AppRootDependencies) {
         self.init(
-            libraryViewModel: viewModel,
-            snapshotPublisher: environment.playbackCoordinator.snapshotPublisher,
-            onPlay: { [playbackCoordinator = environment.playbackCoordinator] queue, index in
-                do {
-                    try playbackCoordinator.play(queue: queue, startAt: index)
-                } catch {
-                    NSLog("无法开始播放：%@", String(describing: error))
-                }
-            },
-            onTogglePlay: { [playbackCoordinator = environment.playbackCoordinator] in
-                playbackCoordinator.togglePlay()
-            },
-            onOpenPlayer: {}
+            libraryViewModel: dependencies.libraryViewModel,
+            snapshotPublisher: dependencies.snapshotPublisher,
+            onPlay: dependencies.onPlay,
+            onTogglePlay: dependencies.onTogglePlay,
+            onOpenPlayer: {},
+            dependencyIdentity: dependencies.identity
         )
     }
 
@@ -51,8 +45,10 @@ final class MainTabBarController: UITabBarController {
         snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>,
         onPlay: @escaping ([MusicTrack], Int) -> Void,
         onTogglePlay: @escaping () -> Void,
-        onOpenPlayer: @escaping () -> Void
+        onOpenPlayer: @escaping () -> Void,
+        dependencyIdentity: ObjectIdentifier? = nil
     ) {
+        self.dependencyIdentity = dependencyIdentity
         self.libraryViewModel = libraryViewModel
         self.snapshotPublisher = snapshotPublisher
         self.onPlay = onPlay

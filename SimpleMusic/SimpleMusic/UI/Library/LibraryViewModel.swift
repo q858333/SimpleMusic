@@ -62,38 +62,13 @@ final class LibraryViewModel {
         systemState = isAuthorized ? .loading : .permissionRequired
         localState = .loading
 
-        let systemResult: Result<[MusicTrack], Error>?
-        if isAuthorized {
-            systemResult = await load { try await self.library.loadTracks() }
-        } else {
-            systemResult = nil
-        }
-        let localResult = await load { try await self.localStore.loadTracks() }
-
-        // 较早刷新可以继续释放资源，但不能再改写新一代页面状态。
-        guard generation == reloadGeneration else { return }
-
-        if let systemResult {
-            switch systemResult {
-            case let .success(loadedTracks):
-                systemTracks = loadedTracks
-                systemState = loadedTracks.isEmpty ? .empty : .loaded
-            case .failure:
-                systemState = .failed("无法读取系统音乐资料库")
-            }
-        } else {
-            systemTracks = []
-        }
-
-        switch localResult {
-        case let .success(loadedTracks):
-            localTracks = loadedTracks
-            localState = loadedTracks.isEmpty ? .empty : .loaded
-        case .failure:
-            localState = .failed("无法读取已下载歌曲")
-        }
-
-        tracks = systemTracks + localTracks
+        // 两个 child task 同时启动；各来源结束后独立发布，reload 仍等待本代全部收束。
+        async let systemWork: Void = reloadSystem(
+            generation: generation,
+            isAuthorized: isAuthorized
+        )
+        async let localWork: Void = reloadLocal(generation: generation)
+        _ = await (systemWork, localWork)
     }
 
     func filter(query: String) -> [MusicTrack] {
@@ -109,6 +84,48 @@ final class LibraryViewModel {
                 ) != nil
             }
         }
+    }
+
+    private func reloadSystem(generation: UInt64, isAuthorized: Bool) async {
+        guard isAuthorized else {
+            guard generation == reloadGeneration else { return }
+            systemTracks = []
+            publishMergedTracks()
+            return
+        }
+
+        let result = await load { try await self.library.loadTracks() }
+
+        // 较早来源可以继续释放资源，但任何单源迟到事件都不能改写新一代。
+        guard generation == reloadGeneration else { return }
+
+        switch result {
+        case let .success(loadedTracks):
+            systemTracks = loadedTracks
+            systemState = loadedTracks.isEmpty ? .empty : .loaded
+        case .failure:
+            systemState = .failed("无法读取系统音乐资料库")
+        }
+        publishMergedTracks()
+    }
+
+    private func reloadLocal(generation: UInt64) async {
+        let result = await load { try await self.localStore.loadTracks() }
+
+        guard generation == reloadGeneration else { return }
+
+        switch result {
+        case let .success(loadedTracks):
+            localTracks = loadedTracks
+            localState = loadedTracks.isEmpty ? .empty : .loaded
+        case .failure:
+            localState = .failed("无法读取已下载歌曲")
+        }
+        publishMergedTracks()
+    }
+
+    private func publishMergedTracks() {
+        tracks = systemTracks + localTracks
     }
 
     private func load(
