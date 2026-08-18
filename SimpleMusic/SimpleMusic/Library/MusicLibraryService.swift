@@ -2,7 +2,7 @@ import MediaPlayer
 import UIKit
 
 /// 系统媒体库的值类型边界，避免领域模型直接依赖 `MPMediaItem`。
-struct SystemTrackMetadata {
+struct SystemTrackMetadata: Sendable {
     let persistentID: UInt64
     let title: String?
     let artist: String?
@@ -14,8 +14,23 @@ struct SystemTrackMetadata {
 /// 负责权限申请与系统音乐资料库查询；播放所需系统对象仅在这里按持久 ID 取回。
 @MainActor
 final class MusicLibraryService {
+    typealias MetadataQuery = @Sendable () throws -> [SystemTrackMetadata]
+
+    private let authorizationStatusProvider: () -> MPMediaLibraryAuthorizationStatus
+    private let metadataQuery: MetadataQuery
+
+    init(
+        authorizationStatusProvider: @escaping () -> MPMediaLibraryAuthorizationStatus = {
+            MPMediaLibrary.authorizationStatus()
+        },
+        metadataQuery: MetadataQuery? = nil
+    ) {
+        self.authorizationStatusProvider = authorizationStatusProvider
+        self.metadataQuery = metadataQuery ?? Self.queryMetadata
+    }
+
     var authorizationStatus: MPMediaLibraryAuthorizationStatus {
-        MPMediaLibrary.authorizationStatus()
+        authorizationStatusProvider()
     }
 
     func requestAuthorization() async -> MPMediaLibraryAuthorizationStatus {
@@ -30,9 +45,18 @@ final class MusicLibraryService {
         // 未获授权时不触碰媒体库查询，模拟器与首次启动均可安全返回空列表。
         guard authorizationStatus == .authorized else { return [] }
 
-        return (MPMediaQuery.songs().items ?? []).map { item in
-            Self.makeTrack(from: Self.metadata(from: item))
-        }
+        return try metadataQuery().map(Self.makeTrack)
+    }
+
+    /// 正式资料库刷新只在主线程检查权限；媒体查询和系统对象读取全部留在后台任务。
+    func fetchTracksAsync() async throws -> [MusicTrack] {
+        guard authorizationStatus == .authorized else { return [] }
+
+        let query = metadataQuery
+        let metadata = try await Task.detached(priority: .userInitiated) {
+            try query()
+        }.value
+        return metadata.map(Self.makeTrack)
     }
 
     func mediaItem(for persistentID: UInt64) -> MPMediaItem? {
@@ -56,7 +80,11 @@ final class MusicLibraryService {
         )
     }
 
-    private static func metadata(from item: MPMediaItem) -> SystemTrackMetadata {
+    nonisolated private static func queryMetadata() throws -> [SystemTrackMetadata] {
+        (MPMediaQuery.songs().items ?? []).map(metadata)
+    }
+
+    nonisolated private static func metadata(from item: MPMediaItem) -> SystemTrackMetadata {
         let artworkData: Data?
         if let artwork = item.artwork {
             artworkData = artwork.image(at: artwork.bounds.size)?.pngData()

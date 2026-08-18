@@ -1,4 +1,5 @@
 import Combine
+import CoreData
 import MediaPlayer
 import UIKit
 import XCTest
@@ -177,6 +178,124 @@ final class LibraryViewModelTests: XCTestCase {
         XCTAssertEqual(sut.tracks, [newSystemTrack, newLocalTrack])
         XCTAssertEqual(sut.systemState, .loaded)
         XCTAssertEqual(sut.localState, .loaded)
+    }
+
+    /// 如果正式系统查询仍占住 MainActor，本地 background context 的结果无法先发布。
+    @MainActor
+    func testProductionReloadPublishesLocalWhileSystemQueryIsBlocked() async throws {
+        let systemGate = ProductionQueryGate()
+        let systemProbe = ProductionThreadProbe()
+        let localProbe = ProductionThreadProbe()
+        let library = MusicLibraryService(
+            authorizationStatusProvider: { .authorized },
+            metadataQuery: {
+                systemProbe.recordCurrentThread()
+                systemGate.wait()
+                return [Self.systemMetadata(id: 1)]
+            }
+        )
+        let localStore = LocalMusicStore(
+            container: try makeInMemoryContainer(),
+            backgroundQuery: { _ in
+                localProbe.recordCurrentThread()
+                return [Self.localRecord(id: "local")]
+            }
+        )
+        let sut = LibraryViewModel(library: library, localStore: localStore)
+        defer { systemGate.open() }
+
+        let reload = Task { await sut.reload() }
+        let systemStarted = await eventually { systemProbe.hasRecordedThread }
+        let localPublished = await eventually {
+            sut.localState == .loaded && sut.tracks.map(\.id) == ["local"]
+        }
+
+        XCTAssertTrue(systemStarted)
+        XCTAssertEqual(systemProbe.wasMainThread, false)
+        XCTAssertEqual(localProbe.wasMainThread, false)
+        XCTAssertTrue(localPublished)
+        XCTAssertTrue(Thread.isMainThread)
+        XCTAssertEqual(sut.systemState, .loading)
+
+        systemGate.open()
+        await reload.value
+        XCTAssertEqual(sut.tracks.map(\.id), ["system-1", "local"])
+    }
+
+    /// 如果正式本地查询仍使用 viewContext.performAndWait，系统后台结果无法先发布。
+    @MainActor
+    func testProductionReloadPublishesSystemWhileLocalQueryIsBlocked() async throws {
+        let localGate = ProductionQueryGate()
+        let systemProbe = ProductionThreadProbe()
+        let localProbe = ProductionThreadProbe()
+        let library = MusicLibraryService(
+            authorizationStatusProvider: { .authorized },
+            metadataQuery: {
+                systemProbe.recordCurrentThread()
+                return [Self.systemMetadata(id: 2)]
+            }
+        )
+        let localStore = LocalMusicStore(
+            container: try makeInMemoryContainer(),
+            backgroundQuery: { _ in
+                localProbe.recordCurrentThread()
+                localGate.wait()
+                return [Self.localRecord(id: "local")]
+            }
+        )
+        let sut = LibraryViewModel(library: library, localStore: localStore)
+        defer { localGate.open() }
+
+        let reload = Task { await sut.reload() }
+        let localStarted = await eventually { localProbe.hasRecordedThread }
+        let systemPublished = await eventually {
+            sut.systemState == .loaded && sut.tracks.map(\.id) == ["system-2"]
+        }
+
+        XCTAssertTrue(localStarted)
+        XCTAssertEqual(localProbe.wasMainThread, false)
+        XCTAssertEqual(systemProbe.wasMainThread, false)
+        XCTAssertTrue(systemPublished)
+        XCTAssertTrue(Thread.isMainThread)
+        XCTAssertEqual(sut.localState, .loading)
+
+        localGate.open()
+        await reload.value
+        XCTAssertEqual(sut.tracks.map(\.id), ["system-2", "local"])
+    }
+
+    /// 即使旧正式查询不能物理取消，其后台迟到值也不能越过 generation 门禁。
+    @MainActor
+    func testProductionReloadRejectsOldBlockedSystemQuery() async throws {
+        let sequence = ProductionSystemQuerySequence()
+        let library = MusicLibraryService(
+            authorizationStatusProvider: { .authorized },
+            metadataQuery: { sequence.query() }
+        )
+        let localStore = LocalMusicStore(
+            container: try makeInMemoryContainer(),
+            backgroundQuery: { _ in [] }
+        )
+        let sut = LibraryViewModel(library: library, localStore: localStore)
+        defer { sequence.releaseFirst() }
+
+        let older = Task { await sut.reload() }
+        let firstStarted = await eventually { sequence.queryCount >= 1 }
+        XCTAssertTrue(firstStarted)
+
+        let newer = Task { await sut.reload() }
+        let newerPublished = await eventually {
+            sequence.queryCount >= 2 && sut.tracks.map(\.id) == ["system-202"]
+        }
+        XCTAssertTrue(newerPublished)
+
+        sequence.releaseFirst()
+        await newer.value
+        await older.value
+
+        XCTAssertEqual(sut.tracks.map(\.id), ["system-202"])
+        XCTAssertEqual(sut.systemState, .loaded)
+        XCTAssertEqual(sut.localState, .empty)
     }
 
     /// 如果没有当前歌曲时仍显示演示内容，或真实歌曲元数据没有映射到界面，此测试应失败。
@@ -515,6 +634,41 @@ final class LibraryViewModelTests: XCTestCase {
         )
     }
 
+    private func makeInMemoryContainer() throws -> NSPersistentContainer {
+        let container = NSPersistentContainer(name: "SimpleMusic")
+        let description = NSPersistentStoreDescription()
+        description.type = NSInMemoryStoreType
+        description.shouldAddStoreAsynchronously = false
+        container.persistentStoreDescriptions = [description]
+
+        var loadingError: Error?
+        container.loadPersistentStores { _, error in loadingError = error }
+        if let loadingError { throw loadingError }
+        return container
+    }
+
+    nonisolated private static func systemMetadata(id: UInt64) -> SystemTrackMetadata {
+        SystemTrackMetadata(
+            persistentID: id,
+            title: "系统歌曲 \(id)",
+            artist: "系统艺人",
+            album: "系统专辑",
+            duration: 180,
+            artworkData: nil
+        )
+    }
+
+    nonisolated private static func localRecord(id: String) -> LocalTrackRecord {
+        LocalTrackRecord(
+            id: id,
+            fileName: "\(id).m4a",
+            title: "本地歌曲",
+            artist: "本地艺人",
+            album: "本地专辑",
+            duration: 180
+        )
+    }
+
     private func findView(identifier: String, in root: UIView) -> UIView? {
         if root.accessibilityIdentifier == identifier { return root }
         return root.subviews.lazy.compactMap {
@@ -580,9 +734,8 @@ private enum TestError: Error {
     case unavailable
 }
 
-@MainActor
 private final class StubMusicLibrary: MusicLibraryLoading {
-    let authorizationStatus: MPMediaLibraryAuthorizationStatus
+    @MainActor let authorizationStatus: MPMediaLibraryAuthorizationStatus
     private let result: Result<[SimpleMusic.MusicTrack], Error>
 
     init(
@@ -606,7 +759,6 @@ private final class StubMusicLibrary: MusicLibraryLoading {
     }
 }
 
-@MainActor
 private final class StubLocalMusicStore: LocalMusicLoading {
     private let result: Result<[SimpleMusic.MusicTrack], Error>
 
@@ -623,29 +775,33 @@ private final class StubLocalMusicStore: LocalMusicLoading {
     }
 }
 
-@MainActor
 private final class DeferredMusicLibrary: MusicLibraryLoading {
-    let authorizationStatus = MPMediaLibraryAuthorizationStatus.authorized
-    private var requests = [DeferredTrackRequest]()
+    @MainActor let authorizationStatus = MPMediaLibraryAuthorizationStatus.authorized
+    @MainActor private var requests = [DeferredTrackRequest]()
 
-    var requestCount: Int { requests.count }
+    @MainActor var requestCount: Int { requests.count }
 
-    func loadTracks() async throws -> [SimpleMusic.MusicTrack] {
+    nonisolated func loadTracks() async throws -> [SimpleMusic.MusicTrack] {
         try await withCheckedThrowingContinuation { continuation in
-            requests.append(DeferredTrackRequest(continuation: continuation))
+            Task { @MainActor in
+                self.requests.append(DeferredTrackRequest(continuation: continuation))
+            }
         }
     }
 
+    @MainActor
     func resumeRequest(at index: Int, with tracks: [SimpleMusic.MusicTrack]) {
         resumeRequestIfPending(at: index, with: tracks)
     }
 
+    @MainActor
     func resumeRequest(at index: Int, throwing error: Error) {
         guard requests.indices.contains(index), !requests[index].isResumed else { return }
         requests[index].isResumed = true
         requests[index].continuation.resume(throwing: error)
     }
 
+    @MainActor
     func resumeRequestIfPending(at index: Int, with tracks: [SimpleMusic.MusicTrack]) {
         guard requests.indices.contains(index), !requests[index].isResumed else { return }
         requests[index].isResumed = true
@@ -653,28 +809,32 @@ private final class DeferredMusicLibrary: MusicLibraryLoading {
     }
 }
 
-@MainActor
 private final class DeferredLocalMusicStore: LocalMusicLoading {
-    private var requests = [DeferredTrackRequest]()
+    @MainActor private var requests = [DeferredTrackRequest]()
 
-    var requestCount: Int { requests.count }
+    @MainActor var requestCount: Int { requests.count }
 
-    func loadTracks() async throws -> [SimpleMusic.MusicTrack] {
+    nonisolated func loadTracks() async throws -> [SimpleMusic.MusicTrack] {
         try await withCheckedThrowingContinuation { continuation in
-            requests.append(DeferredTrackRequest(continuation: continuation))
+            Task { @MainActor in
+                self.requests.append(DeferredTrackRequest(continuation: continuation))
+            }
         }
     }
 
+    @MainActor
     func resumeRequest(at index: Int, with tracks: [SimpleMusic.MusicTrack]) {
         resumeRequestIfPending(at: index, with: tracks)
     }
 
+    @MainActor
     func resumeRequest(at index: Int, throwing error: Error) {
         guard requests.indices.contains(index), !requests[index].isResumed else { return }
         requests[index].isResumed = true
         requests[index].continuation.resume(throwing: error)
     }
 
+    @MainActor
     func resumeRequestIfPending(at index: Int, with tracks: [SimpleMusic.MusicTrack]) {
         guard requests.indices.contains(index), !requests[index].isResumed else { return }
         requests[index].isResumed = true
@@ -685,4 +845,65 @@ private final class DeferredLocalMusicStore: LocalMusicLoading {
 private struct DeferredTrackRequest {
     let continuation: CheckedContinuation<[SimpleMusic.MusicTrack], Error>
     var isResumed = false
+}
+
+private final class ProductionQueryGate: @unchecked Sendable {
+    private let semaphore = DispatchSemaphore(value: 0)
+
+    func wait() {
+        _ = semaphore.wait(timeout: .now() + 2)
+    }
+
+    func open() {
+        semaphore.signal()
+    }
+}
+
+private final class ProductionThreadProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedMainThread: Bool?
+
+    var hasRecordedThread: Bool {
+        lock.withLock { recordedMainThread != nil }
+    }
+
+    var wasMainThread: Bool? {
+        lock.withLock { recordedMainThread }
+    }
+
+    func recordCurrentThread() {
+        lock.withLock { recordedMainThread = Thread.isMainThread }
+    }
+}
+
+private final class ProductionSystemQuerySequence: @unchecked Sendable {
+    private let lock = NSLock()
+    private let firstGate = DispatchSemaphore(value: 0)
+    private var count = 0
+
+    var queryCount: Int {
+        lock.withLock { count }
+    }
+
+    func query() -> [SystemTrackMetadata] {
+        let index = lock.withLock {
+            count += 1
+            return count
+        }
+        if index == 1 {
+            _ = firstGate.wait(timeout: .now() + 2)
+        }
+        return [SystemTrackMetadata(
+            persistentID: index == 1 ? 101 : 202,
+            title: "系统歌曲",
+            artist: "系统艺人",
+            album: "系统专辑",
+            duration: 180,
+            artworkData: nil
+        )]
+    }
+
+    func releaseFirst() {
+        firstGate.signal()
+    }
 }

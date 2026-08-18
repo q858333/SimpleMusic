@@ -32,13 +32,27 @@ struct DownloadedTrackMetadata {
     }
 }
 
+/// Core Data 对象只在所属 context 内读取；跨执行器仅传递不可变值快照。
+struct LocalTrackRecord: Sendable {
+    let id: String
+    let fileName: String
+    let title: String
+    let artist: String
+    let album: String
+    let duration: TimeInterval
+}
+
 /// Core Data 下载索引的事务边界；文件的创建和删除由 DownloadManager 负责。
-final class LocalMusicStore {
+final class LocalMusicStore: @unchecked Sendable {
+    typealias BackgroundQuery = @Sendable (NSManagedObjectContext) throws -> [LocalTrackRecord]
+
     private let container: NSPersistentContainer
+    private let backgroundQuery: BackgroundQuery
     private var context: NSManagedObjectContext { container.viewContext }
 
-    init(container: NSPersistentContainer) {
+    init(container: NSPersistentContainer, backgroundQuery: BackgroundQuery? = nil) {
         self.container = container
+        self.backgroundQuery = backgroundQuery ?? Self.fetchRecords
     }
 
     static func inMemory() throws -> LocalMusicStore {
@@ -60,10 +74,19 @@ final class LocalMusicStore {
 
     func fetchTracks() throws -> [MusicTrack] {
         try context.performAndWait {
-            let request = DownloadedTrackEntity.fetchRequest()
-            request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: true)]
-            return try context.fetch(request).map(Self.makeTrack)
+            try Self.fetchRecords(in: context).map(Self.makeTrack)
         }
+    }
+
+    /// 使用独立 background context 查询；continuation 在单个 Result 路径上恰好恢复一次。
+    func fetchTracksAsync() async throws -> [MusicTrack] {
+        let query = backgroundQuery
+        let records: [LocalTrackRecord] = try await withCheckedThrowingContinuation { continuation in
+            container.performBackgroundTask { context in
+                continuation.resume(with: Result { try query(context) })
+            }
+        }
+        return records.map(Self.makeTrack)
     }
 
     func insert(_ metadata: DownloadedTrackMetadata) throws -> MusicTrack {
@@ -80,7 +103,7 @@ final class LocalMusicStore {
 
             do {
                 try context.save()
-                return Self.makeTrack(from: entity)
+                return Self.makeTrack(from: Self.record(from: entity))
             } catch {
                 context.rollback()
                 throw error
@@ -106,15 +129,34 @@ final class LocalMusicStore {
         }
     }
 
-    nonisolated private static func makeTrack(from entity: DownloadedTrackEntity) -> MusicTrack {
-        MusicTrack(
+    nonisolated private static func fetchRecords(
+        in context: NSManagedObjectContext
+    ) throws -> [LocalTrackRecord] {
+        let request = NSFetchRequest<DownloadedTrackEntity>(entityName: "DownloadedTrackEntity")
+        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: true)]
+        return try context.fetch(request).map(record)
+    }
+
+    nonisolated private static func record(from entity: DownloadedTrackEntity) -> LocalTrackRecord {
+        LocalTrackRecord(
             id: entity.id,
+            fileName: entity.fileName,
             title: entity.title,
             artist: entity.artist,
             album: entity.album,
-            duration: entity.duration,
+            duration: entity.duration
+        )
+    }
+
+    nonisolated private static func makeTrack(from record: LocalTrackRecord) -> MusicTrack {
+        MusicTrack(
+            id: record.id,
+            title: record.title,
+            artist: record.artist,
+            album: record.album,
+            duration: record.duration,
             artworkData: nil,
-            source: .downloaded(fileName: entity.fileName)
+            source: .downloaded(fileName: record.fileName)
         )
     }
 }

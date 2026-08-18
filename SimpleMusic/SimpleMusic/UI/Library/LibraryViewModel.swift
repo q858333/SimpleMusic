@@ -3,27 +3,25 @@ import Foundation
 import MediaPlayer
 
 /// 系统资料库边界使用异步接口，便于刷新代次在来源读取悬挂时仍保持正确。
-@MainActor
 protocol MusicLibraryLoading: AnyObject {
-    var authorizationStatus: MPMediaLibraryAuthorizationStatus { get }
+    @MainActor var authorizationStatus: MPMediaLibraryAuthorizationStatus { get }
     func loadTracks() async throws -> [MusicTrack]
 }
 
 /// 本地索引与页面隔离，测试和正式环境都只交换统一歌曲模型。
-@MainActor
 protocol LocalMusicLoading: AnyObject {
     func loadTracks() async throws -> [MusicTrack]
 }
 
 extension MusicLibraryService: MusicLibraryLoading {
-    func loadTracks() async throws -> [MusicTrack] {
-        try fetchTracks()
+    nonisolated func loadTracks() async throws -> [MusicTrack] {
+        try await fetchTracksAsync()
     }
 }
 
 extension LocalMusicStore: LocalMusicLoading {
     func loadTracks() async throws -> [MusicTrack] {
-        try fetchTracks()
+        try await fetchTracksAsync()
     }
 }
 
@@ -129,7 +127,7 @@ final class LibraryViewModel {
     }
 
     private func load(
-        _ operation: @escaping @MainActor () async throws -> [MusicTrack]
+        _ operation: @escaping () async throws -> [MusicTrack]
     ) async -> Result<[MusicTrack], Error> {
         do {
             return .success(try await operation())

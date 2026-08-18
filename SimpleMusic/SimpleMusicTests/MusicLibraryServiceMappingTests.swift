@@ -2,6 +2,39 @@ import XCTest
 @testable import SimpleMusic
 
 final class MusicLibraryServiceMappingTests: XCTestCase {
+    /// 如果 async 系统查询仍在 MainActor 执行，阻塞 gate 会阻止测试观察 started 状态。
+    @MainActor
+    func testAsyncFetchRunsBlockingMetadataQueryOffMainActor() async throws {
+        let gate = SystemQueryGate()
+        let probe = SystemQueryThreadProbe()
+        let service = MusicLibraryService(
+            authorizationStatusProvider: { .authorized },
+            metadataQuery: {
+                probe.recordCurrentThread()
+                gate.wait()
+                return [SystemTrackMetadata(
+                    persistentID: 88,
+                    title: "后台歌曲",
+                    artist: "后台艺人",
+                    album: "后台专辑",
+                    duration: 30,
+                    artworkData: nil
+                )]
+            }
+        )
+        defer { gate.open() }
+
+        let fetch = Task { try await service.fetchTracksAsync() }
+        let queryStarted = await eventually { probe.hasRecordedThread }
+        XCTAssertTrue(queryStarted)
+        XCTAssertEqual(probe.wasMainThread, false)
+        XCTAssertTrue(Thread.isMainThread)
+
+        gate.open()
+        let tracks = try await fetch.value
+        XCTAssertEqual(tracks.map(\MusicTrack.id), ["system-88"])
+    }
+
     /// 如果映射不再为缺失元数据提供可展示的默认值，此测试应失败。
     @MainActor
     func testMissingMetadataUsesSystemIdentifierAndUnknownCopy() {
@@ -41,5 +74,46 @@ final class MusicLibraryServiceMappingTests: XCTestCase {
         XCTAssertEqual(track.duration, 61)
         XCTAssertEqual(track.artworkData, Data([0x01]))
         XCTAssertEqual(track.source, .system(persistentID: 7))
+    }
+
+    @MainActor
+    private func eventually(
+        attempts: Int = 100,
+        condition: @escaping @MainActor () -> Bool
+    ) async -> Bool {
+        for _ in 0..<attempts {
+            if condition() { return true }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return condition()
+    }
+}
+
+private final class SystemQueryGate: @unchecked Sendable {
+    private let semaphore = DispatchSemaphore(value: 0)
+
+    func wait() {
+        _ = semaphore.wait(timeout: .now() + 1)
+    }
+
+    func open() {
+        semaphore.signal()
+    }
+}
+
+private final class SystemQueryThreadProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedMainThread: Bool?
+
+    var hasRecordedThread: Bool {
+        lock.withLock { recordedMainThread != nil }
+    }
+
+    var wasMainThread: Bool? {
+        lock.withLock { recordedMainThread }
+    }
+
+    func recordCurrentThread() {
+        lock.withLock { recordedMainThread = Thread.isMainThread }
     }
 }
