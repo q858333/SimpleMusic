@@ -12,7 +12,7 @@ protocol SystemPlaybackDriver: AnyObject {
     var currentPlaybackTime: TimeInterval { get }
     var currentDuration: TimeInterval { get }
     func beginGeneratingPlaybackNotifications()
-    nonisolated func endGeneratingPlaybackNotifications()
+    func endGeneratingPlaybackNotifications()
     func prepare(persistentID: UInt64) throws
     func play()
     func pause()
@@ -51,36 +51,55 @@ nonisolated private final class PlaybackProgressTimerOwner: @unchecked Sendable 
     }
 }
 
-/// 系统通知生成必须与后端同寿命；end 是线程安全且恰好一次的系统清理边界。
+/// framework begin/end 始终在 MainActor；析构只负责把兜底清理调度回 MainActor。
 nonisolated private final class SystemNotificationGenerationOwner: @unchecked Sendable {
     private let driver: any SystemPlaybackDriver
     private let lock = NSLock()
-    private var hasEnded = false
+    private var isGenerating = false
 
     init(driver: any SystemPlaybackDriver) {
         self.driver = driver
     }
 
-    func end() {
+    @MainActor
+    func beginIfNeeded() {
         lock.lock()
-        guard !hasEnded else {
+        guard !isGenerating else {
             lock.unlock()
             return
         }
-        hasEnded = true
+        isGenerating = true
         lock.unlock()
+        driver.beginGeneratingPlaybackNotifications()
+    }
+
+    @MainActor
+    func shutdown() {
+        guard takeGeneratingState() else { return }
         driver.endGeneratingPlaybackNotifications()
     }
 
     deinit {
-        end()
+        guard takeGeneratingState() else { return }
+        let driver = self.driver
+        Task { @MainActor in
+            driver.endGeneratingPlaybackNotifications()
+        }
+    }
+
+    private func takeGeneratingState() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard isGenerating else { return false }
+        isGenerating = false
+        return true
     }
 }
 
 @MainActor
 private final class MPMusicPlayerDriver: SystemPlaybackDriver {
     let libraryService: MusicLibraryService
-    nonisolated(unsafe) let player: MPMusicPlayerController
+    let player: MPMusicPlayerController
 
     var notificationObject: AnyObject { player }
     var playbackStateDidChangeNotification: Notification.Name {
@@ -103,7 +122,7 @@ private final class MPMusicPlayerDriver: SystemPlaybackDriver {
         player.beginGeneratingPlaybackNotifications()
     }
 
-    nonisolated func endGeneratingPlaybackNotifications() {
+    func endGeneratingPlaybackNotifications() {
         player.endGeneratingPlaybackNotifications()
     }
 
@@ -146,10 +165,17 @@ nonisolated private final class FoundationPlaybackProgressTimer: PlaybackProgres
 @MainActor
 final class SystemPlaybackBackend: NSObject, PlaybackBackend {
     typealias TimerFactory = @MainActor (@escaping @MainActor () -> Void) -> any PlaybackProgressTimer
+    typealias ObserverFactory = @MainActor (
+        Notification.Name,
+        AnyObject,
+        @escaping @MainActor () -> Void
+    ) -> NSObjectProtocol
 
     private struct ActivePlayback {
         let persistentID: UInt64
         let generation: PlaybackGeneration
+        let loadedDuration: TimeInterval
+        var lastElapsed: TimeInterval = 0
         var observedPlaying = false
         var reachedTrackEnd = false
         var observedItemRemoval = false
@@ -161,6 +187,7 @@ final class SystemPlaybackBackend: NSObject, PlaybackBackend {
 
     private let driver: any SystemPlaybackDriver
     private let timerFactory: TimerFactory
+    private let observerFactory: ObserverFactory
     private let observationBag: NotificationObservationBag
     private let timerOwner = PlaybackProgressTimerOwner()
     private let notificationGenerationOwner: SystemNotificationGenerationOwner
@@ -178,33 +205,25 @@ final class SystemPlaybackBackend: NSObject, PlaybackBackend {
         notificationCenter: NotificationCenter = .default,
         timerFactory: @escaping TimerFactory = { callback in
             FoundationPlaybackProgressTimer(callback: callback)
-        }
+        },
+        observerFactory: ObserverFactory? = nil
     ) {
         self.driver = driver
         self.timerFactory = timerFactory
+        self.observerFactory = observerFactory ?? { name, object, handler in
+            notificationCenter.addObserver(
+                forName: name,
+                object: object,
+                queue: .main
+            ) { _ in
+                MainActor.assumeIsolated {
+                    handler()
+                }
+            }
+        }
         observationBag = NotificationObservationBag(notificationCenter: notificationCenter)
         notificationGenerationOwner = SystemNotificationGenerationOwner(driver: driver)
         super.init()
-
-        driver.beginGeneratingPlaybackNotifications()
-        observationBag.insert(notificationCenter.addObserver(
-            forName: driver.playbackStateDidChangeNotification,
-            object: driver.notificationObject,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.playbackStateDidChange()
-            }
-        })
-        observationBag.insert(notificationCenter.addObserver(
-            forName: driver.nowPlayingItemDidChangeNotification,
-            object: driver.notificationObject,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.nowPlayingItemDidChange()
-            }
-        })
     }
 
     func load(_ track: MusicTrack, generation: PlaybackGeneration) throws {
@@ -214,8 +233,15 @@ final class SystemPlaybackBackend: NSObject, PlaybackBackend {
 
         invalidateProgressTimer()
         activePlayback = nil
+        observationBag.removeAll()
         try driver.prepare(persistentID: persistentID)
-        activePlayback = ActivePlayback(persistentID: persistentID, generation: generation)
+        activePlayback = ActivePlayback(
+            persistentID: persistentID,
+            generation: generation,
+            loadedDuration: Self.finiteSeconds(track.duration)
+        )
+        notificationGenerationOwner.beginIfNeeded()
+        bindObservers(generation: generation, persistentID: persistentID)
     }
 
     func play() {
@@ -233,7 +259,9 @@ final class SystemPlaybackBackend: NSObject, PlaybackBackend {
         // 先失效身份，再触发系统 stopped 通知，显式停止永远不会被识别为自然结束。
         activePlayback = nil
         invalidateProgressTimer()
+        observationBag.removeAll()
         driver.stop()
+        notificationGenerationOwner.shutdown()
     }
 
     func seek(to seconds: TimeInterval) {
@@ -245,6 +273,7 @@ final class SystemPlaybackBackend: NSObject, PlaybackBackend {
               driver.currentPersistentID == activePlayback.persistentID else { return }
         let elapsed = Self.finiteSeconds(driver.currentPlaybackTime)
         let duration = Self.finiteSeconds(driver.currentDuration)
+        activePlayback.lastElapsed = elapsed
         if Self.isAtTrackEnd(elapsed: elapsed, duration: duration) {
             activePlayback.reachedTrackEnd = true
         } else {
@@ -261,15 +290,18 @@ final class SystemPlaybackBackend: NSObject, PlaybackBackend {
         )
     }
 
-    private func playbackStateDidChange() {
-        guard var activePlayback else { return }
+    private func playbackStateDidChange(
+        generation: PlaybackGeneration,
+        persistentID: UInt64
+    ) {
+        guard var activePlayback,
+              activePlayback.generation == generation,
+              activePlayback.persistentID == persistentID else { return }
         switch driver.playbackState {
         case .playing where driver.currentPersistentID == activePlayback.persistentID:
             activePlayback.observedPlaying = true
-            if !activePlayback.reachedTrackEnd {
-                activePlayback.observedItemRemoval = false
-                activePlayback.observedStopped = false
-            }
+            activePlayback.observedItemRemoval = false
+            activePlayback.observedStopped = false
         case .stopped where activePlayback.observedPlaying
             && (driver.currentPersistentID == activePlayback.persistentID
                 || driver.currentPersistentID == nil):
@@ -282,8 +314,13 @@ final class SystemPlaybackBackend: NSObject, PlaybackBackend {
         finishIfEvidenceIsComplete()
     }
 
-    private func nowPlayingItemDidChange() {
+    private func nowPlayingItemDidChange(
+        generation: PlaybackGeneration,
+        persistentID: UInt64
+    ) {
         guard var activePlayback,
+              activePlayback.generation == generation,
+              activePlayback.persistentID == persistentID,
               activePlayback.observedPlaying,
               driver.currentPersistentID == nil else { return }
         updateEndEvidence(&activePlayback)
@@ -295,14 +332,30 @@ final class SystemPlaybackBackend: NSObject, PlaybackBackend {
     private func finishIfEvidenceIsComplete() {
         guard let activePlayback,
               activePlayback.observedPlaying,
-              activePlayback.reachedTrackEnd,
               activePlayback.observedItemRemoval,
               activePlayback.observedStopped,
               driver.currentPersistentID == nil else { return }
 
         self.activePlayback = nil
         invalidateProgressTimer()
+        observationBag.removeAll()
         delegate?.playbackBackendDidFinish(self, generation: activePlayback.generation)
+    }
+
+    private func bindObservers(generation: PlaybackGeneration, persistentID: UInt64) {
+        // 每次 load 都重建 token；已排队的旧 block 仍携带旧身份，因此无法拼接完成证据。
+        observationBag.insert(observerFactory(
+            driver.playbackStateDidChangeNotification,
+            driver.notificationObject
+        ) { [weak self] in
+            self?.playbackStateDidChange(generation: generation, persistentID: persistentID)
+        })
+        observationBag.insert(observerFactory(
+            driver.nowPlayingItemDidChangeNotification,
+            driver.notificationObject
+        ) { [weak self] in
+            self?.nowPlayingItemDidChange(generation: generation, persistentID: persistentID)
+        })
     }
 
     private func startProgressTimer() {
@@ -318,8 +371,12 @@ final class SystemPlaybackBackend: NSObject, PlaybackBackend {
     }
 
     private func updateEndEvidence(_ activePlayback: inout ActivePlayback) {
-        let elapsed = Self.finiteSeconds(driver.currentPlaybackTime)
-        let duration = Self.finiteSeconds(driver.currentDuration)
+        let elapsed = max(
+            activePlayback.lastElapsed,
+            Self.finiteSeconds(driver.currentPlaybackTime)
+        )
+        let driverDuration = Self.finiteSeconds(driver.currentDuration)
+        let duration = driverDuration > 0 ? driverDuration : activePlayback.loadedDuration
         if Self.isAtTrackEnd(elapsed: elapsed, duration: duration) {
             activePlayback.reachedTrackEnd = true
         }

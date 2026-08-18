@@ -1,6 +1,11 @@
 import AVFoundation
 import Foundation
 
+nonisolated private enum LocalLeasePreparationResult: @unchecked Sendable {
+    case success(PlaybackFileLease)
+    case failure(Error)
+}
+
 /// AVPlayer API 可跨队列控制；holder 在非隔离析构中幂等停止并移除 time observer。
 nonisolated private final class LocalPlayerLifetime: @unchecked Sendable {
     let player: AVPlayer
@@ -44,6 +49,8 @@ nonisolated private final class LocalPlayerLifetime: @unchecked Sendable {
 /// 使用受控文件 lease 创建 AVPlayerItem，并把主队列系统回调按 generation 转发给协调器。
 @MainActor
 final class LocalPlaybackBackend: NSObject, PlaybackBackend {
+    typealias LeaseProvider = @Sendable (String) throws -> PlaybackFileLease
+
     private struct ActiveItem {
         let item: AVPlayerItem
         let generation: PlaybackGeneration
@@ -53,18 +60,24 @@ final class LocalPlaybackBackend: NSObject, PlaybackBackend {
     let kind = PlaybackBackendKind.local
     weak var delegate: (any PlaybackBackendDelegate)?
 
-    private let fileStore: DownloadFileStore
+    private let leaseProvider: LeaseProvider
     private let player: AVPlayer
     private let playerLifetime: LocalPlayerLifetime
     private let observationBag: NotificationObservationBag
     private var activeItem: ActiveItem?
+    private var requestedGeneration: PlaybackGeneration?
+    private var pendingPlay = false
+    private var preparationTask: Task<Void, Never>?
 
     init(
         fileStore: DownloadFileStore,
         player: AVPlayer = AVPlayer(),
-        notificationCenter: NotificationCenter = .default
+        notificationCenter: NotificationCenter = .default,
+        leaseProvider: LeaseProvider? = nil
     ) {
-        self.fileStore = fileStore
+        self.leaseProvider = leaseProvider ?? { fileName in
+            try fileStore.playbackLease(for: fileName)
+        }
         self.player = player
         playerLifetime = LocalPlayerLifetime(player: player)
         observationBag = NotificationObservationBag(notificationCenter: notificationCenter)
@@ -104,22 +117,49 @@ final class LocalPlaybackBackend: NSObject, PlaybackBackend {
             throw PlaybackBackendError.incompatibleSource
         }
 
+        cancelPreparation()
         releaseActiveItem()
-        let lease = try fileStore.playbackLease(for: fileName)
-        let item = AVPlayerItem(url: lease.fileURL)
-        activeItem = ActiveItem(item: item, generation: generation, lease: lease)
-        player.replaceCurrentItem(with: item)
+        requestedGeneration = generation
+        pendingPlay = false
+
+        let leaseProvider = self.leaseProvider
+        let completion: @MainActor @Sendable (LocalLeasePreparationResult) -> Void = {
+            [weak self] result in
+            guard let self else {
+                if case let .success(lease) = result {
+                    lease.release()
+                }
+                return
+            }
+            self.finishPreparation(result, generation: generation)
+        }
+        // 整文件 staging 复制离开 MainActor；完成后只凭本次 generation 安装播放器项。
+        preparationTask = Task.detached(priority: .userInitiated) {
+            let result: LocalLeasePreparationResult
+            do {
+                result = .success(try leaseProvider(fileName))
+            } catch {
+                result = .failure(error)
+            }
+            await completion(result)
+        }
     }
 
     func play() {
-        player.play()
+        if activeItem != nil {
+            player.play()
+        } else if requestedGeneration != nil {
+            pendingPlay = true
+        }
     }
 
     func pause() {
+        pendingPlay = false
         player.pause()
     }
 
     func stop() {
+        cancelPreparation()
         player.pause()
         releaseActiveItem()
     }
@@ -159,6 +199,42 @@ final class LocalPlaybackBackend: NSObject, PlaybackBackend {
         activeItem = nil
         player.replaceCurrentItem(with: nil)
         lease?.release()
+    }
+
+    private func finishPreparation(
+        _ result: LocalLeasePreparationResult,
+        generation: PlaybackGeneration
+    ) {
+        // 取消无法打断已进入 POSIX 复制的 provider，迟到 lease 必须在这里主动释放。
+        guard requestedGeneration == generation else {
+            if case let .success(lease) = result {
+                lease.release()
+            }
+            return
+        }
+
+        preparationTask = nil
+        requestedGeneration = nil
+        switch result {
+        case let .success(lease):
+            let item = AVPlayerItem(url: lease.fileURL)
+            activeItem = ActiveItem(item: item, generation: generation, lease: lease)
+            player.replaceCurrentItem(with: item)
+            if pendingPlay {
+                pendingPlay = false
+                player.play()
+            }
+        case let .failure(error):
+            pendingPlay = false
+            delegate?.playbackBackend(self, generation: generation, didFail: error)
+        }
+    }
+
+    private func cancelPreparation() {
+        requestedGeneration = nil
+        pendingPlay = false
+        preparationTask?.cancel()
+        preparationTask = nil
     }
 
     private static func finiteSeconds(_ seconds: TimeInterval) -> TimeInterval {

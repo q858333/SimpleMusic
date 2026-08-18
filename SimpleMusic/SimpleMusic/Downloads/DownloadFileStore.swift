@@ -13,7 +13,7 @@ enum DownloadFileStoreError: Error {
 }
 
 /// 播放期间持有不可替换的受控副本；显式 release 与析构清理均幂等。
-nonisolated final class PlaybackFileLease {
+nonisolated final class PlaybackFileLease: @unchecked Sendable {
     let fileURL: URL
     private let lock = NSLock()
     private var isReleased = false
@@ -38,8 +38,8 @@ nonisolated final class PlaybackFileLease {
     }
 }
 
-/// 下载文件的受限目录存储；所有建议文件名都会归一为根目录内的单一文件名。
-struct DownloadFileStore {
+/// 下载文件的受限目录存储；不可变根路径可跨线程使用，预留状态各自以锁保护。
+nonisolated struct DownloadFileStore: @unchecked Sendable {
     fileprivate final class Owner {}
 
     /// 下载目标的不可伪造凭证；调用方只能读取路径，不能自行构造或重置状态。

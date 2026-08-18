@@ -5,23 +5,6 @@ import XCTest
 
 @MainActor
 final class PlaybackBackendLifecycleTests: XCTestCase {
-    /// 若外部 stop 仅凭 stopped + nil item 被判为结束，协调器会擅自 next。
-    func testSystemBackendDoesNotFinishForExternalStopBeforeRealEnd() throws {
-        let harness = SystemBackendHarness()
-        let generation = PlaybackGeneration(rawValue: 1)
-        try harness.backend.load(systemTrack(id: 11), generation: generation)
-        harness.backend.play()
-        harness.driver.publishPlaying(persistentID: 11)
-        harness.driver.currentPlaybackTime = 10
-        harness.driver.currentDuration = 60
-        harness.timer.fire()
-
-        harness.driver.publishItemChange(persistentID: nil)
-        harness.driver.publishStopped()
-
-        XCTAssertTrue(harness.delegate.finishedGenerations.isEmpty)
-    }
-
     /// 显式 stop 即使同步产生 stopped/item-nil 通知，也不能冒充自然结束。
     func testSystemBackendDoesNotFinishForExplicitStop() throws {
         let harness = SystemBackendHarness()
@@ -69,6 +52,53 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
         XCTAssertEqual(harness.delegate.finishedGenerations, [secondGeneration])
     }
 
+    /// 若每次 load 没有生成独立 observer，旧 block 会把 stopped 证据拼到已到末尾的新 generation。
+    func testSystemBackendRejectsQueuedStoppedBlockFromPreviousGenerationAtCurrentEnd() throws {
+        let driver = FakeSystemPlaybackDriver()
+        let center = NotificationCenter()
+        let timer = TestPlaybackTimer()
+        let observerRecorder = SystemObserverRecorder(driver: driver)
+        let delegate = RecordingPlaybackDelegate()
+        let backend = SystemPlaybackBackend(
+            driver: driver,
+            notificationCenter: center,
+            timerFactory: { callback in
+                timer.callback = callback
+                return timer
+            },
+            observerFactory: { name, object, handler in
+                observerRecorder.makeObserver(forName: name, object: object, handler: handler)
+            }
+        )
+        backend.delegate = delegate
+        let firstGeneration = PlaybackGeneration(rawValue: 31)
+        let secondGeneration = PlaybackGeneration(rawValue: 32)
+        try backend.load(systemTrack(id: 11), generation: firstGeneration)
+        backend.play()
+        driver.currentPersistentID = 11
+        driver.playbackState = .playing
+        observerRecorder.firePlaybackStateObserver(at: 0)
+
+        try backend.load(systemTrack(id: 22), generation: secondGeneration)
+        backend.play()
+        driver.currentPersistentID = 22
+        driver.playbackState = .playing
+        observerRecorder.firePlaybackStateObserver(at: 1)
+        driver.currentPlaybackTime = 60
+        driver.currentDuration = 60
+        timer.fire()
+
+        driver.currentPersistentID = nil
+        driver.playbackState = .stopped
+        observerRecorder.firePlaybackStateObserver(at: 0)
+        observerRecorder.fireItemObserver(at: 1)
+
+        XCTAssertTrue(delegate.finishedGenerations.isEmpty)
+
+        observerRecorder.firePlaybackStateObserver(at: 1)
+        XCTAssertEqual(delegate.finishedGenerations, [secondGeneration])
+    }
+
     /// stopped 可能早于 item-nil 通知；同一 generation 的证据应独立记录后再联合完成。
     func testSystemBackendFinishesWhenStoppedArrivesBeforeItemRemoval() throws {
         let harness = SystemBackendHarness()
@@ -84,6 +114,40 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
         harness.driver.publishItemChange(persistentID: nil)
 
         XCTAssertEqual(harness.delegate.finishedGenerations, [generation])
+    }
+
+    /// item removal 后系统 duration 可能归零；同 generation 的 playing + removal + stopped 仍应完成。
+    func testSystemBackendFinishesWhenItemRemovalPrecedesLastTimerAndStopped() throws {
+        let harness = SystemBackendHarness()
+        let generation = PlaybackGeneration(rawValue: 34)
+        try harness.backend.load(systemTrack(id: 34), generation: generation)
+        harness.backend.play()
+        harness.driver.publishPlaying(persistentID: 34)
+        harness.driver.currentPlaybackTime = 42
+        harness.driver.currentDuration = 60
+
+        harness.driver.publishItemChange(persistentID: nil)
+        harness.driver.currentDuration = 0
+        harness.timer.fire()
+        harness.driver.publishStopped()
+
+        XCTAssertEqual(harness.delegate.finishedGenerations, [generation])
+    }
+
+    /// 外部 stop 即使发生在末尾窗口，只要没有 item removal 就不能完成。
+    func testSystemBackendExternalStopWithoutItemRemovalDoesNotFinish() throws {
+        let harness = SystemBackendHarness()
+        let generation = PlaybackGeneration(rawValue: 35)
+        try harness.backend.load(systemTrack(id: 35), generation: generation)
+        harness.backend.play()
+        harness.driver.publishPlaying(persistentID: 35)
+        harness.driver.currentPlaybackTime = 60
+        harness.driver.currentDuration = 60
+        harness.timer.fire()
+
+        harness.driver.publishStopped()
+
+        XCTAssertTrue(harness.delegate.finishedGenerations.isEmpty)
     }
 
     /// 若真实末尾的 item-nil 与 stopped 证据不能联合完成当前 generation，队列不会自动推进。
@@ -104,7 +168,7 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
     }
 
     /// 若 Timer/observer 强持有后端，释放后不会 teardown 系统通知生成和计时器。
-    func testSystemBackendReleasedOffMainInvalidatesTimerAndRemovesObservers() throws {
+    func testSystemBackendReleasedOffMainEndsNotificationsOnMainExactlyOnce() async throws {
         let driver = FakeSystemPlaybackDriver()
         let center = NotificationCenter()
         let timer = TestPlaybackTimer()
@@ -126,24 +190,29 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
 
         backend = nil
         releaseOffMain(releaseBox)
+        try await waitUntil { driver.endGeneratingThreads.count == 1 }
         driver.publishPlaying(persistentID: 44)
         driver.publishItemChange(persistentID: nil)
         driver.publishStopped()
 
         XCTAssertNil(weakBackend)
         XCTAssertTrue(timer.isInvalidated)
-        XCTAssertEqual(driver.endGeneratingCount, 1)
+        XCTAssertEqual(driver.endGeneratingThreads, [true])
         XCTAssertTrue(delegate.finishedGenerations.isEmpty)
     }
 
     /// 若本地后端只按 backend 过滤通知，上一 AVPlayerItem 的迟到完成会结束新曲。
-    func testLocalBackendIgnoresLateFinishFromPreviousItem() throws {
+    func testLocalBackendIgnoresLateFinishFromPreviousItem() async throws {
         let fixture = try LocalBackendFixture()
         let firstGeneration = PlaybackGeneration(rawValue: 1)
         let secondGeneration = PlaybackGeneration(rawValue: 2)
         try fixture.backend.load(fixture.track(id: "first"), generation: firstGeneration)
+        try await waitUntil { fixture.player.currentItem != nil }
         let firstItem = try XCTUnwrap(fixture.player.currentItem)
         try fixture.backend.load(fixture.track(id: "second"), generation: secondGeneration)
+        try await waitUntil {
+            fixture.player.currentItem != nil && fixture.player.currentItem !== firstItem
+        }
         let secondItem = try XCTUnwrap(fixture.player.currentItem)
 
         fixture.center.post(name: .AVPlayerItemDidPlayToEndTime, object: firstItem)
@@ -154,7 +223,7 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
     }
 
     /// 若本地 observer/time observer 形成保留或未移除，后端释放后仍会响应迟到通知。
-    func testLocalBackendReleasedOffMainRemovesObserversAndReleasesInstance() throws {
+    func testLocalBackendReleasedOffMainRemovesObserversAndReleasesInstance() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try DownloadFileStore(rootURL: root)
@@ -169,6 +238,7 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
         )
         backend?.delegate = delegate
         try backend?.load(downloadedTrack(id: "song"), generation: PlaybackGeneration(rawValue: 3))
+        try await waitUntil { player.currentItem != nil }
         let item = try XCTUnwrap(player.currentItem)
         weak let weakBackend = backend
         let releaseBox = LockedStrongBox(backend)
@@ -182,18 +252,104 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
     }
 
     /// 若 stop 没有释放当前 lease，本地 staging 文件会随切歌累积。
-    func testLocalBackendStopReleasesPlaybackLease() throws {
+    func testLocalBackendStopReleasesPlaybackLease() async throws {
         let fixture = try LocalBackendFixture()
         try fixture.backend.load(
             fixture.track(id: "first"),
             generation: PlaybackGeneration(rawValue: 1)
         )
+        try await waitUntil { (try? fixture.stagingFileCount()) == 1 }
         XCTAssertEqual(try fixture.stagingFileCount(), 1)
 
         fixture.backend.stop()
 
         XCTAssertEqual(try fixture.stagingFileCount(), 0)
         XCTAssertNil(fixture.player.currentItem)
+    }
+
+    /// 同步 load/play 若等待整文件复制，会阻塞 MainActor；准备完成前也不应提前装载或播放。
+    func testLocalLoadAndPlayReturnBeforeBackgroundLeasePreparationCompletes() async throws {
+        let fixture = try AsyncLocalBackendFixture()
+        let generation = PlaybackGeneration(rawValue: 41)
+
+        try fixture.backend.load(fixture.track(id: "first"), generation: generation)
+        fixture.backend.play()
+
+        XCTAssertNil(fixture.player.currentItem)
+        XCTAssertEqual(fixture.player.playCallCount, 0)
+        try await waitUntil { fixture.provider.requestCount == 1 }
+
+        fixture.provider.succeedRequest(at: 0)
+        try await waitUntil { fixture.player.currentItem != nil }
+
+        XCTAssertEqual(fixture.player.playCallCount, 1)
+    }
+
+    /// 换曲后第一首的后台结果必须按 generation 丢弃并立即清理 staging lease。
+    func testLocalLatePreparationFromPreviousGenerationIsReleasedAndNeverLoaded() async throws {
+        let fixture = try AsyncLocalBackendFixture()
+        try fixture.backend.load(
+            fixture.track(id: "first"),
+            generation: PlaybackGeneration(rawValue: 42)
+        )
+        fixture.backend.play()
+        try await waitUntil { fixture.provider.requestCount == 1 }
+
+        try fixture.backend.load(
+            fixture.track(id: "second"),
+            generation: PlaybackGeneration(rawValue: 43)
+        )
+        fixture.backend.play()
+        try await waitUntil { fixture.provider.requestCount == 2 }
+
+        fixture.provider.succeedRequest(at: 0)
+        try await waitUntil { fixture.provider.producedURL(at: 0) != nil }
+        let staleURL = try XCTUnwrap(fixture.provider.producedURL(at: 0))
+        try await waitUntil { !FileManager.default.fileExists(atPath: staleURL.path) }
+        XCTAssertNil(fixture.player.currentItem)
+
+        fixture.provider.succeedRequest(at: 1)
+        try await waitUntil { fixture.player.currentItem != nil }
+        let loadedURL = (fixture.player.currentItem?.asset as? AVURLAsset)?.url
+
+        XCTAssertEqual(loadedURL, fixture.provider.producedURL(at: 1))
+        XCTAssertEqual(fixture.player.playCallCount, 1)
+    }
+
+    /// stop 必须取消等待身份；不可取消的同步 provider 迟到返回时仍要释放 lease。
+    func testLocalStopReleasesLeaseThatFinishesAfterCancellation() async throws {
+        let fixture = try AsyncLocalBackendFixture()
+        try fixture.backend.load(
+            fixture.track(id: "first"),
+            generation: PlaybackGeneration(rawValue: 44)
+        )
+        fixture.backend.play()
+        try await waitUntil { fixture.provider.requestCount == 1 }
+
+        fixture.backend.stop()
+        fixture.provider.succeedRequest(at: 0)
+        try await waitUntil { fixture.provider.producedURL(at: 0) != nil }
+        let staleURL = try XCTUnwrap(fixture.provider.producedURL(at: 0))
+        try await waitUntil { !FileManager.default.fileExists(atPath: staleURL.path) }
+
+        XCTAssertNil(fixture.player.currentItem)
+        XCTAssertEqual(fixture.player.playCallCount, 0)
+    }
+
+    /// 后台 lease 创建失败必须带原 generation 回报，供 coordinator 拒绝迟到错误。
+    func testLocalPreparationFailureReportsMatchingGeneration() async throws {
+        let fixture = try AsyncLocalBackendFixture()
+        let generation = PlaybackGeneration(rawValue: 45)
+        try fixture.backend.load(fixture.track(id: "first"), generation: generation)
+        fixture.backend.play()
+        try await waitUntil { fixture.provider.requestCount == 1 }
+
+        fixture.provider.failRequest(at: 0, error: TestLeaseError.preparationFailed)
+        try await waitUntil { fixture.delegate.failures.count == 1 }
+
+        XCTAssertEqual(fixture.delegate.failures.first?.0, generation)
+        XCTAssertNil(fixture.player.currentItem)
+        XCTAssertEqual(fixture.player.playCallCount, 0)
     }
 
     private func releaseOffMain<Value>(_ box: LockedStrongBox<Value>) {
@@ -204,6 +360,20 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
             group.leave()
         }
         XCTAssertEqual(group.wait(timeout: .now() + 2), .success)
+    }
+
+    private func waitUntil(
+        timeoutNanoseconds: UInt64 = 2_000_000_000,
+        condition: @escaping @MainActor () -> Bool
+    ) async throws {
+        let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
+        while !condition() {
+            guard DispatchTime.now().uptimeNanoseconds < deadline else {
+                XCTFail("等待异步状态超时")
+                return
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
     }
 
     private func systemTrack(id: UInt64) -> SimpleMusic.MusicTrack {
@@ -267,8 +437,8 @@ private final class FakeSystemPlaybackDriver: NSObject, SystemPlaybackDriver {
     var currentDuration: TimeInterval = 0
     private(set) var preparedPersistentIDs = [UInt64]()
     var postsNotificationsWhenStopped = false
-    var endGeneratingCount: Int { endGeneratingCounter.value }
-    nonisolated private let endGeneratingCounter = LockedCounter()
+    var endGeneratingThreads: [Bool] { endThreadRecorder.values }
+    nonisolated private let endThreadRecorder = LockedBoolArray()
     private var center: NotificationCenter?
 
     func attach(notificationCenter: NotificationCenter) {
@@ -277,7 +447,7 @@ private final class FakeSystemPlaybackDriver: NSObject, SystemPlaybackDriver {
 
     func beginGeneratingPlaybackNotifications() {}
     nonisolated func endGeneratingPlaybackNotifications() {
-        endGeneratingCounter.increment()
+        endThreadRecorder.append(Thread.isMainThread)
     }
 
     func prepare(persistentID: UInt64) throws {
@@ -313,6 +483,38 @@ private final class FakeSystemPlaybackDriver: NSObject, SystemPlaybackDriver {
     func publishStopped() {
         playbackState = .stopped
         center?.post(name: Self.playbackStateNotification, object: self)
+    }
+}
+
+@MainActor
+private final class SystemObserverRecorder {
+    private let driver: FakeSystemPlaybackDriver
+    private var playbackStateObservers = [@MainActor @Sendable () -> Void]()
+    private var itemObservers = [@MainActor @Sendable () -> Void]()
+
+    init(driver: FakeSystemPlaybackDriver) {
+        self.driver = driver
+    }
+
+    func makeObserver(
+        forName name: Notification.Name,
+        object: AnyObject,
+        handler: @escaping @MainActor @Sendable () -> Void
+    ) -> NSObjectProtocol {
+        if name == driver.playbackStateDidChangeNotification {
+            playbackStateObservers.append(handler)
+        } else if name == driver.nowPlayingItemDidChangeNotification {
+            itemObservers.append(handler)
+        }
+        return NSObject()
+    }
+
+    func firePlaybackStateObserver(at index: Int) {
+        playbackStateObservers[index]()
+    }
+
+    func fireItemObserver(at index: Int) {
+        itemObservers[index]()
     }
 }
 
@@ -372,6 +574,23 @@ nonisolated private final class LockedCounter: @unchecked Sendable {
     func increment() {
         lock.lock()
         storedValue += 1
+        lock.unlock()
+    }
+}
+
+nonisolated private final class LockedBoolArray: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedValues = [Bool]()
+
+    var values: [Bool] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedValues
+    }
+
+    func append(_ value: Bool) {
+        lock.lock()
+        storedValues.append(value)
         lock.unlock()
     }
 }
@@ -459,4 +678,140 @@ private final class LocalBackendFixture {
             .filter { $0.hasPrefix(".playback-") }
             .count
     }
+}
+
+@MainActor
+private final class AsyncLocalBackendFixture {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let player = RecordingAVPlayer()
+    let delegate = RecordingPlaybackDelegate()
+    let provider: ControlledPlaybackLeaseProvider
+    let backend: LocalPlaybackBackend
+
+    init() throws {
+        let store = try DownloadFileStore(rootURL: root)
+        try Data("first".utf8).write(to: root.appendingPathComponent("first.mp3"))
+        try Data("second".utf8).write(to: root.appendingPathComponent("second.mp3"))
+        let controlledProvider = ControlledPlaybackLeaseProvider(store: store)
+        provider = controlledProvider
+        backend = LocalPlaybackBackend(
+            fileStore: store,
+            player: player,
+            notificationCenter: NotificationCenter(),
+            leaseProvider: { fileName in
+                try controlledProvider.provideLease(for: fileName)
+            }
+        )
+        backend.delegate = delegate
+    }
+
+    deinit {
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    func track(id: String) -> SimpleMusic.MusicTrack {
+        SimpleMusic.MusicTrack(
+            id: id,
+            title: id,
+            artist: "artist",
+            album: "album",
+            duration: 60,
+            artworkData: nil,
+            source: .downloaded(fileName: "\(id).mp3")
+        )
+    }
+}
+
+@MainActor
+private final class RecordingAVPlayer: AVPlayer {
+    var playCallCount: Int { playCounter.value }
+    nonisolated private let playCounter = LockedCounter()
+
+    nonisolated override func play() {
+        playCounter.increment()
+    }
+}
+
+nonisolated private final class ControlledPlaybackLeaseProvider: @unchecked Sendable {
+    private final class Request: @unchecked Sendable {
+        enum Outcome {
+            case success
+            case failure(Error)
+        }
+
+        let fileName: String
+        let semaphore = DispatchSemaphore(value: 0)
+        var outcome: Outcome?
+        var producedURL: URL?
+
+        init(fileName: String) {
+            self.fileName = fileName
+        }
+    }
+
+    private let store: DownloadFileStore
+    private let lock = NSLock()
+    private var requests = [Request]()
+
+    init(store: DownloadFileStore) {
+        self.store = store
+    }
+
+    var requestCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return requests.count
+    }
+
+    func provideLease(for fileName: String) throws -> PlaybackFileLease {
+        let request = Request(fileName: fileName)
+        lock.lock()
+        requests.append(request)
+        lock.unlock()
+        request.semaphore.wait()
+
+        lock.lock()
+        let outcome = request.outcome
+        lock.unlock()
+        switch outcome {
+        case .success:
+            let lease = try store.playbackLease(for: fileName)
+            lock.lock()
+            request.producedURL = lease.fileURL
+            lock.unlock()
+            return lease
+        case let .failure(error):
+            throw error
+        case nil:
+            throw TestLeaseError.missingOutcome
+        }
+    }
+
+    func succeedRequest(at index: Int) {
+        completeRequest(at: index, outcome: .success)
+    }
+
+    func failRequest(at index: Int, error: Error) {
+        completeRequest(at: index, outcome: .failure(error))
+    }
+
+    func producedURL(at index: Int) -> URL? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard requests.indices.contains(index) else { return nil }
+        return requests[index].producedURL
+    }
+
+    private func completeRequest(at index: Int, outcome: Request.Outcome) {
+        lock.lock()
+        let request = requests[index]
+        request.outcome = outcome
+        lock.unlock()
+        request.semaphore.signal()
+    }
+}
+
+private enum TestLeaseError: Error {
+    case preparationFailed
+    case missingOutcome
 }
