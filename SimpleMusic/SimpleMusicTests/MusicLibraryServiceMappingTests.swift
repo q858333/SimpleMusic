@@ -1,3 +1,4 @@
+import MediaPlayer
 import XCTest
 @testable import SimpleMusic
 
@@ -32,7 +33,46 @@ final class MusicLibraryServiceMappingTests: XCTestCase {
 
         gate.open()
         let tracks = try await fetch.value
-        XCTAssertEqual(tracks.map(\MusicTrack.id), ["system-88"])
+        XCTAssertEqual(tracks.map(\.id), ["system-88"])
+    }
+
+    /// 如果后台查询结束后不再读取最新权限，撤权期间取得的 metadata 会被错误返回。
+    @MainActor
+    func testAsyncFetchDiscardsMetadataWhenAuthorizationIsRevokedDuringQuery() async throws {
+        for revokedStatus in [
+            MPMediaLibraryAuthorizationStatus.denied,
+            .restricted
+        ] {
+            let authorization = MutableSystemAuthorizationStatus(.authorized)
+            let gate = SystemQueryGate()
+            let probe = SystemQueryThreadProbe()
+            let service = MusicLibraryService(
+                authorizationStatusProvider: { authorization.value },
+                metadataQuery: {
+                    probe.recordCurrentThread()
+                    gate.wait()
+                    return [SystemTrackMetadata(
+                        persistentID: 99,
+                        title: "已撤权歌曲",
+                        artist: "系统艺人",
+                        album: "系统专辑",
+                        duration: 30,
+                        artworkData: nil
+                    )]
+                }
+            )
+            defer { gate.open() }
+
+            let fetch = Task { try await service.fetchTracksAsync() }
+            let queryStarted = await eventually { probe.hasRecordedThread }
+            XCTAssertTrue(queryStarted)
+
+            authorization.value = revokedStatus
+            gate.open()
+
+            let tracks = try await fetch.value
+            XCTAssertTrue(tracks.isEmpty, "查询后权限为 \(revokedStatus.rawValue) 时必须丢弃 metadata")
+        }
     }
 
     /// 如果映射不再为缺失元数据提供可展示的默认值，此测试应失败。
@@ -115,5 +155,19 @@ private final class SystemQueryThreadProbe: @unchecked Sendable {
 
     func recordCurrentThread() {
         lock.withLock { recordedMainThread = Thread.isMainThread }
+    }
+}
+
+private final class MutableSystemAuthorizationStatus: @unchecked Sendable {
+    private let lock = NSLock()
+    private var status: MPMediaLibraryAuthorizationStatus
+
+    init(_ status: MPMediaLibraryAuthorizationStatus) {
+        self.status = status
+    }
+
+    var value: MPMediaLibraryAuthorizationStatus {
+        get { lock.withLock { status } }
+        set { lock.withLock { status = newValue } }
     }
 }

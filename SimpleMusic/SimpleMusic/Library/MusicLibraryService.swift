@@ -56,6 +56,7 @@ final class MusicLibraryService {
         let metadata = try await Task.detached(priority: .userInitiated) {
             try query()
         }.value
+        guard authorizationStatus == .authorized else { return [] }
         return metadata.map(Self.makeTrack)
     }
 

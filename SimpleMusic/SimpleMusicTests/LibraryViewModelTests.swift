@@ -131,6 +131,65 @@ final class LibraryViewModelTests: XCTestCase {
         )
     }
 
+    /// 如果系统结果发布前不读取最新权限，查询期间撤权仍会把系统歌曲显示为 loaded。
+    @MainActor
+    func testReloadKeepsLocalTracksWhenSystemPermissionIsRevokedDuringQuery() async {
+        for revokedStatus in [
+            MPMediaLibraryAuthorizationStatus.denied,
+            .restricted
+        ] {
+            let systemTrack = makeTrack(id: "revoked-system")
+            let localTrack = makeTrack(
+                id: "kept-local",
+                source: .downloaded(fileName: "kept-local.m4a")
+            )
+            let library = DeferredMusicLibrary()
+            let sut = LibraryViewModel(
+                library: library,
+                localStore: StubLocalMusicStore(tracks: [localTrack])
+            )
+
+            let reload = Task { await sut.reload() }
+            let queryStarted = await eventually { library.requestCount == 1 }
+            let localPublished = await eventually {
+                sut.localState == .loaded && sut.tracks == [localTrack]
+            }
+            XCTAssertTrue(queryStarted)
+            XCTAssertTrue(localPublished)
+
+            library.authorizationStatus = revokedStatus
+            library.resumeRequestIfPending(at: 0, with: [systemTrack])
+            await reload.value
+
+            XCTAssertEqual(sut.systemState, .permissionRequired)
+            XCTAssertEqual(sut.localState, .loaded)
+            XCTAssertEqual(sut.tracks, [localTrack])
+        }
+    }
+
+    /// 查询完成时最新状态仍为 authorized，应发布有效结果而非记住中途短暂撤权。
+    @MainActor
+    func testReloadPublishesSystemResultWhenLatestAuthorizationIsAuthorized() async {
+        let systemTrack = makeTrack(id: "still-authorized")
+        let library = DeferredMusicLibrary()
+        let sut = LibraryViewModel(
+            library: library,
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+
+        let reload = Task { await sut.reload() }
+        let queryStarted = await eventually { library.requestCount == 1 }
+        XCTAssertTrue(queryStarted)
+
+        library.authorizationStatus = .denied
+        library.authorizationStatus = .authorized
+        library.resumeRequestIfPending(at: 0, with: [systemTrack])
+        await reload.value
+
+        XCTAssertEqual(sut.systemState, .loaded)
+        XCTAssertEqual(sut.tracks, [systemTrack])
+    }
+
     /// 如果新 reload 启动后任一旧来源的迟到事件仍能覆盖状态或列表，此测试应失败。
     @MainActor
     func testOlderReloadRejectsLateEventsFromBothSources() async {
@@ -776,8 +835,12 @@ private final class StubLocalMusicStore: LocalMusicLoading {
 }
 
 private final class DeferredMusicLibrary: MusicLibraryLoading {
-    @MainActor let authorizationStatus = MPMediaLibraryAuthorizationStatus.authorized
+    @MainActor var authorizationStatus: MPMediaLibraryAuthorizationStatus
     @MainActor private var requests = [DeferredTrackRequest]()
+
+    init(authorizationStatus: MPMediaLibraryAuthorizationStatus = .authorized) {
+        self.authorizationStatus = authorizationStatus
+    }
 
     @MainActor var requestCount: Int { requests.count }
 

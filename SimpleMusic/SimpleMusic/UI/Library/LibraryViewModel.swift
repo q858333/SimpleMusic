@@ -96,6 +96,12 @@ final class LibraryViewModel {
 
         // 较早来源可以继续释放资源，但任何单源迟到事件都不能改写新一代。
         guard generation == reloadGeneration else { return }
+        guard library.authorizationStatus == .authorized else {
+            systemTracks = []
+            systemState = .permissionRequired
+            publishMergedTracks()
+            return
+        }
 
         switch result {
         case let .success(loadedTracks):
