@@ -670,6 +670,55 @@ final class LibraryViewModelTests: XCTestCase {
         XCTAssertTrue(more.isHidden)
     }
 
+    /// 如果无封面歌曲仍显示系统符号，或深浅色模式选错资源，此测试应失败。
+    @MainActor
+    func testTrackCellUsesAppearanceSpecificMusicNoteWhenArtworkIsMissing() throws {
+        let cell = TrackCell(frame: CGRect(x: 0, y: 0, width: 360, height: 66))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        let host = UIViewController()
+        window.rootViewController = host
+        host.view.addSubview(cell)
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let artwork = try XCTUnwrap(
+            findView(identifier: "track.artwork", in: cell) as? UIImageView
+        )
+
+        cell.overrideUserInterfaceStyle = .light
+        cell.configure(with: makeTrack(id: "no-artwork"))
+        let redImage = try XCTUnwrap(UIImage(named: "music-note-red"))
+        XCTAssertEqual(artwork.image?.pngData(), redImage.pngData())
+        XCTAssertEqual(artwork.contentMode, .center)
+
+        cell.overrideUserInterfaceStyle = .dark
+        cell.layoutIfNeeded()
+        let whiteImage = try XCTUnwrap(UIImage(named: "music-note-white"))
+        XCTAssertEqual(artwork.image?.pngData(), whiteImage.pngData())
+        XCTAssertEqual(artwork.contentMode, .center)
+    }
+
+    /// 如果切换外观时默认图逻辑覆盖了歌曲真实封面，此测试应失败。
+    @MainActor
+    func testTrackCellKeepsRealArtworkAcrossAppearanceChanges() throws {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2))
+        let artworkData = renderer.pngData { context in
+            UIColor.systemBlue.setFill()
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+        }
+        let cell = TrackCell(frame: CGRect(x: 0, y: 0, width: 360, height: 66))
+        let artwork = try XCTUnwrap(
+            findView(identifier: "track.artwork", in: cell) as? UIImageView
+        )
+
+        cell.overrideUserInterfaceStyle = .light
+        cell.configure(with: makeTrack(id: "with-artwork", artworkData: artworkData))
+        cell.overrideUserInterfaceStyle = .dark
+        cell.layoutIfNeeded()
+
+        XCTAssertEqual(artwork.image?.pngData(), UIImage(data: artworkData)?.pngData())
+        XCTAssertEqual(artwork.contentMode, .scaleAspectFill)
+    }
+
     /// 分类卡必须进入真实列表，且未实现的“最近播放”静态承诺不能占据一个 section。
     @MainActor
     func testLibraryCategoryCardPushesTrackListAndRemovesStaticRecentlyPlayed() throws {
@@ -1013,6 +1062,7 @@ final class LibraryViewModelTests: XCTestCase {
         title: String = "歌曲",
         artist: String = "艺人",
         album: String = "专辑",
+        artworkData: Data? = nil,
         source: SimpleMusic.MusicSource = .system(persistentID: 99)
     ) -> SimpleMusic.MusicTrack {
         SimpleMusic.MusicTrack(
@@ -1021,7 +1071,7 @@ final class LibraryViewModelTests: XCTestCase {
             artist: artist,
             album: album,
             duration: 180,
-            artworkData: nil,
+            artworkData: artworkData,
             source: source
         )
     }

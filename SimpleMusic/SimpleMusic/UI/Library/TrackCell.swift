@@ -6,6 +6,7 @@ final class TrackCell: UICollectionViewCell {
     static let reuseIdentifier = "TrackCell"
 
     var onMore: (() -> Void)?
+    private var usesPlaceholderArtwork = false
 
     private let artworkView: UIImageView = {
         let view = UIImageView()
@@ -69,6 +70,14 @@ final class TrackCell: UICollectionViewCell {
     override init(frame: CGRect) {
         super.init(frame: frame)
         buildView()
+        if #available(iOS 17.0, *) {
+            // 新版 UIKit 不再保证调用 traitCollectionDidChange，需显式监听界面样式变化。
+            registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
+                (cell: TrackCell, _) in
+                guard cell.usesPlaceholderArtwork else { return }
+                cell.updatePlaceholderArtwork()
+            }
+        }
     }
 
     @available(*, unavailable)
@@ -79,14 +88,22 @@ final class TrackCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         artworkView.image = nil
+        artworkView.contentMode = .scaleAspectFill
+        usesPlaceholderArtwork = false
         onMore = nil
     }
 
     func configure(with track: MusicTrack) {
         titleLabel.text = track.title
         subtitleLabel.text = "\(track.artist) · \(track.album)"
-        artworkView.image = track.artworkData.flatMap(UIImage.init(data:))
-            ?? UIImage(systemName: "music.note")
+        if let artwork = track.artworkData.flatMap(UIImage.init(data:)) {
+            usesPlaceholderArtwork = false
+            artworkView.image = artwork
+            artworkView.contentMode = .scaleAspectFill
+        } else {
+            usesPlaceholderArtwork = true
+            updatePlaceholderArtwork()
+        }
         if case .downloaded = track.source {
             downloadedLabel.isHidden = false
             moreButton.isHidden = false
@@ -95,6 +112,24 @@ final class TrackCell: UICollectionViewCell {
             moreButton.isHidden = true
         }
         accessibilityLabel = [track.title, track.artist, track.album].joined(separator: "，")
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard usesPlaceholderArtwork,
+              previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle else {
+            return
+        }
+        updatePlaceholderArtwork()
+    }
+
+    private func updatePlaceholderArtwork() {
+        // 浅色背景使用红色音符，深色背景使用白色音符，保证占位图清晰可辨。
+        let imageName = traitCollection.userInterfaceStyle == .dark
+            ? "music-note-white"
+            : "music-note-red"
+        artworkView.image = UIImage(named: imageName)
+        artworkView.contentMode = .center
     }
 
     private func buildView() {
