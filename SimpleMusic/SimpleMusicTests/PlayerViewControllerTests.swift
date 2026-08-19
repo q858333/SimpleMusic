@@ -403,6 +403,93 @@ final class PlayerViewControllerTests: XCTestCase {
         XCTAssertFalse(panel.isPresented)
     }
 
+    /// 如果首首歌曲出现后没有提示入口，iPad 用户无法知道右侧播放页从哪里打开。
+    func testPadPlayerGuideAppearsForFirstTrackAndStaysDismissedAfterOpening() async throws {
+        let suiteName = "PlayerViewControllerTests.pad-guide.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot())
+        let dependencies = makeDependencies(snapshots: snapshots)
+        let pad = PadRootViewController(
+            dependencies: dependencies,
+            playerGuideDefaults: defaults
+        )
+        pad.loadViewIfNeeded()
+        pad.view.frame = CGRect(x: 0, y: 0, width: 834, height: 1194)
+        pad.view.layoutIfNeeded()
+        let guide = try XCTUnwrap(findView(identifier: "pad.playerGuide", in: pad.view))
+
+        XCTAssertTrue(guide.isHidden)
+        snapshots.send(PlaybackSnapshot(
+            status: .playing,
+            track: makeTrack(),
+            elapsed: 0,
+            duration: 180,
+            queueIndex: 0,
+            queueCount: 1
+        ))
+        await waitUntil { !guide.isHidden }
+
+        XCTAssertFalse(guide.isHidden)
+        XCTAssertTrue(guide.isAccessibilityElement)
+        XCTAssertEqual(guide.accessibilityLabel, "点击迷你播放器，从右侧打开播放页面")
+
+        let openButton = try XCTUnwrap(
+            findView(identifier: "mini.open", in: pad.view) as? UIButton
+        )
+        openButton.sendActions(for: UIControl.Event.touchUpInside)
+        XCTAssertTrue(guide.isHidden)
+
+        let nextPad = PadRootViewController(
+            dependencies: dependencies,
+            playerGuideDefaults: defaults
+        )
+        nextPad.loadViewIfNeeded()
+        let nextGuide = try XCTUnwrap(
+            findView(identifier: "pad.playerGuide", in: nextPad.view)
+        )
+        let nextMiniPlayer = try XCTUnwrap(
+            findView(identifier: "mini.open", in: nextPad.view)?.superview
+        )
+        await waitUntil { !nextMiniPlayer.isHidden }
+        XCTAssertFalse(nextMiniPlayer.isHidden)
+        XCTAssertTrue(nextGuide.isHidden)
+    }
+
+    /// 如果曲目消失后引导仍悬浮，提示会指向已经隐藏的迷你播放器。
+    func testPadPlayerGuideHidesWhenPlaybackBecomesEmptyAndKeepsAccessibleLayout() async throws {
+        let suiteName = "PlayerViewControllerTests.pad-guide-empty.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot())
+        let pad = PadRootViewController(
+            dependencies: makeDependencies(snapshots: snapshots),
+            playerGuideDefaults: defaults
+        )
+        pad.loadViewIfNeeded()
+        pad.view.frame = CGRect(x: 0, y: 0, width: 834, height: 1194)
+        pad.view.layoutIfNeeded()
+        let guide = try XCTUnwrap(findView(identifier: "pad.playerGuide", in: pad.view))
+
+        snapshots.send(PlaybackSnapshot(
+            status: .paused,
+            track: makeTrack(),
+            elapsed: 12,
+            duration: 180,
+            queueIndex: 0,
+            queueCount: 1
+        ))
+        await waitUntil { !guide.isHidden }
+        pad.view.layoutIfNeeded()
+
+        XCTAssertGreaterThanOrEqual(guide.bounds.height, 44)
+        XCTAssertFalse(guide.hasAmbiguousLayout)
+
+        snapshots.send(PlaybackSnapshot())
+        await waitUntil { guide.isHidden }
+        XCTAssertTrue(guide.isHidden)
+    }
+
     /// 如果面板显示时没有建立模态辅助功能边界，或关闭后没有撤销，此测试应失败。
     func testPadPanelAccessibilityModalStateFollowsPresentationLifecycle() throws {
         let pad = PadRootViewController(dependencies: makeDependencies())
@@ -460,12 +547,19 @@ final class PlayerViewControllerTests: XCTestCase {
     }
 
     private func makeDependencies() -> AppRootDependencies {
+        makeDependencies(
+            snapshots: CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot())
+        )
+    }
+
+    private func makeDependencies(
+        snapshots: CurrentValueSubject<PlaybackSnapshot, Never>
+    ) -> AppRootDependencies {
         let identity = NSObject()
         let viewModel = LibraryViewModel(
             library: PlayerStubMusicLibrary(),
             localStore: PlayerStubLocalMusicStore()
         )
-        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot())
         return AppRootDependencies(
             identity: identity,
             libraryViewModel: viewModel,

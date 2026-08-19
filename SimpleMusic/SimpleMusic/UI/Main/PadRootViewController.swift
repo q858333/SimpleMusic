@@ -4,14 +4,20 @@ import UIKit
 
 /// iPad 双栏根容器；保留 264pt 侧栏和右侧 Now Playing child 容器边界。
 final class PadRootViewController: UIViewController {
+    private enum PlayerGuidePreference {
+        static let hasSeenKey = "hasSeenPadPlayerGuide"
+    }
+
     let dependencyIdentity: ObjectIdentifier?
     private let nowPlayingViewController: UIViewController
+    private let playerGuideDefaults: UserDefaults
     private let libraryViewModel: LibraryViewModel?
     private let snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>?
     private let onPlay: (([MusicTrack], Int) -> Void)?
     private let onDeleteTrack: ((MusicTrack) -> Void)?
     private let onTogglePlay: (() -> Void)?
     private var reloadTask: Task<Void, Never>?
+    private var playerGuideCancellable: AnyCancellable?
     private var activeContentController: UIViewController?
     private var libraryController: LibraryViewController?
     private var searchController: SearchViewController?
@@ -35,6 +41,42 @@ final class PadRootViewController: UIViewController {
         return view
     }()
 
+    private let playerGuideView: UIView = {
+        let container = UIView()
+        container.accessibilityIdentifier = "pad.playerGuide"
+        container.isAccessibilityElement = true
+        container.accessibilityLabel = "点击迷你播放器，从右侧打开播放页面"
+        container.accessibilityTraits = .staticText
+        container.backgroundColor = Theme.accent.withAlphaComponent(0.12)
+        container.layer.cornerRadius = 12
+        container.layer.borderWidth = 0.5
+        container.layer.borderColor = Theme.accent.withAlphaComponent(0.28).cgColor
+        container.isHidden = true
+
+        let icon = UIImageView(image: UIImage(systemName: "hand.tap.fill"))
+        icon.tintColor = Theme.accent
+        icon.setContentHuggingPriority(.required, for: .horizontal)
+
+        let label = UILabel()
+        label.text = "点击迷你播放器，从右侧打开播放页面"
+        label.font = .preferredFont(forTextStyle: .footnote)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = .label
+        label.numberOfLines = 0
+
+        let stack = UIStackView(arrangedSubviews: [icon, label])
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 8
+        container.addSubview(stack)
+        stack.snp.makeConstraints { make in
+            make.edges.equalToSuperview().inset(
+                UIEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
+            )
+        }
+        return container
+    }()
+
     convenience init() {
         self.init(environment: .shared)
     }
@@ -43,7 +85,10 @@ final class PadRootViewController: UIViewController {
         self.init(dependencies: AppRootDependencies(environment: environment))
     }
 
-    convenience init(dependencies: AppRootDependencies) {
+    convenience init(
+        dependencies: AppRootDependencies,
+        playerGuideDefaults: UserDefaults = .standard
+    ) {
         let player = PlayerViewController(
             snapshotPublisher: dependencies.snapshotPublisher,
             onTogglePlay: dependencies.onTogglePlay,
@@ -60,9 +105,11 @@ final class PadRootViewController: UIViewController {
             onDeleteTrack: dependencies.onDeleteTrack,
             onTogglePlay: dependencies.onTogglePlay,
             onOpenPlayer: {},
-            dependencyIdentity: dependencies.identity
+            dependencyIdentity: dependencies.identity,
+            playerGuideDefaults: playerGuideDefaults
         )
         onOpenPlayer = { [weak self, weak panel] in
+            self?.markPlayerGuideSeen()
             panel?.show(returnFocusTo: self?.miniPlayerView)
         }
     }
@@ -71,6 +118,7 @@ final class PadRootViewController: UIViewController {
     init(nowPlayingViewController: UIViewController) {
         dependencyIdentity = nil
         self.nowPlayingViewController = nowPlayingViewController
+        playerGuideDefaults = .standard
         libraryViewModel = nil
         snapshotPublisher = nil
         onPlay = nil
@@ -87,10 +135,12 @@ final class PadRootViewController: UIViewController {
         onDeleteTrack: @escaping (MusicTrack) -> Void = { _ in },
         onTogglePlay: @escaping () -> Void,
         onOpenPlayer: @escaping () -> Void,
-        dependencyIdentity: ObjectIdentifier? = nil
+        dependencyIdentity: ObjectIdentifier? = nil,
+        playerGuideDefaults: UserDefaults = .standard
     ) {
         self.dependencyIdentity = dependencyIdentity
         self.nowPlayingViewController = nowPlayingViewController
+        self.playerGuideDefaults = playerGuideDefaults
         self.libraryViewModel = libraryViewModel
         self.snapshotPublisher = snapshotPublisher
         self.onPlay = onPlay
@@ -107,6 +157,7 @@ final class PadRootViewController: UIViewController {
 
     deinit {
         reloadTask?.cancel()
+        playerGuideCancellable?.cancel()
         miniPlayerView?.stop()
     }
 
@@ -207,10 +258,23 @@ final class PadRootViewController: UIViewController {
         )
         miniPlayerView = mini
         contentView.addSubview(mini)
+        contentView.addSubview(playerGuideView)
         mini.snp.makeConstraints { make in
             make.leading.trailing.equalTo(contentView.safeAreaLayoutGuide).inset(12)
             make.bottom.equalTo(contentView.safeAreaLayoutGuide).inset(12)
         }
+        playerGuideView.snp.makeConstraints { make in
+            make.trailing.equalTo(mini)
+            make.leading.greaterThanOrEqualTo(contentView.safeAreaLayoutGuide).offset(12)
+            make.bottom.equalTo(mini.snp.top).offset(-8)
+            make.height.greaterThanOrEqualTo(44)
+            make.width.lessThanOrEqualTo(360)
+        }
+        playerGuideCancellable = snapshotPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] snapshot in
+                self?.renderPlayerGuide(hasTrack: snapshot.track != nil)
+            }
     }
 
     private func showContent(_ controller: UIViewController) {
@@ -229,7 +293,19 @@ final class PadRootViewController: UIViewController {
         activeContentController = controller
         if let miniPlayerView {
             contentView.bringSubviewToFront(miniPlayerView)
+            contentView.bringSubviewToFront(playerGuideView)
         }
+    }
+
+    private func renderPlayerGuide(hasTrack: Bool) {
+        playerGuideView.isHidden = !hasTrack
+            || playerGuideDefaults.bool(forKey: PlayerGuidePreference.hasSeenKey)
+    }
+
+    private func markPlayerGuideSeen() {
+        // 用户真正打开右侧播放器后才完成引导，避免未播放时误消耗提示。
+        playerGuideDefaults.set(true, forKey: PlayerGuidePreference.hasSeenKey)
+        playerGuideView.isHidden = true
     }
 
     private func sidebarButton(title: String, symbol: String) -> UIButton {
