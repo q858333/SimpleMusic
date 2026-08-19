@@ -2,7 +2,7 @@
 
 - 验证日期：2026-08-19（Asia/Shanghai）
 - 分支：`codex/simple-music-player-sdd`
-- 验证范围记录：`75de6db..1115ea3`，共 34 个提交
+- 验证代码 HEAD：`81978ca8d055361c24d39ce964e3097d366058f4`（发布门禁提交 `979d8c2`），验证范围 `75de6db..81978ca`，共 38 个提交
 - Xcode：26.3（17C529）
 - macOS：26.2（25C56）
 - 构建 SDK：iOS / iOS Simulator 26.2；最低部署版本 15.0
@@ -11,24 +11,32 @@
 
 ## 结论
 
-自动化测试与两种通用 Debug 构建通过；iPhone 与 iPad 的首次权限根页面均能安装、启动和截图，未观察到启动崩溃。该结论不等同于完整人工模拟器验收，也不等同于真机运行：真实权限、网络下载、实际音频、后台/锁屏/耳机/AirPlay 等仍按下表标记为待验证。
+最终修复后的 188 项自动化测试与两种通用 Debug 构建全部通过；发布产物包含有效的 app 自有隐私清单及已编译 AppIcon，设备构建不再出现 MainActor 或“必须支持全部方向”的 validation warning。此前 iPhone 与 iPad 的首次权限根页面启动核查仍有效；本轮没有重新声称完整人工模拟器或真机验收，真实权限、网络下载、实际音频、后台/锁屏/耳机/AirPlay 等仍按下表标记为待验证。
 
-构建有已知 warning，尤其包括 `AppCoordinator.swift` 两个默认控制器工厂的 MainActor 隔离 warning，以及真机通用编译的竖屏/full-screen validation warning。本任务没有失败检查指向需立即修改的 scope defect，因此只记录，不扩大源码修改范围。
+reviewer 的 7 项 Important 已在 `979d8c2` 与 `81978ca` 收敛：发布门禁、四类资料库动作、共享权限刷新、本地索引协调/安全删除，以及 Core Data/下载目录可恢复降级均有生产入口和自动化覆盖。构建只剩本机 Metal toolchain 搜索路径与项目未使用 AppIntents 的环境提示。
 
 ## 命令与原始证据
 
 | 验证项 | 命令 | 退出码 | 结果与日志 |
 | --- | --- | ---: | --- |
-| 全量测试 | `xcodebuild -workspace SimpleMusic.xcworkspace -scheme SimpleMusic -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test CODE_SIGNING_ALLOWED=NO` | 0 | `163/163` test case passed，0 failed，`** TEST SUCCEEDED **`；`/tmp/task12-full-test.log`；xcresult：`/Users/db/Library/Developer/Xcode/DerivedData/SimpleMusic-cotnpdeswyoynecznqacbatfihye/Logs/Test/Test-SimpleMusic-2026.08.19_10-30-16-+0800.xcresult` |
+| 本地目录 focused 测试 | `xcodebuild ... -only-testing:SimpleMusicTests/LocalMusicStoreTests test` | 0 | xcresult machine summary：`11/11` passed，0 failed，覆盖正常/缺失/损坏/空文件/symlink/越界/系统歌曲/瞬时 staging 失败 |
+| 全量测试 | `xcodebuild -workspace SimpleMusic.xcworkspace -scheme SimpleMusic -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -resultBundlePath /private/tmp/simplemusic-final-full-20260819-1318.xcresult test CODE_SIGNING_ALLOWED=NO` | 0 | xcresult machine summary：`188/188` passed，0 failed，0 skipped，`** TEST SUCCEEDED **`；`/private/tmp/simplemusic-final-full-20260819-1318.xcresult` |
 | 空白检查 | `git diff --check` | 0 | 无输出 |
-| 通用模拟器 Debug 构建 | `xcodebuild -workspace SimpleMusic.xcworkspace -scheme SimpleMusic -configuration Debug -destination 'generic/platform=iOS Simulator' build CODE_SIGNING_ALLOWED=NO` | 0 | `** BUILD SUCCEEDED **`；arm64 与 x86_64；`/tmp/task12-generic-simulator-build.log` |
-| 通用 iOS device Debug 编译 | `xcodebuild -workspace SimpleMusic.xcworkspace -scheme SimpleMusic -configuration Debug -destination 'generic/platform=iOS' build CODE_SIGNING_ALLOWED=NO` | 0 | `** BUILD SUCCEEDED **`；arm64；`/tmp/task12-generic-device-build.log`。这里只是无签名设备编译，没有安装或运行到真机 |
+| 通用模拟器 Debug 构建 | `xcodebuild -workspace SimpleMusic.xcworkspace -scheme SimpleMusic -configuration Debug -destination 'generic/platform=iOS Simulator' build CODE_SIGNING_ALLOWED=NO` | 0 | `** BUILD SUCCEEDED **`；arm64 与 x86_64；`/private/tmp/simplemusic-final-sim-build-20260819-1320.log`；xcresult 同名前缀 |
+| 通用 iOS device Debug 编译 | `xcodebuild -workspace SimpleMusic.xcworkspace -scheme SimpleMusic -configuration Debug -destination 'generic/platform=iOS' build CODE_SIGNING_ALLOWED=NO` | 0 | `** BUILD SUCCEEDED **`；arm64；`/private/tmp/simplemusic-final-device-build-20260819-1322.log`；xcresult 同名前缀。这里只是无签名设备编译，没有安装或运行到真机 |
+| 发布产物审计 | `plutil -lint/-p`、`xcrun assetutil --info Assets.car`、`sips`、`git diff 80cdc... -- <4 exact paths>` | 0 | app 内 `PrivacyInfo.xcprivacy: OK`；UserDefaults `CA92.1`、FileTimestamp `C617.1`、不追踪、无收集数据；`Assets.car` 含 AppIcon 三种 rendition；三张源 PNG 均 1024×1024 且与批准 commit 精确一致 |
 | iPhone 启动核查 | `simctl boot/install/launch/io screenshot`，iPhone 17 Pro iOS 26.4 | 0 | launch PID `56361`；临时原始证据 `/tmp/task12-iphone-root-final.png`，1206×2622，竖屏首次权限页。截图未随 commit 持久化，临时文件清理后不可复核 |
 | iPad 启动核查 | `simctl boot/install/launch/io screenshot`，iPad (A16) iOS 26.4 | 0 | launch PID `57498`；临时原始证据 `/tmp/task12-ipad-root.png`，1640×2360，竖屏首次权限页。截图未随 commit 持久化，临时文件清理后不可复核 |
 
 > **证据耐久性限制：** 两张截图只位于 `/tmp`，是本轮查看过的临时原始证据，没有随 commit 持久化；临时文件清理后，仓库只能复核报告中的 PID、尺寸和观察记录，不能复核截图像素内容。
 
 补充工具边界：iOS 26.2 原始 iPhone 模拟器虽然能 boot，但一次 `simctl install` 超过 60 秒无输出，人工中断后 exit 130。改用此前任务报告中更稳定的 iOS 26.4 目标后，boot/install/launch/screenshot 全链路 exit 0。该环境现象没有通过源码改动规避。
+
+最终修复验证中，第一次 sandbox 内 generic simulator build 因 CoreSimulator 连接失效而 exit 66，未进入可信产品构建；使用相同代码、相同 destination 在获准的 Xcode 环境重跑后 exit 0，证据采用上表 `1320` 日志与 xcresult，没有以重复并发构建掩盖结果。
+
+## 本地删除授权与边界
+
+用户在 final-fix wave 中明确授权：自动删除文件缺失、损坏、空文件或符号链接对应的 Core Data 索引；用户确认主动删除时，仅 unlink `DownloadFileStore` 根内受控叶子并删除该记录。实现不会跟随 symlink，不删除目录外目标，不把系统歌曲当成本地删除；路径穿越、未知 I/O 与 staging 创建/复制等瞬时错误向上抛并保留索引。focused 11 项及 full 188 项均覆盖这些边界。
 
 ## 工程与约束审计
 
@@ -37,9 +45,15 @@
 | iOS 15 最低版本 | PASS | `Podfile`、app/test target build settings 与实际编译 triple 均为 15.0；构建产物 `MinimumOSVersion = 15.0` |
 | CocoaPods / SnapKit | PASS | workspace 依赖 `Pods-SimpleMusic`；`Podfile.lock` 为 SnapKit 5.7.1；测试和两类构建均经过 Pods target |
 | iPhone + iPad | PASS | `TARGETED_DEVICE_FAMILY = "1,2"`；两类根容器测试通过 |
-| 仅竖屏 | PASS（带 warning） | 源与构建产物的 iPhone/iPad orientations 都只有 `UIInterfaceOrientationPortrait`；自动化配置测试通过；device build 另见 warning 清单 |
+| 仅竖屏 | PASS（当前兼容边界） | 源与构建产物的 iPhone/iPad orientations 都只有 `UIInterfaceOrientationPortrait`，且 `UIRequiresFullScreen = true`；device validation 的方向 warning 已消失。iPadOS 26 后续风险见 TN3192 deferred |
 | Main storyboard 清零 | PASS | `SimpleMusic/Base.lproj/Main.storyboard` 不存在，plist/pbxproj 无 Main/scene storyboard 引用 |
 | LaunchScreen 保留 | PASS | `SimpleMusic/Base.lproj/LaunchScreen.storyboard` 存在；构建产物 `UILaunchStoryboardName = LaunchScreen` |
+| app 隐私清单 | PASS | `PrivacyInfo.xcprivacy` 已加入 app resources，源与 device app 均 `plutil` 有效；按 Apple TN3183/required reasons 声明 UserDefaults `CA92.1` 与 app-container 文件 metadata `C617.1`，并声明不追踪、无收集数据 |
+| AppIcon | PASS | 只从用户批准 commit `80cdc3873f134d2ba03a94010a13365a43da799f` 恢复 `Contents.json` 与三张 `app-icon-record-*-1024.png`；精确路径 diff 为空，`sips` 为 1024×1024，device `Assets.car` 的 `assetutil` 输出含 primary/dark/tinted rendition |
+| 四类资料库闭环 | PASS（自动化） | Songs=全部、Downloaded=本地、Albums/Artists=真实分组并可进入歌曲列表；共享列表提供全部播放、随机播放、排序且使用同一 playback closure；未实现的 Recently Played 静态承诺已移除，Recent Added 保留 |
+| 权限/媒体库刷新 | PASS（自动化） | 授权完成、scene active、`MPMediaLibraryDidChange` 与下载完成统一调用共享 ViewModel `requestReload()`；generation 防陈旧结果，合并并发刷新，observer 释放时成对停止通知；iPhone/iPad 共用同一实例 |
+| 本地文件协调与删除 | PASS（自动化） | fetch 只暴露安全根内、非 symlink、regular、非空且可播放的文件；缺失/损坏记录按用户授权清索引。主动删除须弹确认，仅 unlink 受控叶子并删对应记录；symlink 只删链接本身，越界文件、系统歌曲与瞬时 staging 故障均不误删 |
+| 存储降级 | PASS（自动化） | persistent store 加载失败转内存模式并保留原 store、向 UI 暴露 warning；save 失败记录并发通知而非崩溃。下载根失败只禁用下载并显示可理解说明，不以临时目录伪装持久下载，系统资料库浏览/播放仍可用 |
 | 最大 3 个并发下载 | PASS（自动化） | `DownloadPermitPool(limit: 3)`；并发上限测试通过 |
 | 超额 FIFO | PASS（自动化） | waiter `append` + `removeFirst`；提交顺序测试、等待取消/活动取消测试通过 |
 | 下载文件原子保护 | PASS（自动化） | reservation/commit/discard、同名并发、跨 store、单次消费、symlink/regular-file 边界测试通过 |
@@ -64,7 +78,7 @@
 | iPad 授权后的 264pt 双栏与 324pt 播放面板 | PASS（自动化）/ DEFERRED（人工视觉） | containment、宽度、遮罩与面板测试通过；本次截图停留在首次权限页 |
 | Accessibility 与减少动态效果 | PASS（自动化，限定范围）/ DEFERRED（人工辅助功能） | 直接覆盖播放/暂停 label、slider 非触摸 seek、iPad modal 生命周期及 reduce motion；其他 labels 只有生产配置证据，未逐项回归；未实际开启 VoiceOver 操作完整页面 |
 | Dynamic Type | PASS（About/MiniPlayer/TrackCell 的 XXXL 自动化）/ DEFERRED（其余页面与人工视觉） | 权限/设置只覆盖 adjustsFont 或默认尺寸，下载只覆盖输入和触控基础；未证明这些页面在 XXXL 下完整布局通过 |
-| 全部自动化检查 | PASS | 163 passed，0 failed，0 skipped |
+| 全部自动化检查 | PASS | 188 passed，0 failed，0 skipped |
 
 本轮没有自动化 FAIL。以下模拟器交互仍待人工验收：实际拒绝系统权限弹窗后浏览主界面、空资料库手工浏览、真实有效/无效 URL 网络下载、本地文件实际音频输出、拖动与前后切换的听感、搜索/设置手工交互、授权后的 iPhone/iPad 全页面视觉、真实 VoiceOver 焦点顺序与朗读、辅助字号以及减少动态效果。
 
@@ -84,12 +98,11 @@
 
 ## Warnings
 
-- `SimpleMusic/App/AppCoordinator.swift:85-86`：默认 `UIViewController()` 工厂在同步非隔离上下文调用 MainActor initializer。通用 simulator/device Debug 构建按架构或构建变体重复输出。
-- device validation：`All interface orientations must be supported unless the app requires full screen.` 当前产品约束要求 iPhone/iPad 都只验证竖屏；是否补充 full-screen 配置应在后续工程配置任务中明确裁决。
+- 原 `AppCoordinator` 默认工厂 MainActor warning 已通过显式 `@MainActor` 契约消除；最终 simulator/device 日志均无该 warning。
+- 原 device orientation validation warning 已通过 `UIRequiresFullScreen = true` 消除；这是用户明确 portrait-only 下针对现有部署范围的兼容修复，不代表已完成 iPad 可变窗口迁移。
 - linker：本机可选 Metal toolchain 下的 Swift library search path 不存在；本轮链接仍成功。
 - AppIntents：项目未依赖 AppIntents，metadata processor 明确跳过提取。
-- Xcode 环境：DVTDeviceOperation 报告空 build number；全量测试结束有 IDEActivityLogSectionRecorder 停止后写入的内部告警。163 项结果及退出码不受影响。
-- 三个日志都出现 `IDERunDestination: Supported platforms for the buildables in the current scheme is empty.`；这是 Xcode 环境诊断，指定测试与两类 build 均实际进入目标依赖图并 exit 0。
+- Xcode 环境在首次 sandbox generic simulator 尝试中失去 CoreSimulator 连接；获准重跑及 device build 均进入完整依赖图并 exit 0，188 项 xcresult machine summary 也为 Passed。
 - 两张 simulator 截图只保存在 `/tmp`，是临时原始证据，未随 commit 持久化；文件清理后无法从仓库复核其像素内容。
 
 ## Ledger 中保留的 deferred minors
@@ -101,9 +114,10 @@
 - Task 9：IDE activity-log、Metal 与 AppIntents 环境 warning。
 - Task 10：accessibility focus notification 的参数没有直接回归测试；没有为此新增生产 seam。
 - Task 11：点击“重新输入”回到 URL 输入态后不自动恢复键盘焦点。
+- Final fix：Apple [TN3192](https://developer.apple.com/documentation/technotes/tn3192-migrating-your-app-from-the-deprecated-uirequiresfullscreen-key) 说明 `UIRequiresFullScreen` 兼容模式从 iPadOS 26 起 deprecated，并会在未来版本被忽略。真正支持可变窗口、全部方向与动态 scene resize 是后续产品迁移；本轮不违反用户明确的 portrait-only 决策。
 
-以上 minor 与本轮新观察到的 warning 均未在 Task 12 无失败检查的情况下扩修。
+以上 minor 与未来迁移项不属于本轮 7 个 Important，未扩展功能范围。隐私声明依据 Apple [TN3183](https://developer.apple.com/documentation/technotes/tn3183-adding-required-reason-api-entries-to-your-privacy-manifest) 与 [required reason values](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitypereasons)。
 
 ## 工作树边界
 
-报告写入前与最终检查时，受控仓库没有源码未提交改动；唯一既有未跟踪项是 `?? ../sdd-scripts/`。Task 12 不读取其内容、不修改、不暂存、不提交该目录。
+代码提交 `81978ca` 后，受控仓库没有源码未提交改动；报告提交后的最终检查目标是唯一既有未跟踪项 `?? ../sdd-scripts/`。final-fix wave 不读取其内容、不修改、不暂存、不提交该目录。
