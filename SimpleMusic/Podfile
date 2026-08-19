@@ -3,6 +3,9 @@ use_frameworks! :linkage => :static
 
 target 'SimpleMusic' do
   pod 'SnapKit', '~> 5.7'
+  pod 'YYKit'
+  pod 'IQKeyboardManager', '~> 4.0.13'
+
 end
 
 post_install do |installer|
