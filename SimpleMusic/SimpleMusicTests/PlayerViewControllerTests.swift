@@ -62,6 +62,56 @@ final class PlayerViewControllerTests: XCTestCase {
         XCTAssertEqual(queue.text, "第 2 / 4 首")
     }
 
+    /// 如果无封面歌曲仍使用偏小的系统符号，或占位图没有居中放大，此测试应失败。
+    func testPlayerUsesLargeWhitePlaceholderArtworkAboveTitle() async throws {
+        let track = makeTrack(title: "无封面歌曲")
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
+            PlaybackSnapshot(status: .paused, track: track)
+        )
+        let sut = makePlayer(snapshots: snapshots)
+        sut.loadViewIfNeeded()
+        await waitUntil {
+            self.findView(identifier: "player.artwork.placeholder", in: sut.view) != nil
+        }
+
+        let placeholder = try XCTUnwrap(
+            findView(identifier: "player.artwork.placeholder", in: sut.view) as? UIImageView
+        )
+        sut.view.layoutIfNeeded()
+        let whiteImage = try XCTUnwrap(UIImage(named: "music-note-white"))
+
+        XCTAssertFalse(placeholder.isHidden)
+        XCTAssertEqual(placeholder.image?.pngData(), whiteImage.pngData())
+        XCTAssertEqual(placeholder.bounds.size, CGSize(width: 88, height: 88))
+        XCTAssertEqual(placeholder.contentMode, .scaleAspectFit)
+    }
+
+    /// 如果真实封面出现后放大的默认音符仍叠在封面上，此测试应失败。
+    func testPlayerHidesPlaceholderWhenRealArtworkIsAvailable() async throws {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2))
+        let artworkData = renderer.pngData { context in
+            UIColor.systemBlue.setFill()
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+        }
+        let track = makeTrack(title: "有封面歌曲", artworkData: artworkData)
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
+            PlaybackSnapshot(status: .paused, track: track)
+        )
+        let sut = makePlayer(snapshots: snapshots)
+        sut.loadViewIfNeeded()
+        let artwork = try XCTUnwrap(
+            findView(identifier: "player.artwork", in: sut.view) as? UIImageView
+        )
+        let placeholder = try XCTUnwrap(
+            findView(identifier: "player.artwork.placeholder", in: sut.view) as? UIImageView
+        )
+        await waitUntil { artwork.image != nil && placeholder.isHidden }
+
+        XCTAssertTrue(placeholder.isHidden)
+        XCTAssertEqual(artwork.image?.pngData(), UIImage(data: artworkData)?.pngData())
+        XCTAssertEqual(artwork.contentMode, .scaleAspectFill)
+    }
+
     /// 如果队列结束后仍保留的歌曲让无效控制继续可用，或文案误报为空，此测试应失败。
     func testQueueEndSnapshotKeepsMetadataButDisablesControlsAndShowsEndedState() async throws {
         let track = makeTrack(title: "最后一首")
@@ -632,7 +682,8 @@ final class PlayerViewControllerTests: XCTestCase {
     private func makeTrack(
         title: String = "歌曲",
         artist: String = "艺人",
-        album: String = "专辑"
+        album: String = "专辑",
+        artworkData: Data? = nil
     ) -> SimpleMusic.MusicTrack {
         SimpleMusic.MusicTrack(
             id: "track",
@@ -640,7 +691,7 @@ final class PlayerViewControllerTests: XCTestCase {
             artist: artist,
             album: album,
             duration: 180,
-            artworkData: nil,
+            artworkData: artworkData,
             source: .downloaded(fileName: "track.mp3")
         )
     }

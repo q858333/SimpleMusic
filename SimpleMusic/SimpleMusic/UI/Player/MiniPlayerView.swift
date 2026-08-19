@@ -7,6 +7,7 @@ final class MiniPlayerView: UIView {
     private let onTogglePlay: () -> Void
     private let onOpenPlayer: () -> Void
     private var snapshotCancellable: AnyCancellable?
+    private var usesPlaceholderArtwork = false
 
     private let artworkView: UIImageView = {
         let view = UIImageView()
@@ -74,6 +75,14 @@ final class MiniPlayerView: UIView {
         super.init(frame: .zero)
         isHidden = true
         buildView()
+        if #available(iOS 17.0, *) {
+            // 新版 UIKit 需显式监听界面样式，确保迷你播放器即时切换红白音符。
+            registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
+                (view: MiniPlayerView, _) in
+                guard view.usesPlaceholderArtwork else { return }
+                view.updatePlaceholderArtwork()
+            }
+        }
         snapshotCancellable = snapshotPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] snapshot in
@@ -105,6 +114,11 @@ final class MiniPlayerView: UIView {
             != traitCollection.preferredContentSizeCategory {
             invalidateIntrinsicContentSize()
         }
+        guard usesPlaceholderArtwork,
+              previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle else {
+            return
+        }
+        updatePlaceholderArtwork()
     }
 
     func stop() {
@@ -157,14 +171,22 @@ final class MiniPlayerView: UIView {
             titleLabel.text = nil
             artistLabel.text = nil
             artworkView.image = nil
+            artworkView.contentMode = .scaleAspectFill
+            usesPlaceholderArtwork = false
             return
         }
 
         isHidden = false
         titleLabel.text = track.title
         artistLabel.text = track.artist
-        artworkView.image = track.artworkData.flatMap(UIImage.init(data:))
-            ?? UIImage(systemName: "music.note")
+        if let artwork = track.artworkData.flatMap(UIImage.init(data:)) {
+            usesPlaceholderArtwork = false
+            artworkView.image = artwork
+            artworkView.contentMode = .scaleAspectFill
+        } else {
+            usesPlaceholderArtwork = true
+            updatePlaceholderArtwork()
+        }
 
         let isPlaying = snapshot.status == .playing
         toggleButton.accessibilityLabel = isPlaying ? "暂停" : "播放"
@@ -172,5 +194,14 @@ final class MiniPlayerView: UIView {
             UIImage(systemName: isPlaying ? "pause.fill" : "play.fill"),
             for: .normal
         )
+    }
+
+    private func updatePlaceholderArtwork() {
+        // 46pt 封面位在浅色模式使用红色音符，深色模式使用白色音符。
+        let imageName = traitCollection.userInterfaceStyle == .dark
+            ? "music-note-white"
+            : "music-note-red"
+        artworkView.image = UIImage(named: imageName)
+        artworkView.contentMode = .center
     }
 }

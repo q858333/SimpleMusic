@@ -460,6 +460,71 @@ final class LibraryViewModelTests: XCTestCase {
         XCTAssertEqual(artist.text, track.artist)
     }
 
+    /// 如果迷你播放器仍使用系统符号，或界面样式变化后没有切换红白资源，此测试应失败。
+    @MainActor
+    func testMiniPlayerUsesAppearanceSpecificMusicNoteWhenArtworkIsMissing() async throws {
+        let track = makeTrack(id: "mini-no-artwork")
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
+            PlaybackSnapshot(status: .paused, track: track)
+        )
+        let sut = MiniPlayerView(
+            snapshotPublisher: snapshots.eraseToAnyPublisher(),
+            onTogglePlay: {},
+            onOpenPlayer: {}
+        )
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        let host = UIViewController()
+        window.rootViewController = host
+        host.view.addSubview(sut)
+        window.isHidden = false
+        defer { window.isHidden = true }
+        await waitUntil { !sut.isHidden }
+        let artwork = try XCTUnwrap(
+            findView(identifier: "mini.artwork", in: sut) as? UIImageView
+        )
+
+        sut.overrideUserInterfaceStyle = .light
+        sut.layoutIfNeeded()
+        let redImage = try XCTUnwrap(UIImage(named: "music-note-red"))
+        XCTAssertEqual(artwork.image?.pngData(), redImage.pngData())
+        XCTAssertEqual(artwork.contentMode, .center)
+
+        sut.overrideUserInterfaceStyle = .dark
+        sut.layoutIfNeeded()
+        let whiteImage = try XCTUnwrap(UIImage(named: "music-note-white"))
+        XCTAssertEqual(artwork.image?.pngData(), whiteImage.pngData())
+        XCTAssertEqual(artwork.contentMode, .center)
+    }
+
+    /// 如果外观切换把歌曲真实封面替换为默认音符，此测试应失败。
+    @MainActor
+    func testMiniPlayerKeepsRealArtworkAcrossAppearanceChanges() async throws {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2))
+        let artworkData = renderer.pngData { context in
+            UIColor.systemBlue.setFill()
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+        }
+        let track = makeTrack(id: "mini-artwork", artworkData: artworkData)
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
+            PlaybackSnapshot(status: .paused, track: track)
+        )
+        let sut = MiniPlayerView(
+            snapshotPublisher: snapshots.eraseToAnyPublisher(),
+            onTogglePlay: {},
+            onOpenPlayer: {}
+        )
+        await waitUntil { !sut.isHidden }
+        let artwork = try XCTUnwrap(
+            findView(identifier: "mini.artwork", in: sut) as? UIImageView
+        )
+
+        sut.overrideUserInterfaceStyle = .dark
+        sut.layoutIfNeeded()
+
+        XCTAssertEqual(artwork.image?.pngData(), UIImage(data: artworkData)?.pngData())
+        XCTAssertEqual(artwork.contentMode, .scaleAspectFill)
+    }
+
     /// 如果播放状态对应了错误的按钮语义，此测试应失败。
     @MainActor
     func testMiniPlayerUsesPauseOnlyWhilePlaying() async throws {

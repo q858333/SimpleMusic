@@ -26,6 +26,14 @@ final class PlayerViewController: UIViewController {
         return view
     }()
 
+    private let placeholderArtworkView: UIImageView = {
+        let view = UIImageView(image: UIImage(named: "music-note-white"))
+        view.accessibilityIdentifier = "player.artwork.placeholder"
+        view.contentMode = .scaleAspectFit
+        view.isAccessibilityElement = false
+        return view
+    }()
+
     private let titleLabel = PlayerViewController.label(
         identifier: "player.title",
         style: .title2,
@@ -212,6 +220,13 @@ final class PlayerViewController: UIViewController {
             queuePositionLabel
         ].forEach(contentView.addSubview)
 
+        artworkView.addSubview(placeholderArtworkView)
+        placeholderArtworkView.snp.makeConstraints { make in
+            // 播放器的大封面区域使用 88pt 音符，避免默认图在 iPad 侧栏中过小。
+            make.center.equalToSuperview()
+            make.size.equalTo(88)
+        }
+
         closeButton.snp.makeConstraints { make in
             make.top.equalTo(contentView.safeAreaLayoutGuide).offset(4)
             make.leading.equalToSuperview().offset(12)
@@ -288,9 +303,15 @@ final class PlayerViewController: UIViewController {
         titleLabel.text = track.title
         artistLabel.text = track.artist
         albumLabel.text = track.album
-        artworkView.image = track.artworkData.flatMap(UIImage.init(data:))
-            ?? UIImage(systemName: "music.note")
-        artworkView.contentMode = track.artworkData == nil ? .center : .scaleAspectFill
+        if let artwork = track.artworkData.flatMap(UIImage.init(data:)) {
+            artworkView.image = artwork
+            artworkView.contentMode = .scaleAspectFill
+            placeholderArtworkView.isHidden = true
+        } else {
+            artworkView.image = nil
+            artworkView.contentMode = .scaleAspectFill
+            placeholderArtworkView.isHidden = false
+        }
 
         let isPlaying = snapshot.status == .playing
         toggleButton.accessibilityLabel = isPlaying ? "暂停" : "播放"
@@ -320,8 +341,9 @@ final class PlayerViewController: UIViewController {
         titleLabel.text = "尚未播放"
         artistLabel.text = "选择一首歌曲开始播放"
         albumLabel.text = nil
-        artworkView.image = UIImage(systemName: "music.note")
-        artworkView.contentMode = .center
+        artworkView.image = nil
+        artworkView.contentMode = .scaleAspectFill
+        placeholderArtworkView.isHidden = false
         elapsedLabel.text = "0:00"
         remainingLabel.text = "-0:00"
         queuePositionLabel.text = "队列为空"
