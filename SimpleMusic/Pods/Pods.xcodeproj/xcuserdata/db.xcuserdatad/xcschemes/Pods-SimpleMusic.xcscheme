@@ -15,7 +15,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "55FD3F5D6263A4DE5757EFE36365EF56"
-               BuildableName = "libPods-SimpleMusic.a"
+               BuildableName = "Pods_SimpleMusic.framework"
                BlueprintName = "Pods-SimpleMusic"
                ReferencedContainer = "container:Pods.xcodeproj">
             </BuildableReference>

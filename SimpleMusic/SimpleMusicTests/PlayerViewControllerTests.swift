@@ -1,0 +1,532 @@
+import Combine
+import MediaPlayer
+import UIKit
+import XCTest
+@testable import SimpleMusic
+
+@MainActor
+final class PlayerViewControllerTests: XCTestCase {
+    /// 如果空状态仍显示演示歌曲或保留可操作的播放控件，此测试应失败。
+    func testEmptySnapshotShowsPlaceholderAndDisablesPlaybackControls() async throws {
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot())
+        let sut = makePlayer(snapshots: snapshots)
+        sut.loadViewIfNeeded()
+        await Task.yield()
+
+        let title = try XCTUnwrap(findView(identifier: "player.title", in: sut.view) as? UILabel)
+        let slider = try XCTUnwrap(findView(identifier: "player.progress", in: sut.view) as? UISlider)
+        let previous = try XCTUnwrap(findView(identifier: "player.previous", in: sut.view) as? UIButton)
+        let toggle = try XCTUnwrap(findView(identifier: "player.toggle", in: sut.view) as? UIButton)
+        let next = try XCTUnwrap(findView(identifier: "player.next", in: sut.view) as? UIButton)
+
+        XCTAssertEqual(title.text, "尚未播放")
+        XCTAssertFalse(slider.isEnabled)
+        XCTAssertFalse(previous.isEnabled)
+        XCTAssertFalse(toggle.isEnabled)
+        XCTAssertFalse(next.isEnabled)
+    }
+
+    /// 如果真实快照没有更新元数据、状态、时间和队列位置，此测试应失败。
+    func testSnapshotRendersTrackMetadataPlaybackStateAndQueuePosition() async throws {
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot())
+        let sut = makePlayer(snapshots: snapshots)
+        sut.loadViewIfNeeded()
+        let track = makeTrack(title: "未完待续", artist: "陈粒", album: "未完待续")
+
+        snapshots.send(PlaybackSnapshot(
+            status: .playing,
+            track: track,
+            elapsed: 88,
+            duration: 256,
+            queueIndex: 1,
+            queueCount: 4
+        ))
+        await waitUntil {
+            (self.findView(identifier: "player.title", in: sut.view) as? UILabel)?.text == track.title
+        }
+
+        let title = try XCTUnwrap(findView(identifier: "player.title", in: sut.view) as? UILabel)
+        let artist = try XCTUnwrap(findView(identifier: "player.artist", in: sut.view) as? UILabel)
+        let album = try XCTUnwrap(findView(identifier: "player.album", in: sut.view) as? UILabel)
+        let elapsed = try XCTUnwrap(findView(identifier: "player.elapsed", in: sut.view) as? UILabel)
+        let remaining = try XCTUnwrap(findView(identifier: "player.remaining", in: sut.view) as? UILabel)
+        let toggle = try XCTUnwrap(findView(identifier: "player.toggle", in: sut.view) as? UIButton)
+        let queue = try XCTUnwrap(findView(identifier: "player.queue", in: sut.view) as? UILabel)
+
+        XCTAssertEqual(title.text, track.title)
+        XCTAssertEqual(artist.text, track.artist)
+        XCTAssertEqual(album.text, track.album)
+        XCTAssertEqual(elapsed.text, "1:28")
+        XCTAssertEqual(remaining.text, "-2:48")
+        XCTAssertEqual(toggle.accessibilityLabel, "暂停")
+        XCTAssertEqual(queue.text, "第 2 / 4 首")
+    }
+
+    /// 如果队列结束后仍保留的歌曲让无效控制继续可用，或文案误报为空，此测试应失败。
+    func testQueueEndSnapshotKeepsMetadataButDisablesControlsAndShowsEndedState() async throws {
+        let track = makeTrack(title: "最后一首")
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
+            PlaybackSnapshot(
+                status: .idle,
+                track: track,
+                elapsed: 0,
+                duration: 180,
+                queueIndex: nil,
+                queueCount: 3
+            )
+        )
+        let sut = makePlayer(snapshots: snapshots)
+        sut.loadViewIfNeeded()
+        let queue = try XCTUnwrap(findView(identifier: "player.queue", in: sut.view) as? UILabel)
+        await waitUntil { queue.text != nil }
+
+        let title = try XCTUnwrap(findView(identifier: "player.title", in: sut.view) as? UILabel)
+        let slider = try XCTUnwrap(findView(identifier: "player.progress", in: sut.view) as? UISlider)
+        let previous = try XCTUnwrap(findView(identifier: "player.previous", in: sut.view) as? UIButton)
+        let toggle = try XCTUnwrap(findView(identifier: "player.toggle", in: sut.view) as? UIButton)
+        let next = try XCTUnwrap(findView(identifier: "player.next", in: sut.view) as? UIButton)
+
+        XCTAssertEqual(title.text, track.title)
+        XCTAssertEqual(queue.text, "队列已结束")
+        XCTAssertFalse(slider.isEnabled)
+        XCTAssertFalse(previous.isEnabled)
+        XCTAssertFalse(toggle.isEnabled)
+        XCTAssertFalse(next.isEnabled)
+    }
+
+    /// 如果控件可用状态没有遵循协调器各动作的真实状态分支，此测试应失败。
+    func testPlaybackControlAvailabilityMatchesCoordinatorActionSemantics() async throws {
+        let track = makeTrack()
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot())
+        let sut = makePlayer(snapshots: snapshots)
+        sut.loadViewIfNeeded()
+        let previous = try XCTUnwrap(findView(identifier: "player.previous", in: sut.view) as? UIButton)
+        let toggle = try XCTUnwrap(findView(identifier: "player.toggle", in: sut.view) as? UIButton)
+        let next = try XCTUnwrap(findView(identifier: "player.next", in: sut.view) as? UIButton)
+        let slider = try XCTUnwrap(findView(identifier: "player.progress", in: sut.view) as? UISlider)
+        let scenarios: [(
+            name: String,
+            status: PlaybackStatus,
+            index: Int,
+            count: Int,
+            previous: Bool,
+            toggle: Bool,
+            next: Bool,
+            seek: Bool
+        )] = [
+            ("loading-first", .loading, 0, 3, false, false, true, false),
+            ("loading-middle", .loading, 1, 3, true, false, true, false),
+            ("loading-last", .loading, 2, 3, true, false, false, false),
+            ("playing-first", .playing, 0, 3, false, true, true, true),
+            ("playing-middle", .playing, 1, 3, true, true, true, true),
+            ("playing-last", .playing, 2, 3, true, true, false, true),
+            ("paused-first", .paused, 0, 3, false, true, true, true),
+            ("paused-middle", .paused, 1, 3, true, true, true, true),
+            ("paused-last", .paused, 2, 3, true, true, false, true),
+            ("failed-first", .failed("失败"), 0, 2, false, false, true, false),
+            ("failed-middle", .failed("失败"), 1, 3, true, false, true, false),
+            ("failed-last", .failed("失败"), 2, 3, true, false, false, false)
+        ]
+
+        for scenario in scenarios {
+            snapshots.send(PlaybackSnapshot(
+                status: scenario.status,
+                track: track,
+                elapsed: 10,
+                duration: 100,
+                queueIndex: scenario.index,
+                queueCount: scenario.count
+            ))
+            await waitUntil {
+                previous.isEnabled == scenario.previous
+                    && toggle.isEnabled == scenario.toggle
+                    && next.isEnabled == scenario.next
+                    && slider.isEnabled == scenario.seek
+            }
+
+            XCTAssertEqual(previous.isEnabled, scenario.previous, scenario.name)
+            XCTAssertEqual(toggle.isEnabled, scenario.toggle, scenario.name)
+            XCTAssertEqual(next.isEnabled, scenario.next, scenario.name)
+            XCTAssertEqual(slider.isEnabled, scenario.seek, scenario.name)
+        }
+    }
+
+    /// 如果拖动期间快照把滑块抢回，或结束拖动没有 seek，此测试应失败。
+    func testSeekingKeepsDraggedValueUntilReleaseThenSeeks() async throws {
+        let track = makeTrack()
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
+            PlaybackSnapshot(
+                status: .playing,
+                track: track,
+                elapsed: 10,
+                duration: 100,
+                queueIndex: 0,
+                queueCount: 1
+            )
+        )
+        var seekValues = [TimeInterval]()
+        let sut = makePlayer(snapshots: snapshots, onSeek: { seekValues.append($0) })
+        sut.loadViewIfNeeded()
+        let slider = try XCTUnwrap(findView(identifier: "player.progress", in: sut.view) as? UISlider)
+        await waitUntil { slider.value == 10 }
+
+        slider.sendActions(for: .touchDown)
+        slider.value = 44
+        slider.sendActions(for: .valueChanged)
+        snapshots.send(PlaybackSnapshot(
+            status: .paused,
+            track: track,
+            elapsed: 70,
+            duration: 100,
+            queueIndex: 0,
+            queueCount: 1
+        ))
+        let toggle = try XCTUnwrap(findView(identifier: "player.toggle", in: sut.view) as? UIButton)
+        await waitUntil { toggle.accessibilityLabel == "播放" }
+
+        XCTAssertEqual(slider.value, 44, accuracy: 0.01)
+        slider.sendActions(for: .touchUpInside)
+        XCTAssertEqual(seekValues, [44])
+    }
+
+    /// 如果拖动中播放失败，随后到达的 touchUp 仍提交无效 seek，此测试应失败。
+    func testSeekingDoesNotCommitAfterSnapshotBecomesUnseekable() async throws {
+        let track = makeTrack()
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot(
+            status: .playing,
+            track: track,
+            elapsed: 10,
+            duration: 100,
+            queueIndex: 1,
+            queueCount: 3
+        ))
+        var seekValues = [TimeInterval]()
+        let sut = makePlayer(snapshots: snapshots, onSeek: { seekValues.append($0) })
+        sut.loadViewIfNeeded()
+        let slider = try XCTUnwrap(findView(identifier: "player.progress", in: sut.view) as? UISlider)
+        await waitUntil { slider.value == 10 }
+
+        slider.sendActions(for: .touchDown)
+        slider.value = 44
+        slider.sendActions(for: .valueChanged)
+        snapshots.send(PlaybackSnapshot(
+            status: .failed("失败"),
+            track: track,
+            elapsed: 20,
+            duration: 100,
+            queueIndex: 1,
+            queueCount: 3
+        ))
+        await waitUntil { !slider.isEnabled }
+        slider.sendActions(for: .touchUpInside)
+
+        XCTAssertTrue(seekValues.isEmpty)
+    }
+
+    /// 如果失败快照没有取消拖动，缺少 touchUp 时恢复播放仍会保留旧拖动值，此测试应失败。
+    func testFailedSnapshotCancelsSeekingSoPlayableSnapshotRefreshesProgress() async throws {
+        let track = makeTrack()
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot(
+            status: .playing,
+            track: track,
+            elapsed: 10,
+            duration: 100,
+            queueIndex: 1,
+            queueCount: 3
+        ))
+        let sut = makePlayer(snapshots: snapshots)
+        sut.loadViewIfNeeded()
+        let slider = try XCTUnwrap(findView(identifier: "player.progress", in: sut.view) as? UISlider)
+        await waitUntil { slider.value == 10 }
+
+        slider.sendActions(for: .touchDown)
+        slider.value = 44
+        snapshots.send(PlaybackSnapshot(
+            status: .failed("失败"),
+            track: track,
+            elapsed: 20,
+            duration: 100,
+            queueIndex: 1,
+            queueCount: 3
+        ))
+        await waitUntil { !slider.isEnabled }
+        snapshots.send(PlaybackSnapshot(
+            status: .playing,
+            track: track,
+            elapsed: 76,
+            duration: 100,
+            queueIndex: 1,
+            queueCount: 3
+        ))
+        await waitUntil { slider.isEnabled }
+
+        XCTAssertEqual(slider.value, 76, accuracy: 0.01)
+    }
+
+    /// 如果空快照没有取消拖动，新歌曲进度会被旧手势锁住且迟到 touchUp 会误 seek。
+    func testEmptySnapshotCancelsSeekingBeforeNextTrackSnapshot() async throws {
+        let firstTrack = makeTrack(title: "第一首")
+        let nextTrack = makeTrack(title: "第二首")
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot(
+            status: .playing,
+            track: firstTrack,
+            elapsed: 10,
+            duration: 100,
+            queueIndex: 0,
+            queueCount: 2
+        ))
+        var seekValues = [TimeInterval]()
+        let sut = makePlayer(snapshots: snapshots, onSeek: { seekValues.append($0) })
+        sut.loadViewIfNeeded()
+        let slider = try XCTUnwrap(findView(identifier: "player.progress", in: sut.view) as? UISlider)
+        let title = try XCTUnwrap(findView(identifier: "player.title", in: sut.view) as? UILabel)
+        await waitUntil { slider.value == 10 }
+
+        slider.sendActions(for: .touchDown)
+        slider.value = 44
+        slider.sendActions(for: .valueChanged)
+        snapshots.send(PlaybackSnapshot())
+        await waitUntil { title.text == "尚未播放" }
+        snapshots.send(PlaybackSnapshot(
+            status: .playing,
+            track: nextTrack,
+            elapsed: 76,
+            duration: 120,
+            queueIndex: 0,
+            queueCount: 1
+        ))
+        await waitUntil { title.text == nextTrack.title && slider.isEnabled }
+
+        XCTAssertEqual(slider.value, 76, accuracy: 0.01)
+        slider.sendActions(for: .touchUpInside)
+        XCTAssertTrue(seekValues.isEmpty)
+    }
+
+    /// 如果辅助功能只发送 valueChanged 时没有立即 seek，此测试应失败。
+    func testNonTrackingProgressChangeSeeksImmediately() async throws {
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
+            PlaybackSnapshot(
+                status: .paused,
+                track: makeTrack(),
+                elapsed: 10,
+                duration: 100,
+                queueIndex: 0,
+                queueCount: 1
+            )
+        )
+        var seekValues = [TimeInterval]()
+        let sut = makePlayer(snapshots: snapshots, onSeek: { seekValues.append($0) })
+        sut.loadViewIfNeeded()
+        let slider = try XCTUnwrap(findView(identifier: "player.progress", in: sut.view) as? UISlider)
+        await waitUntil { slider.maximumValue == 100 }
+
+        slider.value = 36
+        slider.sendActions(for: .valueChanged)
+
+        XCTAssertEqual(seekValues, [36])
+    }
+
+    /// 如果按钮没有转发统一播放协调器动作，或系统音量和 AirPlay 入口缺失，此测试应失败。
+    func testPlayerRoutesControlsAndIncludesSystemAudioUtilities() throws {
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
+            PlaybackSnapshot(
+                status: .paused,
+                track: makeTrack(),
+                queueIndex: 0,
+                queueCount: 1
+            )
+        )
+        var toggleCount = 0
+        var previousCount = 0
+        var nextCount = 0
+        let sut = makePlayer(
+            snapshots: snapshots,
+            onTogglePlay: { toggleCount += 1 },
+            onPrevious: { previousCount += 1 },
+            onNext: { nextCount += 1 }
+        )
+        sut.loadViewIfNeeded()
+
+        try XCTUnwrap(findView(identifier: "player.toggle", in: sut.view) as? UIButton)
+            .sendActions(for: .touchUpInside)
+        try XCTUnwrap(findView(identifier: "player.previous", in: sut.view) as? UIButton)
+            .sendActions(for: .touchUpInside)
+        try XCTUnwrap(findView(identifier: "player.next", in: sut.view) as? UIButton)
+            .sendActions(for: .touchUpInside)
+
+        XCTAssertEqual(toggleCount, 1)
+        XCTAssertEqual(previousCount, 1)
+        XCTAssertEqual(nextCount, 1)
+        XCTAssertNotNil(findView(identifier: "player.volume", in: sut.view))
+        XCTAssertNotNil(findView(identifier: "player.airplay", in: sut.view))
+    }
+
+    /// 如果手机入口不是由根协调器全屏呈现共享播放器，此测试应失败。
+    func testPhoneRootPresentsSharedPlayerFullScreen() throws {
+        let dependencies = makeDependencies()
+        let phone = try XCTUnwrap(
+            AppCoordinator.makeMainViewControllerFactory(dependencies: dependencies)(.phone)
+                as? MainTabBarController
+        )
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+        window.rootViewController = phone
+        window.makeKeyAndVisible()
+        phone.loadViewIfNeeded()
+
+        phone.onOpenPlayer?()
+
+        let player = try XCTUnwrap(phone.presentedViewController as? PlayerViewController)
+        XCTAssertEqual(player.modalPresentationStyle, .fullScreen)
+    }
+
+    /// 如果 iPad 面板不是 PadRoot child、宽度偏离 324 点或遮罩不能关闭，此测试应失败。
+    func testPadRootShowsContainedPlayerPanelAndMaskDismissesIt() throws {
+        let pad = PadRootViewController(dependencies: makeDependencies())
+        pad.loadViewIfNeeded()
+        pad.view.frame = CGRect(x: 0, y: 0, width: 834, height: 1194)
+        pad.view.layoutIfNeeded()
+        let panel = try XCTUnwrap(descendant(NowPlayingPanelController.self, in: pad))
+
+        XCTAssertTrue(panel.parent === pad)
+        XCTAssertTrue(descendant(PlayerViewController.self, in: panel) != nil)
+        XCTAssertFalse(panel.isPresented)
+
+        pad.onOpenPlayer?()
+        pad.view.layoutIfNeeded()
+        let surface = try XCTUnwrap(findView(identifier: "player.panel", in: panel.view))
+        XCTAssertTrue(panel.isPresented)
+        XCTAssertEqual(surface.frame.width, 324, accuracy: 0.5)
+        XCTAssertEqual(surface.frame.maxX, panel.view.bounds.width, accuracy: 0.5)
+
+        let mask = try XCTUnwrap(findView(identifier: "player.mask", in: panel.view) as? UIButton)
+        mask.sendActions(for: .touchUpInside)
+        XCTAssertFalse(panel.isPresented)
+    }
+
+    /// 如果面板显示时没有建立模态辅助功能边界，或关闭后没有撤销，此测试应失败。
+    func testPadPanelAccessibilityModalStateFollowsPresentationLifecycle() throws {
+        let pad = PadRootViewController(dependencies: makeDependencies())
+        pad.loadViewIfNeeded()
+        let panel = try XCTUnwrap(descendant(NowPlayingPanelController.self, in: pad))
+
+        panel.show(animated: false)
+        XCTAssertTrue(panel.view.accessibilityViewIsModal)
+
+        panel.dismissPanel(animated: false)
+        XCTAssertFalse(panel.view.accessibilityViewIsModal)
+        XCTAssertTrue(panel.view.isHidden)
+    }
+
+    /// 如果“减弱动态效果”仍启动侧栏动画，关闭后的隐藏状态不会同步完成，此测试应失败。
+    func testPadPanelCompletesTransitionsImmediatelyWhenReduceMotionIsEnabled() throws {
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot())
+        let player = makePlayer(snapshots: snapshots)
+        let panel = NowPlayingPanelController(
+            playerViewController: player,
+            isReduceMotionEnabled: { true }
+        )
+        let host = UIViewController()
+        host.loadViewIfNeeded()
+        host.view.frame = CGRect(x: 0, y: 0, width: 834, height: 1194)
+        host.addChild(panel)
+        host.view.addSubview(panel.view)
+        panel.view.frame = host.view.bounds
+        panel.didMove(toParent: host)
+
+        panel.show()
+        host.view.layoutIfNeeded()
+        let surface = try XCTUnwrap(findView(identifier: "player.panel", in: panel.view))
+        XCTAssertEqual(surface.frame.maxX, panel.view.bounds.width, accuracy: 0.5)
+
+        panel.dismissPanel()
+        XCTAssertTrue(panel.view.isHidden)
+        XCTAssertFalse(panel.view.accessibilityViewIsModal)
+    }
+
+    private func makePlayer(
+        snapshots: CurrentValueSubject<PlaybackSnapshot, Never>,
+        onTogglePlay: @escaping () -> Void = {},
+        onPrevious: @escaping () -> Void = {},
+        onNext: @escaping () -> Void = {},
+        onSeek: @escaping (TimeInterval) -> Void = { _ in }
+    ) -> PlayerViewController {
+        PlayerViewController(
+            snapshotPublisher: snapshots.eraseToAnyPublisher(),
+            onTogglePlay: onTogglePlay,
+            onPrevious: onPrevious,
+            onNext: onNext,
+            onSeek: onSeek
+        )
+    }
+
+    private func makeDependencies() -> AppRootDependencies {
+        let identity = NSObject()
+        let viewModel = LibraryViewModel(
+            library: PlayerStubMusicLibrary(),
+            localStore: PlayerStubLocalMusicStore()
+        )
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot())
+        return AppRootDependencies(
+            identity: identity,
+            libraryViewModel: viewModel,
+            snapshotPublisher: snapshots.eraseToAnyPublisher(),
+            onPlay: { _, _ in },
+            onTogglePlay: {},
+            onPrevious: {},
+            onNext: {},
+            onSeek: { _ in }
+        )
+    }
+
+    private func makeTrack(
+        title: String = "歌曲",
+        artist: String = "艺人",
+        album: String = "专辑"
+    ) -> SimpleMusic.MusicTrack {
+        SimpleMusic.MusicTrack(
+            id: "track",
+            title: title,
+            artist: artist,
+            album: album,
+            duration: 180,
+            artworkData: nil,
+            source: .downloaded(fileName: "track.mp3")
+        )
+    }
+
+    private func findView(identifier: String, in root: UIView) -> UIView? {
+        if root.accessibilityIdentifier == identifier { return root }
+        return root.subviews.lazy.compactMap {
+            self.findView(identifier: identifier, in: $0)
+        }.first
+    }
+
+    private func descendant<T: UIViewController>(
+        _ type: T.Type,
+        in root: UIViewController
+    ) -> T? {
+        if let match = root as? T { return match }
+        return root.children.lazy.compactMap { self.descendant(type, in: $0) }.first
+    }
+
+    private func waitUntil(
+        attempts: Int = 20,
+        condition: @escaping @MainActor () -> Bool
+    ) async {
+        for _ in 0..<attempts where !condition() {
+            await Task.yield()
+        }
+    }
+}
+
+@MainActor
+private final class PlayerStubMusicLibrary: MusicLibraryLoading {
+    let authorizationStatus = MPMediaLibraryAuthorizationStatus.authorized
+
+    func loadTracks() async throws -> [SimpleMusic.MusicTrack] { [] }
+}
+
+@MainActor
+private final class PlayerStubLocalMusicStore: LocalMusicLoading {
+    func loadTracks() async throws -> [SimpleMusic.MusicTrack] { [] }
+}
