@@ -50,10 +50,9 @@ final class PadRootViewController: UIViewController {
         container.isHidden = true
 
         let bubbleBody = UIView()
+        bubbleBody.accessibilityIdentifier = "pad.playerGuide.body"
         bubbleBody.backgroundColor = Theme.accent.withAlphaComponent(0.12)
         bubbleBody.layer.cornerRadius = 12
-        bubbleBody.layer.borderWidth = 0.5
-        bubbleBody.layer.borderColor = Theme.accent.withAlphaComponent(0.28).cgColor
 
         let arrow = PlayerGuideArrowView()
 
@@ -375,8 +374,6 @@ private final class PlayerGuideArrowView: UIView {
 
         shapeLayer.path = path.cgPath
         shapeLayer.fillColor = Theme.accent.withAlphaComponent(0.12).cgColor
-        shapeLayer.strokeColor = Theme.accent.withAlphaComponent(0.28).cgColor
-        shapeLayer.lineWidth = 0.5
         shapeLayer.lineJoin = .round
     }
 }

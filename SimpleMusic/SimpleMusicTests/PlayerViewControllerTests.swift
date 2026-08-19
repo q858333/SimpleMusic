@@ -497,6 +497,22 @@ final class PlayerViewControllerTests: XCTestCase {
         XCTAssertFalse(path.contains(CGPoint(x: 1, y: arrow.bounds.maxY - 1)))
     }
 
+    /// 如果主体或箭头带描边，引导会显得生硬，不符合轻量气泡的视觉要求。
+    func testPadPlayerGuideUsesFillWithoutBorder() throws {
+        let pad = PadRootViewController(dependencies: makeDependencies())
+        pad.loadViewIfNeeded()
+        pad.view.frame = CGRect(x: 0, y: 0, width: 834, height: 1194)
+        pad.view.layoutIfNeeded()
+
+        let guide = try XCTUnwrap(findView(identifier: "pad.playerGuide", in: pad.view))
+        let body = try XCTUnwrap(findView(identifier: "pad.playerGuide.body", in: guide))
+        let arrow = try XCTUnwrap(findView(identifier: "pad.playerGuide.arrow", in: guide))
+        let arrowLayer = try XCTUnwrap(arrow.layer as? CAShapeLayer)
+
+        XCTAssertEqual(body.layer.borderWidth, 0)
+        XCTAssertNil(arrowLayer.strokeColor)
+    }
+
     /// 如果曲目消失后引导仍悬浮，提示会指向已经隐藏的迷你播放器。
     func testPadPlayerGuideHidesWhenPlaybackBecomesEmptyAndKeepsAccessibleLayout() async throws {
         let suiteName = "PlayerViewControllerTests.pad-guide-empty.\(UUID().uuidString)"
