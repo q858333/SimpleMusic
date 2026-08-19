@@ -70,13 +70,14 @@ final class LocalPlaybackBackend: NSObject, PlaybackBackend {
     private var preparationTask: Task<Void, Never>?
 
     init(
-        fileStore: DownloadFileStore,
+        fileStore: DownloadFileStore? = nil,
         player: AVPlayer = AVPlayer(),
         notificationCenter: NotificationCenter = .default,
         leaseProvider: LeaseProvider? = nil
     ) {
         self.leaseProvider = leaseProvider ?? { fileName in
-            try fileStore.playbackLease(for: fileName)
+            guard let fileStore else { throw DownloadFileStoreError.fileNotFound }
+            return try fileStore.playbackLease(for: fileName)
         }
         self.player = player
         playerLifetime = LocalPlayerLifetime(player: player)

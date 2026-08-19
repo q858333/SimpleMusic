@@ -8,6 +8,7 @@ final class MainTabBarController: UITabBarController {
     private let libraryViewModel: LibraryViewModel
     private let snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>
     private let onPlay: ([MusicTrack], Int) -> Void
+    private let onDeleteTrack: (MusicTrack) -> Void
     private let onTogglePlay: () -> Void
     private var reloadTask: Task<Void, Never>?
 
@@ -34,6 +35,7 @@ final class MainTabBarController: UITabBarController {
             libraryViewModel: dependencies.libraryViewModel,
             snapshotPublisher: dependencies.snapshotPublisher,
             onPlay: dependencies.onPlay,
+            onDeleteTrack: dependencies.onDeleteTrack,
             onTogglePlay: dependencies.onTogglePlay,
             onOpenPlayer: {},
             dependencyIdentity: dependencies.identity
@@ -44,6 +46,7 @@ final class MainTabBarController: UITabBarController {
         libraryViewModel: LibraryViewModel,
         snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>,
         onPlay: @escaping ([MusicTrack], Int) -> Void,
+        onDeleteTrack: @escaping (MusicTrack) -> Void = { _ in },
         onTogglePlay: @escaping () -> Void,
         onOpenPlayer: @escaping () -> Void,
         dependencyIdentity: ObjectIdentifier? = nil
@@ -52,6 +55,7 @@ final class MainTabBarController: UITabBarController {
         self.libraryViewModel = libraryViewModel
         self.snapshotPublisher = snapshotPublisher
         self.onPlay = onPlay
+        self.onDeleteTrack = onDeleteTrack
         self.onTogglePlay = onTogglePlay
         self.onOpenPlayer = onOpenPlayer
         super.init(nibName: nil, bundle: nil)
@@ -73,7 +77,7 @@ final class MainTabBarController: UITabBarController {
         configurePages()
         installMiniPlayer()
         reloadTask = Task { [weak libraryViewModel] in
-            await libraryViewModel?.reload()
+            await libraryViewModel?.requestReload()
         }
     }
 
@@ -84,6 +88,8 @@ final class MainTabBarController: UITabBarController {
         searchViewController.onSelectTrack = { [weak self] queue, index in
             self?.onPlay(queue, index)
         }
+        libraryViewController.onDeleteTrack = onDeleteTrack
+        searchViewController.onDeleteTrack = onDeleteTrack
 
         libraryViewController.tabBarItem = UITabBarItem(
             title: "资料库",

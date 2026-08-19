@@ -65,6 +65,16 @@ final class DownloadFileStoreTests: XCTestCase {
         XCTAssertThrowsError(try store.playbackLease(for: "folder"))
     }
 
+    /// 零字节占位文件不是可播放歌曲，不能复制进队列后才交给 AVPlayer 失败。
+    func testPlaybackLeaseRejectsEmptyRegularFile() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try DownloadFileStore(rootURL: root)
+        try Data().write(to: root.appendingPathComponent("broken.mp3"))
+
+        XCTAssertThrowsError(try store.playbackLease(for: "broken.mp3"))
+    }
+
     /// 若 lease 仍指向可替换的源路径，解析后替换为越界 symlink 会读到外部内容。
     func testPlaybackLeaseKeepsOriginalBytesAfterSourceIsReplacedBySymbolicLink() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

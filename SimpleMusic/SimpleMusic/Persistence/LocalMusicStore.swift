@@ -91,7 +91,12 @@ final class LocalMusicStore: @unchecked Sendable {
 
     func insert(_ metadata: DownloadedTrackMetadata) throws -> MusicTrack {
         try context.performAndWait {
-            let entity = DownloadedTrackEntity(context: context)
+            // 直接使用当前 context 的模型，避免测试/降级容器并存时 Core Data 按全局 subclass 歧义取错 entity。
+            let description = NSEntityDescription.entity(
+                forEntityName: "DownloadedTrackEntity",
+                in: context
+            )!
+            let entity = DownloadedTrackEntity(entity: description, insertInto: context)
             entity.id = metadata.id
             entity.fileName = metadata.fileName
             entity.title = metadata.title

@@ -25,6 +25,8 @@ extension LocalMusicStore: LocalMusicLoading {
     }
 }
 
+extension LocalMusicCatalog: LocalMusicLoading {}
+
 enum LibrarySectionState: Equatable {
     case idle
     case loading
@@ -40,16 +42,27 @@ final class LibraryViewModel {
     @Published private(set) var tracks = [MusicTrack]()
     @Published private(set) var systemState: LibrarySectionState = .idle
     @Published private(set) var localState: LibrarySectionState = .idle
+    @Published private(set) var storageWarning: String?
 
     private let library: any MusicLibraryLoading
     private let localStore: any LocalMusicLoading
+    private let deleteLocalTrack: (@MainActor @Sendable (MusicTrack) async throws -> Void)?
     private var systemTracks = [MusicTrack]()
     private var localTracks = [MusicTrack]()
     private var reloadGeneration: UInt64 = 0
+    private var activeRequestedReload: Task<Void, Never>?
+    private var needsFollowUpReload = false
 
-    init(library: any MusicLibraryLoading, localStore: any LocalMusicLoading) {
+    init(
+        library: any MusicLibraryLoading,
+        localStore: any LocalMusicLoading,
+        storageWarning: String? = nil,
+        deleteLocalTrack: (@MainActor @Sendable (MusicTrack) async throws -> Void)? = nil
+    ) {
         self.library = library
         self.localStore = localStore
+        self.storageWarning = storageWarning
+        self.deleteLocalTrack = deleteLocalTrack
     }
 
     func reload() async {
@@ -69,6 +82,26 @@ final class LibraryViewModel {
         _ = await (systemWork, localWork)
     }
 
+    /// 生命周期、授权和系统资料库事件统一经过此入口。
+    func requestReload() async {
+        if let activeRequestedReload {
+            needsFollowUpReload = true
+            await activeRequestedReload.value
+            return
+        }
+
+        repeat {
+            needsFollowUpReload = false
+            let task = Task { [weak self] in
+                guard let self else { return }
+                await reload()
+            }
+            activeRequestedReload = task
+            await task.value
+            activeRequestedReload = nil
+        } while needsFollowUpReload
+    }
+
     func filter(query: String) -> [MusicTrack] {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return tracks }
@@ -81,6 +114,16 @@ final class LibraryViewModel {
                     locale: .current
                 ) != nil
             }
+        }
+    }
+
+    func deleteDownloadedTrack(_ track: MusicTrack) async {
+        guard case .downloaded = track.source, let deleteLocalTrack else { return }
+        do {
+            try await deleteLocalTrack(track)
+            await requestReload()
+        } catch {
+            localState = .failed("无法删除本地歌曲")
         }
     }
 
@@ -122,8 +165,10 @@ final class LibraryViewModel {
         case let .success(loadedTracks):
             localTracks = loadedTracks
             localState = loadedTracks.isEmpty ? .empty : .loaded
-        case .failure:
-            localState = .failed("无法读取已下载歌曲")
+        case let .failure(error):
+            localState = .failed(
+                (error as? LocalizedError)?.errorDescription ?? "无法读取已下载歌曲"
+            )
         }
         publishMergedTracks()
     }

@@ -1,3 +1,4 @@
+import CoreData
 import MediaPlayer
 import UIKit
 
@@ -7,34 +8,59 @@ final class AppEnvironment {
 
     let settingsStore = SettingsStore(defaults: .standard)
     let musicLibraryService = MusicLibraryService()
+    private var libraryChangeObserver: MusicLibraryChangeObserver?
+    private var localMusicCatalog: LocalMusicCatalog?
+    private lazy var downloadStorageResolution = DownloadStorageFactory().resolve()
 
     lazy var localMusicStore: LocalMusicStore = {
-        guard let appDelegate = UIApplication.shared.delegate as? AppDelegate else {
-            fatalError("应用启动后才能创建本地音乐索引")
+        if let appDelegate = UIApplication.shared.delegate as? AppDelegate {
+            return LocalMusicStore(container: appDelegate.persistentContainer)
         }
-        return LocalMusicStore(container: appDelegate.persistentContainer)
+        // 单元测试或非常规生命周期下仍使用内存索引，不伪装成持久数据。
+        return LocalMusicStore(container: Self.makeInMemoryContainer())
     }()
 
-    lazy var downloadFileStore: DownloadFileStore = {
-        do {
-            let root = try FileManager.default.url(
-                for: .applicationSupportDirectory,
-                in: .userDomainMask,
-                appropriateFor: nil,
-                create: true
-            ).appendingPathComponent("Downloads", isDirectory: true)
-            return try DownloadFileStore(rootURL: root)
-        } catch {
-            fatalError("无法创建下载目录：\(error)")
-        }
-    }()
+    var downloadFileStore: DownloadFileStore? { downloadStorageResolution.store }
+    var downloadStorageWarning: String? { downloadStorageResolution.warning }
 
-    lazy var downloadManager: DownloadManager = {
-        DownloadManager(
+    lazy var downloadManager: DownloadManager? = {
+        guard let downloadFileStore else { return nil }
+        return DownloadManager(
             fileStore: downloadFileStore,
             musicStore: localMusicStore,
             settingsStore: settingsStore
         )
+    }()
+
+    lazy var libraryViewModel: LibraryViewModel = {
+        let localSource: any LocalMusicLoading
+        let deleteLocalTrack: (@MainActor @Sendable (MusicTrack) async throws -> Void)?
+        if let downloadFileStore {
+            let catalog = LocalMusicCatalog(
+                musicStore: localMusicStore,
+                fileStore: downloadFileStore
+            )
+            localMusicCatalog = catalog
+            localSource = catalog
+            deleteLocalTrack = { track in
+                try await catalog.delete(track)
+            }
+        } else {
+            localSource = UnavailableLocalMusicSource(
+                message: downloadStorageWarning ?? "下载存储暂不可用"
+            )
+            deleteLocalTrack = nil
+        }
+        let viewModel = LibraryViewModel(
+            library: musicLibraryService,
+            localStore: localSource,
+            storageWarning: (UIApplication.shared.delegate as? AppDelegate)?.persistentStoreWarning,
+            deleteLocalTrack: deleteLocalTrack
+        )
+        libraryChangeObserver = MusicLibraryChangeObserver { [weak viewModel] in
+            Task { await viewModel?.requestReload() }
+        }
+        return viewModel
     }()
 
     lazy var playbackCoordinator = PlaybackCoordinator(
@@ -64,4 +90,35 @@ final class AppEnvironment {
             NSLog("后台音频服务启动失败：%@", String(describing: error))
         }
     }
+
+    private static func makeInMemoryContainer() -> NSPersistentContainer {
+        let container = NSPersistentContainer(name: "SimpleMusic")
+        let description = NSPersistentStoreDescription()
+        description.type = NSInMemoryStoreType
+        description.shouldAddStoreAsynchronously = false
+        container.persistentStoreDescriptions = [description]
+        container.loadPersistentStores { _, error in
+            if let error {
+                NSLog("内存索引初始化失败：%@", String(describing: error))
+            }
+        }
+        return container
+    }
+}
+
+private final class UnavailableLocalMusicSource: LocalMusicLoading {
+    let message: String
+
+    init(message: String) {
+        self.message = message
+    }
+
+    func loadTracks() async throws -> [MusicTrack] {
+        throw DownloadCapabilityError(message: message)
+    }
+}
+
+private struct DownloadCapabilityError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
 }

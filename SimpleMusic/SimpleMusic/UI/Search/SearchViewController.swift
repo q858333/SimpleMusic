@@ -9,6 +9,7 @@ final class SearchViewController: UIViewController,
     UISearchResultsUpdating {
     let viewModel: LibraryViewModel
     var onSelectTrack: (([MusicTrack], Int) -> Void)?
+    var onDeleteTrack: ((MusicTrack) -> Void)?
 
     let searchController = UISearchController(searchResultsController: nil)
     private(set) var collectionView: UICollectionView!
@@ -65,7 +66,15 @@ final class SearchViewController: UIViewController,
             withReuseIdentifier: TrackCell.reuseIdentifier,
             for: indexPath
         ) as! TrackCell
-        cell.configure(with: results[indexPath.item])
+        let track = results[indexPath.item]
+        cell.configure(with: track)
+        if case .downloaded = track.source {
+            cell.onMore = { [weak self] in
+                self?.presentLocalTrackDeletionPrompt(for: track) {
+                    self?.onDeleteTrack?(track)
+                }
+            }
+        }
         return cell
     }
 

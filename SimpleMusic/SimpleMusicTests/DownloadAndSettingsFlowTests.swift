@@ -248,6 +248,54 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         XCTAssertEqual(openSettingsCount, 1)
     }
 
+    func testPermissionCompletionRequestsSharedLibraryReload() throws {
+        let defaults = UserDefaults(suiteName: #function)!
+        defaults.removePersistentDomain(forName: #function)
+        var status = MPMediaLibraryAuthorizationStatus.notDetermined
+        var reloadCount = 0
+        let controller = SettingsViewController(
+            settingsStore: SettingsStore(defaults: defaults),
+            authorizationStatus: { status },
+            requestAuthorization: {
+                status = .authorized
+                return .authorized
+            },
+            openSettings: {},
+            onAuthorizationChange: { reloadCount += 1 }
+        )
+        controller.loadViewIfNeeded()
+
+        try tap("settings.permission", in: controller)
+        waitUntil { reloadCount == 1 }
+
+        XCTAssertEqual(reloadCount, 1)
+    }
+
+    func testMusicLibraryChangeObserverRemovesObserverAndGenerationOnDeinit() {
+        let center = NotificationCenter()
+        let name = Notification.Name(#function)
+        var beginCount = 0
+        var endCount = 0
+        var changeCount = 0
+        var observer: MusicLibraryChangeObserver? = MusicLibraryChangeObserver(
+            notificationCenter: center,
+            notificationName: name,
+            beginGenerating: { beginCount += 1 },
+            endGenerating: { endCount += 1 },
+            onChange: { changeCount += 1 }
+        )
+
+        center.post(name: name, object: nil)
+        XCTAssertEqual(beginCount, 1)
+        XCTAssertEqual(changeCount, 1)
+
+        observer = nil
+        center.post(name: name, object: nil)
+        XCTAssertNil(observer)
+        XCTAssertEqual(endCount, 1)
+        XCTAssertEqual(changeCount, 1)
+    }
+
     func testSettingsReleasesWhilePermissionRequestIsSuspended() throws {
         let request = SuspendedAuthorizationRequest()
         let weakController = try startSuspendedPermissionRequest(request)

@@ -12,6 +12,7 @@ final class SettingsViewController: UIViewController {
     private let authorizationStatus: AuthorizationStatus
     private let requestAuthorization: AuthorizationRequest
     private let openSettings: () -> Void
+    private let onAuthorizationChange: @MainActor () async -> Void
     private var permissionTask: Task<Void, Never>?
 
     private let permissionStatusLabel = UILabel()
@@ -22,16 +23,22 @@ final class SettingsViewController: UIViewController {
         settingsStore: SettingsStore,
         authorizationStatus: @escaping AuthorizationStatus,
         requestAuthorization: @escaping AuthorizationRequest,
-        openSettings: @escaping () -> Void
+        openSettings: @escaping () -> Void,
+        onAuthorizationChange: @escaping @MainActor () async -> Void = {}
     ) {
         self.settingsStore = settingsStore
         self.authorizationStatus = authorizationStatus
         self.requestAuthorization = requestAuthorization
         self.openSettings = openSettings
+        self.onAuthorizationChange = onAuthorizationChange
         super.init(nibName: nil, bundle: nil)
     }
 
-    convenience init(settingsStore: SettingsStore, libraryService: MusicLibraryService) {
+    convenience init(
+        settingsStore: SettingsStore,
+        libraryService: MusicLibraryService,
+        onAuthorizationChange: @escaping @MainActor () async -> Void = {}
+    ) {
         self.init(
             settingsStore: settingsStore,
             authorizationStatus: { libraryService.authorizationStatus },
@@ -39,7 +46,8 @@ final class SettingsViewController: UIViewController {
             openSettings: {
                 guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
                 UIApplication.shared.open(url)
-            }
+            },
+            onAuthorizationChange: onAuthorizationChange
         )
     }
 
@@ -215,6 +223,7 @@ final class SettingsViewController: UIViewController {
                 guard !Task.isCancelled, let self else { return }
                 permissionTask = nil
                 syncValues()
+                await onAuthorizationChange()
             }
         case .denied, .restricted:
             openSettings()

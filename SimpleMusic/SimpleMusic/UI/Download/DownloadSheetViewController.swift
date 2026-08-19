@@ -66,7 +66,7 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
             settingsStore: settingsStore,
             onReload: {
                 Task { [weak libraryViewModel] in
-                    await libraryViewModel?.reload()
+                    await libraryViewModel?.requestReload()
                 }
             },
             onPlay: onPlay

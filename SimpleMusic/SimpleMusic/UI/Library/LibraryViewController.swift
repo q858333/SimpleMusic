@@ -6,6 +6,7 @@ import UIKit
 final class LibraryViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegate {
     let viewModel: LibraryViewModel
     var onSelectTrack: (([MusicTrack], Int) -> Void)?
+    var onDeleteTrack: ((MusicTrack) -> Void)?
     var onDownload: (() -> Void)?
     var onSettings: (() -> Void)?
 
@@ -91,12 +92,12 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
             ) as! InfoCell
             cell.configure(message: message, symbol: symbol)
             return cell
-        case let .category(title, symbol):
+        case let .category(category, symbol):
             let cell = collectionView.dequeueReusableCell(
                 withReuseIdentifier: CategoryCell.reuseIdentifier,
                 for: indexPath
             ) as! CategoryCell
-            cell.configure(title: title, symbol: symbol)
+            cell.configure(title: category.title, symbol: symbol)
             return cell
         case let .track(track):
             let cell = collectionView.dequeueReusableCell(
@@ -104,6 +105,13 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
                 for: indexPath
             ) as! TrackCell
             cell.configure(with: track)
+            if case .downloaded = track.source {
+                cell.onMore = { [weak self] in
+                    self?.presentLocalTrackDeletionPrompt(for: track) {
+                        self?.onDeleteTrack?(track)
+                    }
+                }
+            }
             return cell
         }
     }
@@ -124,13 +132,26 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         let section = sections[indexPath.section]
-        guard section.kind == .recentAdded else { return }
-        let queue = section.items.compactMap { item -> MusicTrack? in
-            guard case let .track(track) = item else { return nil }
-            return track
+        switch section.items[indexPath.item] {
+        case let .category(category, _):
+            let list = TrackListViewController(
+                category: category,
+                tracks: viewModel.tracks,
+                onPlay: onSelectTrack
+            )
+            list.onDelete = onDeleteTrack
+            navigationController?.pushViewController(list, animated: true)
+        case .track:
+            guard section.kind == .recentAdded else { return }
+            let queue = section.items.compactMap { item -> MusicTrack? in
+                guard case let .track(track) = item else { return nil }
+                return track
+            }
+            guard queue.indices.contains(indexPath.item) else { return }
+            onSelectTrack?(queue, indexPath.item)
+        case .notice:
+            break
         }
-        guard queue.indices.contains(indexPath.item) else { return }
-        onSelectTrack?(queue, indexPath.item)
     }
 
     private func buildCollectionView() {
@@ -155,11 +176,12 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
     }
 
     private func bindViewModel() {
-        cancellable = Publishers.CombineLatest3(
+        cancellable = Publishers.CombineLatest4(
             viewModel.$tracks,
             viewModel.$systemState,
-            viewModel.$localState
-        ).sink { [weak self] _, _, _ in
+            viewModel.$localState,
+            viewModel.$storageWarning
+        ).sink { [weak self] _, _, _, _ in
             self?.rebuildSections()
         }
     }
@@ -172,20 +194,13 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
         }
         next.append(
             Section(
-                kind: .recentPlayed,
-                title: "最近播放",
-                items: [.notice("暂无播放记录\n播放过的歌曲会出现在这里", "clock")]
-            )
-        )
-        next.append(
-            Section(
                 kind: .categories,
                 title: nil,
                 items: [
-                    .category("歌曲", "music.note"),
-                    .category("专辑", "square.stack"),
-                    .category("艺人", "person.2"),
-                    .category("已下载", "arrow.down.circle")
+                    .category(.songs, "music.note"),
+                    .category(.albums, "square.stack"),
+                    .category(.artists, "person.2"),
+                    .category(.downloaded, "arrow.down.circle")
                 ]
             )
         )
@@ -203,6 +218,9 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
 
     private func statusMessages() -> [Item] {
         var messages = [Item]()
+        if let storageWarning = viewModel.storageWarning {
+            messages.append(.notice(storageWarning, "externaldrive.badge.exclamationmark"))
+        }
         switch viewModel.systemState {
         case .permissionRequired:
             messages.append(.notice("尚未授权系统音乐资料库，只显示已下载歌曲。", "lock"))
@@ -232,23 +250,6 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
             let layoutSection: NSCollectionLayoutSection
 
             switch section.kind {
-            case .recentPlayed:
-                let item = NSCollectionLayoutItem(
-                    layoutSize: NSCollectionLayoutSize(
-                        widthDimension: .fractionalWidth(1),
-                        heightDimension: .fractionalHeight(1)
-                    )
-                )
-                let group = NSCollectionLayoutGroup.horizontal(
-                    layoutSize: NSCollectionLayoutSize(
-                        widthDimension: .fractionalWidth(0.62),
-                        heightDimension: .absolute(108)
-                    ),
-                    subitems: [item]
-                )
-                layoutSection = NSCollectionLayoutSection(group: group)
-                layoutSection.orthogonalScrollingBehavior = .continuous
-                layoutSection.interGroupSpacing = 12
             case .categories:
                 let item = NSCollectionLayoutItem(
                     layoutSize: NSCollectionLayoutSize(
@@ -321,14 +322,13 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
 private extension LibraryViewController {
     enum SectionKind {
         case notices
-        case recentPlayed
         case categories
         case recentAdded
     }
 
     enum Item {
         case notice(String, String)
-        case category(String, String)
+        case category(LibraryCategory, String)
         case track(MusicTrack)
     }
 

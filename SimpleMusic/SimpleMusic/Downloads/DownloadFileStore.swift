@@ -8,6 +8,7 @@ enum DownloadFileStoreError: Error {
     case invalidFileName
     case fileNotFound
     case notRegularFile
+    case emptyFile
     case playbackLeaseCreationFailed
     case playbackLeaseCopyFailed
 }
@@ -71,21 +72,8 @@ nonisolated struct DownloadFileStore: @unchecked Sendable {
 
     /// 通过 O_NOFOLLOW 固定源 inode，再复制到唯一 staging 文件，避免校验后路径被替换。
     func playbackLease(for fileName: String) throws -> PlaybackFileLease {
-        let trimmedName = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty,
-              !fileName.contains("/"),
-              !fileName.contains("\\"),
-              fileName != ".",
-              fileName != ".." else {
-            throw DownloadFileStoreError.invalidFileName
-        }
-
+        let candidate = try controlledCandidate(for: fileName)
         let standardizedRoot = rootURL.standardizedFileURL
-        let candidate = standardizedRoot.appendingPathComponent(fileName, isDirectory: false).standardizedFileURL
-        guard candidate.deletingLastPathComponent() == standardizedRoot else {
-            throw DownloadFileStoreError.invalidFileName
-        }
-
         let sourceDescriptor = Darwin.open(candidate.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
         guard sourceDescriptor >= 0 else {
             if errno == ENOENT {
@@ -99,6 +87,9 @@ nonisolated struct DownloadFileStore: @unchecked Sendable {
         guard fstat(sourceDescriptor, &sourceStatus) == 0,
               (sourceStatus.st_mode & S_IFMT) == S_IFREG else {
             throw DownloadFileStoreError.notRegularFile
+        }
+        guard sourceStatus.st_size > 0 else {
+            throw DownloadFileStoreError.emptyFile
         }
 
         let pathExtension = candidate.pathExtension
@@ -123,6 +114,23 @@ nonisolated struct DownloadFileStore: @unchecked Sendable {
             throw error
         }
         return PlaybackFileLease(fileURL: stagingURL)
+    }
+
+    /// 仅删除下载根目录内的叶子节点；符号链接只删除链接本身，不会跟随到容器外。
+    func removeFile(named fileName: String) throws {
+        let candidate = try controlledCandidate(for: fileName)
+        var status = stat()
+        guard lstat(candidate.path, &status) == 0 else {
+            if errno == ENOENT { throw DownloadFileStoreError.fileNotFound }
+            throw DownloadFileStoreError.notRegularFile
+        }
+        guard (status.st_mode & S_IFMT) != S_IFDIR else {
+            throw DownloadFileStoreError.notRegularFile
+        }
+        guard Darwin.unlink(candidate.path) == 0 else {
+            if errno == ENOENT { throw DownloadFileStoreError.fileNotFound }
+            throw DownloadFileStoreError.notRegularFile
+        }
     }
 
     /// 原子创建空占位文件；Task 4 持有返回凭证，并在成功或失败路径恰好消费一次。
@@ -189,6 +197,23 @@ nonisolated struct DownloadFileStore: @unchecked Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         return cleaned.isEmpty || cleaned == "." || cleaned == ".." ? "audio" : cleaned
+    }
+
+    private func controlledCandidate(for fileName: String) throws -> URL {
+        let trimmedName = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty,
+              !fileName.contains("/"),
+              !fileName.contains("\\"),
+              fileName != ".",
+              fileName != ".." else {
+            throw DownloadFileStoreError.invalidFileName
+        }
+        let standardizedRoot = rootURL.standardizedFileURL
+        let candidate = standardizedRoot.appendingPathComponent(fileName).standardizedFileURL
+        guard candidate.deletingLastPathComponent() == standardizedRoot else {
+            throw DownloadFileStoreError.invalidFileName
+        }
+        return candidate
     }
 
     private func copy(from sourceDescriptor: Int32, to destinationDescriptor: Int32) throws {

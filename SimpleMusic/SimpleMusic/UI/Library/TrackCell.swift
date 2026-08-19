@@ -89,8 +89,10 @@ final class TrackCell: UICollectionViewCell {
             ?? UIImage(systemName: "music.note")
         if case .downloaded = track.source {
             downloadedLabel.isHidden = false
+            moreButton.isHidden = false
         } else {
             downloadedLabel.isHidden = true
+            moreButton.isHidden = true
         }
         accessibilityLabel = [track.title, track.artist, track.album].joined(separator: "，")
     }

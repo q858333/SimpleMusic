@@ -190,6 +190,87 @@ final class LibraryViewModelTests: XCTestCase {
         XCTAssertEqual(sut.tracks, [systemTrack])
     }
 
+    /// 多个生命周期事件到达时只能有一代在读；期间发生的变化合并为一次后续刷新。
+    @MainActor
+    func testRequestReloadCoalescesConcurrentEventsWithoutDroppingFollowUp() async {
+        let library = DeferredMusicLibrary()
+        let localStore = DeferredLocalMusicStore()
+        let sut = LibraryViewModel(library: library, localStore: localStore)
+        let requests = (0..<3).map { _ in Task { await sut.requestReload() } }
+
+        let firstStarted = await eventually {
+            library.requestCount >= 1 && localStore.requestCount >= 1
+        }
+        XCTAssertTrue(firstStarted)
+        XCTAssertEqual(library.requestCount, 1)
+        XCTAssertEqual(localStore.requestCount, 1)
+
+        let initiallyStarted = max(library.requestCount, localStore.requestCount)
+        for index in 0..<initiallyStarted {
+            library.resumeRequestIfPending(at: index, with: [])
+            localStore.resumeRequestIfPending(at: index, with: [])
+        }
+        let followUpStarted = await eventually {
+            library.requestCount >= 2 && localStore.requestCount >= 2
+        }
+        if followUpStarted {
+            library.resumeRequestIfPending(at: 1, with: [])
+            localStore.resumeRequestIfPending(at: 1, with: [])
+        }
+        for request in requests { await request.value }
+
+        XCTAssertEqual(library.requestCount, 2)
+        XCTAssertEqual(localStore.requestCount, 2)
+    }
+
+    /// 首次暂不授权后在设置中允许，下一次共享刷新必须真正载入系统歌曲。
+    @MainActor
+    func testRequestReloadShowsSystemTracksAfterAuthorizationChangesToAllowed() async {
+        let systemTrack = makeTrack(id: "newly-authorized")
+        let library = DeferredMusicLibrary(authorizationStatus: .notDetermined)
+        let sut = LibraryViewModel(
+            library: library,
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+
+        await sut.requestReload()
+        XCTAssertEqual(sut.systemState, .permissionRequired)
+        XCTAssertTrue(sut.tracks.isEmpty)
+
+        library.authorizationStatus = .authorized
+        let refresh = Task { await sut.requestReload() }
+        let queryStarted = await eventually { library.requestCount == 1 }
+        XCTAssertTrue(queryStarted)
+        library.resumeRequestIfPending(at: 0, with: [systemTrack])
+        await refresh.value
+
+        XCTAssertEqual(sut.systemState, .loaded)
+        XCTAssertEqual(sut.tracks, [systemTrack])
+    }
+
+    /// 用户确认删除后必须调用真实本地入口，并经同一个 requestReload 清掉所有共享页面的数据。
+    @MainActor
+    func testDeleteDownloadedTrackUsesSharedDeleteAndReloadEntry() async {
+        let track = makeTrack(
+            id: "delete-local",
+            source: .downloaded(fileName: "delete-local.m4a")
+        )
+        let localStore = DeletingLocalMusicStore(tracks: [track])
+        let sut = LibraryViewModel(
+            library: StubMusicLibrary(tracks: []),
+            localStore: localStore,
+            deleteLocalTrack: { track in localStore.delete(track) }
+        )
+        await sut.requestReload()
+
+        await sut.deleteDownloadedTrack(track)
+
+        XCTAssertEqual(localStore.deletedIDs, [track.id])
+        XCTAssertEqual(localStore.loadCount, 2)
+        XCTAssertTrue(sut.tracks.isEmpty)
+        XCTAssertEqual(sut.localState, .empty)
+    }
+
     /// 如果新 reload 启动后任一旧来源的迟到事件仍能覆盖状态或列表，此测试应失败。
     @MainActor
     func testOlderReloadRejectsLateEventsFromBothSources() async {
@@ -579,6 +660,91 @@ final class LibraryViewModelTests: XCTestCase {
         })
     }
 
+    /// 系统歌曲没有本地删除动作，不能显示会产生空回调的“更多”按钮。
+    @MainActor
+    func testTrackCellHidesMoreActionForSystemTrack() throws {
+        let cell = TrackCell(frame: CGRect(x: 0, y: 0, width: 360, height: 66))
+        cell.configure(with: makeTrack(id: "system", source: .system(persistentID: 7)))
+
+        let more = try XCTUnwrap(findView(identifier: "track.more", in: cell))
+        XCTAssertTrue(more.isHidden)
+    }
+
+    /// 分类卡必须进入真实列表，且未实现的“最近播放”静态承诺不能占据一个 section。
+    @MainActor
+    func testLibraryCategoryCardPushesTrackListAndRemovesStaticRecentlyPlayed() throws {
+        let viewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: []),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        let library = LibraryViewController(viewModel: viewModel)
+        let navigation = UINavigationController(rootViewController: library)
+        navigation.loadViewIfNeeded()
+        library.loadViewIfNeeded()
+        let collection = try XCTUnwrap(
+            allSubviews(in: library.view).compactMap { $0 as? UICollectionView }.first
+        )
+
+        XCTAssertEqual(library.numberOfSections(in: collection), 2)
+        library.collectionView(collection, didSelectItemAt: IndexPath(item: 0, section: 0))
+        XCTAssertFalse(navigation.topViewController === library)
+        XCTAssertEqual(navigation.topViewController?.title, "歌曲")
+    }
+
+    /// Play All、Shuffle 与 Sort 必须作用于当前共享队列，而不是只显示静态按钮。
+    @MainActor
+    func testTrackListActionsInvokePlaybackAndSortVisibleTracks() throws {
+        let second = makeTrack(id: "second", title: "B Song", artist: "A Artist", album: "B Album")
+        let first = makeTrack(id: "first", title: "A Song", artist: "B Artist", album: "A Album")
+        var playedQueues = [[SimpleMusic.MusicTrack]]()
+        let sut = TrackListViewController(
+            category: .songs,
+            tracks: [second, first],
+            onPlay: { queue, index in
+                XCTAssertEqual(index, 0)
+                playedQueues.append(queue)
+            }
+        )
+        sut.loadViewIfNeeded()
+
+        try XCTUnwrap(findView(identifier: "list.playAll", in: sut.view) as? UIButton)
+            .sendActions(for: .touchUpInside)
+        try XCTUnwrap(findView(identifier: "list.shuffle", in: sut.view) as? UIButton)
+            .sendActions(for: .touchUpInside)
+        try XCTUnwrap(findView(identifier: "list.sort", in: sut.view) as? UIButton)
+            .sendActions(for: .touchUpInside)
+
+        XCTAssertEqual(playedQueues.first?.map(\.id), ["second", "first"])
+        XCTAssertEqual(Set(playedQueues.last?.map(\.id) ?? []), Set(["second", "first"]))
+        XCTAssertEqual(sut.tracks.map(\.id), ["first", "second"])
+    }
+
+    /// Albums/Artists 必须先按真实元数据分组，并能进入对应歌曲子列表。
+    @MainActor
+    func testAlbumCategoryGroupsTracksAndPushesSelectedSongs() throws {
+        let beta = makeTrack(id: "beta", title: "Beta", album: "Beta Album")
+        let alpha = makeTrack(id: "alpha", title: "Alpha", album: "Alpha Album")
+        let sut = TrackListViewController(
+            category: .albums,
+            tracks: [beta, alpha],
+            onPlay: { _, _ in }
+        )
+        let navigation = UINavigationController(rootViewController: sut)
+        navigation.loadViewIfNeeded()
+        sut.loadViewIfNeeded()
+        let collection = try XCTUnwrap(
+            allSubviews(in: sut.view).compactMap { $0 as? UICollectionView }.first
+        )
+
+        XCTAssertEqual(collection.numberOfItems(inSection: 0), 2)
+        collection.delegate?.collectionView?(
+            collection,
+            didSelectItemAt: IndexPath(item: 0, section: 0)
+        )
+        XCTAssertEqual(navigation.topViewController?.title, "Alpha Album")
+        XCTAssertFalse(navigation.topViewController === sut)
+    }
+
     /// 如果下载标识固定 22pt，或歌曲行不能随辅助字号自适应增长，此测试应失败。
     @MainActor
     func testTrackCellSelfSizesDownloadedBadgeAtAccessibilitySize() async throws {
@@ -735,6 +901,10 @@ final class LibraryViewModelTests: XCTestCase {
         }.first
     }
 
+    private func allSubviews(in root: UIView) -> [UIView] {
+        [root] + root.subviews.flatMap(allSubviews)
+    }
+
     private func descendant<T: UIViewController>(
         _ type: T.Type,
         in root: UIViewController
@@ -831,6 +1001,27 @@ private final class StubLocalMusicStore: LocalMusicLoading {
 
     func loadTracks() async throws -> [SimpleMusic.MusicTrack] {
         try result.get()
+    }
+}
+
+@MainActor
+private final class DeletingLocalMusicStore: LocalMusicLoading {
+    private var tracks: [SimpleMusic.MusicTrack]
+    private(set) var deletedIDs = [String]()
+    private(set) var loadCount = 0
+
+    init(tracks: [SimpleMusic.MusicTrack]) {
+        self.tracks = tracks
+    }
+
+    func loadTracks() async throws -> [SimpleMusic.MusicTrack] {
+        loadCount += 1
+        return tracks
+    }
+
+    func delete(_ track: SimpleMusic.MusicTrack) {
+        deletedIDs.append(track.id)
+        tracks.removeAll { $0.id == track.id }
     }
 }
 

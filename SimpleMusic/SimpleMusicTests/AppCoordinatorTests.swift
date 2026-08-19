@@ -1,10 +1,98 @@
 import Combine
+import CoreData
 import MediaPlayer
 import UIKit
 import XCTest
 @testable import SimpleMusic
 
+private enum TestStoreError: Error {
+    case unavailable
+}
+
 final class AppCoordinatorTests: XCTestCase {
+    func testPersistentStoreFailureFallsBackToMemoryWithoutRemovingOriginalStore() throws {
+        let persistent = NSPersistentContainer(name: "SimpleMusic")
+        let memory = NSPersistentContainer(name: "SimpleMusic")
+        let memoryDescription = NSPersistentStoreDescription()
+        memoryDescription.type = NSInMemoryStoreType
+        memory.persistentStoreDescriptions = [memoryDescription]
+        let originalStore = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try Data("user-store".utf8).write(to: originalStore)
+        defer { try? FileManager.default.removeItem(at: originalStore) }
+        var loadedContainers = [NSPersistentContainer]()
+        let factory = PersistentStoreFactory(
+            makePersistentContainer: { persistent },
+            makeMemoryContainer: { memory },
+            load: { container, completion in
+                loadedContainers.append(container)
+                completion(container === persistent ? TestStoreError.unavailable : nil)
+            }
+        )
+
+        let result = factory.resolve()
+
+        XCTAssertTrue(result.container === memory)
+        XCTAssertNotNil(result.warning)
+        XCTAssertEqual(loadedContainers.count, 2)
+        XCTAssertEqual(try Data(contentsOf: originalStore), Data("user-store".utf8))
+    }
+
+    @MainActor
+    func testSaveFailurePostsNotificationInsteadOfCrashing() throws {
+        let container = NSPersistentContainer(name: "SimpleMusic")
+        let description = NSPersistentStoreDescription()
+        description.type = NSInMemoryStoreType
+        description.shouldAddStoreAsynchronously = false
+        container.persistentStoreDescriptions = [description]
+        var loadError: Error?
+        container.loadPersistentStores { _, error in loadError = error }
+        if let loadError { throw loadError }
+
+        let appDelegate = AppDelegate()
+        appDelegate.persistentStoreFactory = PersistentStoreFactory(
+            makePersistentContainer: { container },
+            load: { _, completion in completion(nil) }
+        )
+        appDelegate.saveContextOperation = { _ in throw TestStoreError.unavailable }
+        let center = NotificationCenter()
+        appDelegate.appNotificationCenter = center
+        var notificationCount = 0
+        let token = center.addObserver(
+            forName: .persistentStoreSaveDidFail,
+            object: appDelegate,
+            queue: nil
+        ) { _ in notificationCount += 1 }
+        defer { center.removeObserver(token) }
+        _ = NSEntityDescription.insertNewObject(
+            forEntityName: "DownloadedTrackEntity",
+            into: appDelegate.persistentContainer.viewContext
+        )
+
+        appDelegate.saveContext()
+
+        XCTAssertEqual(notificationCount, 1)
+        XCTAssertTrue(appDelegate.persistentContainer.viewContext.hasChanges)
+    }
+
+    @MainActor
+    func testDownloadRootFailureDisablesOnlyDownloadWithReadableExplanation() throws {
+        let resolution = DownloadStorageFactory(
+            rootProvider: { throw TestStoreError.unavailable }
+        ).resolve()
+
+        XCTAssertNil(resolution.store)
+        let warning = try XCTUnwrap(resolution.warning)
+        let controller = DownloadUnavailableViewController(message: warning)
+        controller.loadViewIfNeeded()
+        let copy = allViews(in: controller.view)
+            .compactMap { ($0 as? UILabel)?.text }
+            .joined(separator: " ")
+
+        XCTAssertTrue(copy.contains("下载存储暂不可用"))
+        XCTAssertTrue(copy.contains("重试"))
+        XCTAssertEqual(controller.title, "下载不可用")
+    }
     /// 如果设备类型映射交换或 iPad 错走手机根界面，此测试应失败。
     @MainActor
     func testRootKindMatchesPhoneAndPadIdioms() {
@@ -41,6 +129,51 @@ final class AppCoordinatorTests: XCTestCase {
         let padLibrary = try XCTUnwrap(descendant(LibraryViewController.self, in: pad))
         XCTAssertEqual(pad.dependencyIdentity, ObjectIdentifier(identity))
         XCTAssertTrue(padLibrary.viewModel === viewModel)
+    }
+
+    /// 如果根工厂没有把真实删除入口同时交给资料库和搜索，本地“更多”确认后仍会成为空操作。
+    @MainActor
+    func testDefaultRootFactoryWiresLocalDeletionIntoLibraryAndSearch() throws {
+        let track = MusicTrack(
+            id: "downloaded",
+            title: "本地歌曲",
+            artist: "艺人",
+            album: "专辑",
+            duration: 10,
+            artworkData: nil,
+            source: .downloaded(fileName: "downloaded.m4a")
+        )
+
+        for kind in [AppRootKind.phone, .pad] {
+            let viewModel = LibraryViewModel(
+                library: CoordinatorStubMusicLibrary(),
+                localStore: CoordinatorStubLocalMusicStore()
+            )
+            var deletedIDs = [String]()
+            let dependencies = AppRootDependencies(
+                identity: NSObject(),
+                libraryViewModel: viewModel,
+                snapshotPublisher: Empty<PlaybackSnapshot, Never>().eraseToAnyPublisher(),
+                onPlay: { _, _ in },
+                onDeleteTrack: { deletedIDs.append($0.id) },
+                onTogglePlay: {}
+            )
+            let root = AppCoordinator.makeMainViewControllerFactory(dependencies: dependencies)(kind)
+            root.loadViewIfNeeded()
+            let library = try XCTUnwrap(descendant(LibraryViewController.self, in: root))
+            library.onDeleteTrack?(track)
+
+            if kind == .pad {
+                let searchButton = try XCTUnwrap(
+                    findView(identifier: "pad.search", in: root.view) as? UIButton
+                )
+                searchButton.sendActions(for: .touchUpInside)
+            }
+            let search = try XCTUnwrap(descendant(SearchViewController.self, in: root))
+            search.onDeleteTrack?(track)
+
+            XCTAssertEqual(deletedIDs, [track.id, track.id], "root=\(kind)")
+        }
     }
 
     /// 如果非首次授权状态仍展示授权页，或首次状态跳过授权页，此测试应失败。
@@ -308,6 +441,10 @@ final class AppCoordinatorTests: XCTestCase {
     private func findView(identifier: String, in root: UIView) -> UIView? {
         if root.accessibilityIdentifier == identifier { return root }
         return root.subviews.lazy.compactMap { self.findView(identifier: identifier, in: $0) }.first
+    }
+
+    private func allViews(in root: UIView) -> [UIView] {
+        [root] + root.subviews.flatMap(allViews)
     }
 
     private func descendant<T: UIViewController>(

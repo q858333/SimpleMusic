@@ -14,18 +14,16 @@ struct AppRootDependencies {
     let libraryViewModel: LibraryViewModel
     let snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>
     let onPlay: ([MusicTrack], Int) -> Void
+    let onDeleteTrack: (MusicTrack) -> Void
     let onTogglePlay: () -> Void
     let onPrevious: () -> Void
     let onNext: () -> Void
     let onSeek: (TimeInterval) -> Void
-    let makeDownloadViewController: () -> UIViewController
-    let makeSettingsViewController: () -> UIViewController
+    let makeDownloadViewController: @MainActor () -> UIViewController
+    let makeSettingsViewController: @MainActor () -> UIViewController
 
     init(environment: AppEnvironment) {
-        let viewModel = LibraryViewModel(
-            library: environment.musicLibraryService,
-            localStore: environment.localMusicStore
-        )
+        let viewModel = environment.libraryViewModel
         let play: ([MusicTrack], Int) -> Void = { [playbackCoordinator = environment.playbackCoordinator] queue, index in
             do {
                 try playbackCoordinator.play(queue: queue, startAt: index)
@@ -37,6 +35,9 @@ struct AppRootDependencies {
         libraryViewModel = viewModel
         snapshotPublisher = environment.playbackCoordinator.snapshotPublisher
         onPlay = play
+        onDeleteTrack = { [weak viewModel] track in
+            Task { await viewModel?.deleteDownloadedTrack(track) }
+        }
         onTogglePlay = { [playbackCoordinator = environment.playbackCoordinator] in
             playbackCoordinator.togglePlay()
         }
@@ -58,8 +59,13 @@ struct AppRootDependencies {
             playbackCoordinator.seek(to: seconds)
         }
         makeDownloadViewController = {
-            DownloadSheetViewController(
-                downloadManager: environment.downloadManager,
+            guard let downloadManager = environment.downloadManager else {
+                return DownloadUnavailableViewController(
+                    message: environment.downloadStorageWarning ?? "下载存储暂不可用"
+                )
+            }
+            return DownloadSheetViewController(
+                downloadManager: downloadManager,
                 settingsStore: environment.settingsStore,
                 libraryViewModel: viewModel,
                 onPlay: { track in play([track], 0) }
@@ -68,7 +74,10 @@ struct AppRootDependencies {
         makeSettingsViewController = {
             SettingsViewController(
                 settingsStore: environment.settingsStore,
-                libraryService: environment.musicLibraryService
+                libraryService: environment.musicLibraryService,
+                onAuthorizationChange: {
+                    await viewModel.requestReload()
+                }
             )
         }
     }
@@ -78,17 +87,19 @@ struct AppRootDependencies {
         libraryViewModel: LibraryViewModel,
         snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>,
         onPlay: @escaping ([MusicTrack], Int) -> Void,
+        onDeleteTrack: @escaping (MusicTrack) -> Void = { _ in },
         onTogglePlay: @escaping () -> Void,
         onPrevious: @escaping () -> Void = {},
         onNext: @escaping () -> Void = {},
         onSeek: @escaping (TimeInterval) -> Void = { _ in },
-        makeDownloadViewController: @escaping () -> UIViewController = { UIViewController() },
-        makeSettingsViewController: @escaping () -> UIViewController = { UIViewController() }
+        makeDownloadViewController: @escaping @MainActor () -> UIViewController = { UIViewController() },
+        makeSettingsViewController: @escaping @MainActor () -> UIViewController = { UIViewController() }
     ) {
         self.identity = ObjectIdentifier(identity)
         self.libraryViewModel = libraryViewModel
         self.snapshotPublisher = snapshotPublisher
         self.onPlay = onPlay
+        self.onDeleteTrack = onDeleteTrack
         self.onTogglePlay = onTogglePlay
         self.onPrevious = onPrevious
         self.onNext = onNext
