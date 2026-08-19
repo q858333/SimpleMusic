@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import XCTest
 @testable import SimpleMusic
@@ -73,6 +74,41 @@ final class DownloadFileStoreTests: XCTestCase {
         try Data().write(to: root.appendingPathComponent("broken.mp3"))
 
         XCTAssertThrowsError(try store.playbackLease(for: "broken.mp3"))
+    }
+
+    /// open 的权限错误是瞬时/环境 I/O，不能伪装成确定损坏的非普通文件。
+    func testPlaybackLeaseReportsOpenPermissionFailureWithErrno() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try DownloadFileStore(
+            rootURL: root,
+            sourceOpener: { _ in (-1, EACCES) }
+        )
+
+        XCTAssertThrowsError(try store.playbackLease(for: "protected.mp3")) { error in
+            guard case let DownloadFileStoreError.fileAccessFailed(errorCode) = error else {
+                return XCTFail("应保留 open errno，实际为 \(error)")
+            }
+            XCTAssertEqual(errorCode, EACCES)
+        }
+    }
+
+    /// 已成功 open 后的未知 fstat 错误同样必须携带 errno，不能触发不可恢复文件清理。
+    func testPlaybackLeaseReportsStatusFailureWithErrno() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try DownloadFileStore(
+            rootURL: root,
+            sourceStatusReader: { _, _ in (-1, EIO) }
+        )
+        try Data("audio".utf8).write(to: root.appendingPathComponent("song.mp3"))
+
+        XCTAssertThrowsError(try store.playbackLease(for: "song.mp3")) { error in
+            guard case let DownloadFileStoreError.fileAccessFailed(errorCode) = error else {
+                return XCTFail("应保留 fstat errno，实际为 \(error)")
+            }
+            XCTAssertEqual(errorCode, EIO)
+        }
     }
 
     /// 若 lease 仍指向可替换的源路径，解析后替换为越界 symlink 会读到外部内容。

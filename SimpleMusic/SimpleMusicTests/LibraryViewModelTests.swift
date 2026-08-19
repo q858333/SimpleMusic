@@ -745,6 +745,173 @@ final class LibraryViewModelTests: XCTestCase {
         XCTAssertFalse(navigation.topViewController === sut)
     }
 
+    /// 生产 Downloaded 页面打开后，共享删除 reload 必须立即移除当前页歌曲行。
+    @MainActor
+    func testProductionDownloadedListUpdatesAfterSharedDeleteReload() async throws {
+        let track = makeTrack(
+            id: "live-delete",
+            source: .downloaded(fileName: "live-delete.m4a")
+        )
+        let localStore = DeletingLocalMusicStore(tracks: [track])
+        let viewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: []),
+            localStore: localStore,
+            deleteLocalTrack: { localStore.delete($0) }
+        )
+        await viewModel.requestReload()
+        let library = LibraryViewController(viewModel: viewModel)
+        let navigation = UINavigationController(rootViewController: library)
+        navigation.loadViewIfNeeded()
+        library.loadViewIfNeeded()
+        let libraryCollection = try XCTUnwrap(
+            allSubviews(in: library.view).compactMap { $0 as? UICollectionView }.first
+        )
+        library.collectionView(
+            libraryCollection,
+            didSelectItemAt: IndexPath(item: 3, section: 0)
+        )
+        let list = try XCTUnwrap(navigation.topViewController as? TrackListViewController)
+        list.loadViewIfNeeded()
+        let listCollection = try XCTUnwrap(
+            allSubviews(in: list.view).compactMap { $0 as? UICollectionView }.first
+        )
+        XCTAssertEqual(listCollection.numberOfItems(inSection: 0), 1)
+
+        await viewModel.deleteDownloadedTrack(track)
+
+        XCTAssertTrue(viewModel.tracks.isEmpty)
+        XCTAssertTrue(list.tracks.isEmpty)
+        XCTAssertEqual(listCollection.numberOfItems(inSection: 0), 0)
+    }
+
+    /// Songs 页面打开后撤销系统权限，当前页必须随共享 reload 清除系统歌曲。
+    @MainActor
+    func testProductionSongsListUpdatesAfterPermissionRevocation() async throws {
+        let systemTrack = makeTrack(id: "live-system", source: .system(persistentID: 88))
+        let systemLibrary = DeferredMusicLibrary()
+        let viewModel = LibraryViewModel(
+            library: systemLibrary,
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        let initialReload = Task { await viewModel.requestReload() }
+        let initialRequestStarted = await eventually { systemLibrary.requestCount == 1 }
+        XCTAssertTrue(initialRequestStarted)
+        systemLibrary.resumeRequest(at: 0, with: [systemTrack])
+        await initialReload.value
+        let library = LibraryViewController(viewModel: viewModel)
+        let navigation = UINavigationController(rootViewController: library)
+        navigation.loadViewIfNeeded()
+        library.loadViewIfNeeded()
+        let libraryCollection = try XCTUnwrap(
+            allSubviews(in: library.view).compactMap { $0 as? UICollectionView }.first
+        )
+        library.collectionView(
+            libraryCollection,
+            didSelectItemAt: IndexPath(item: 0, section: 0)
+        )
+        let list = try XCTUnwrap(navigation.topViewController as? TrackListViewController)
+        list.loadViewIfNeeded()
+
+        systemLibrary.authorizationStatus = .denied
+        await viewModel.requestReload()
+
+        XCTAssertTrue(viewModel.tracks.isEmpty)
+        XCTAssertTrue(list.tracks.isEmpty)
+    }
+
+    /// Albums 与 Artists 子页必须按同一 ViewModel 的最新 tracks 重筛，Play All 也只能使用新队列。
+    @MainActor
+    func testProductionAlbumAndArtistChildrenUpdateAfterMediaReload() async throws {
+        let scenarios: [(
+            categoryIndex: Int,
+            initial: SimpleMusic.MusicTrack,
+            added: SimpleMusic.MusicTrack,
+            other: SimpleMusic.MusicTrack
+        )] = [
+            (
+                1,
+                makeTrack(id: "album-old", title: "Old", artist: "A", album: "Shared Album"),
+                makeTrack(id: "album-new", title: "New", artist: "B", album: "Shared Album"),
+                makeTrack(id: "album-other", title: "Other", artist: "C", album: "Other Album")
+            ),
+            (
+                2,
+                makeTrack(id: "artist-old", title: "Old", artist: "Shared Artist", album: "A"),
+                makeTrack(id: "artist-new", title: "New", artist: "Shared Artist", album: "B"),
+                makeTrack(id: "artist-other", title: "Other", artist: "Other Artist", album: "C")
+            )
+        ]
+
+        for scenario in scenarios {
+            let systemLibrary = DeferredMusicLibrary()
+            let viewModel = LibraryViewModel(
+                library: systemLibrary,
+                localStore: StubLocalMusicStore(tracks: [])
+            )
+            let initialReload = Task { await viewModel.requestReload() }
+            let initialRequestStarted = await eventually { systemLibrary.requestCount == 1 }
+            XCTAssertTrue(initialRequestStarted)
+            systemLibrary.resumeRequest(at: 0, with: [scenario.initial])
+            await initialReload.value
+            var playedIDs = [[String]]()
+            let library = LibraryViewController(viewModel: viewModel)
+            library.onSelectTrack = { queue, _ in playedIDs.append(queue.map(\.id)) }
+            let navigation = UINavigationController(rootViewController: library)
+            navigation.loadViewIfNeeded()
+            library.loadViewIfNeeded()
+            let libraryCollection = try XCTUnwrap(
+                allSubviews(in: library.view).compactMap { $0 as? UICollectionView }.first
+            )
+            library.collectionView(
+                libraryCollection,
+                didSelectItemAt: IndexPath(item: scenario.categoryIndex, section: 0)
+            )
+            let groupedList = try XCTUnwrap(
+                navigation.topViewController as? TrackListViewController
+            )
+            groupedList.loadViewIfNeeded()
+            let groupedCollection = try XCTUnwrap(
+                allSubviews(in: groupedList.view).compactMap { $0 as? UICollectionView }.first
+            )
+            groupedList.collectionView(
+                groupedCollection,
+                didSelectItemAt: IndexPath(item: 0, section: 0)
+            )
+            let childList = try XCTUnwrap(
+                navigation.topViewController as? TrackListViewController
+            )
+            childList.loadViewIfNeeded()
+
+            let refresh = Task { await viewModel.requestReload() }
+            let refreshStarted = await eventually { systemLibrary.requestCount == 2 }
+            XCTAssertTrue(refreshStarted)
+            systemLibrary.resumeRequest(
+                at: 1,
+                with: [scenario.initial, scenario.added, scenario.other]
+            )
+            await refresh.value
+            try XCTUnwrap(findView(identifier: "list.sort", in: childList.view) as? UIButton)
+                .sendActions(for: .touchUpInside)
+            try XCTUnwrap(findView(identifier: "list.playAll", in: childList.view) as? UIButton)
+                .sendActions(for: .touchUpInside)
+            try XCTUnwrap(findView(identifier: "list.shuffle", in: childList.view) as? UIButton)
+                .sendActions(for: .touchUpInside)
+
+            XCTAssertEqual(
+                childList.tracks.map(\.id),
+                [scenario.added.id, scenario.initial.id]
+            )
+            XCTAssertEqual(
+                Set(playedIDs.first ?? []),
+                Set([scenario.initial.id, scenario.added.id])
+            )
+            XCTAssertEqual(
+                Set(playedIDs.last ?? []),
+                Set([scenario.initial.id, scenario.added.id])
+            )
+        }
+    }
+
     /// 如果下载标识固定 22pt，或歌曲行不能随辅助字号自适应增长，此测试应失败。
     @MainActor
     func testTrackCellSelfSizesDownloadedBadgeAtAccessibilitySize() async throws {

@@ -1,11 +1,14 @@
+import Combine
 import SnapKit
 import UIKit
 
-enum LibraryCategory: CaseIterable {
+enum LibraryCategory: Equatable {
     case songs
     case albums
     case artists
     case downloaded
+    case album(String)
+    case artist(String)
 
     var title: String {
         switch self {
@@ -13,6 +16,32 @@ enum LibraryCategory: CaseIterable {
         case .albums: return "专辑"
         case .artists: return "艺人"
         case .downloaded: return "已下载"
+        case let .album(name), let .artist(name): return name
+        }
+    }
+
+    var isGrouped: Bool {
+        self == .albums || self == .artists
+    }
+
+    func filteredTracks(from tracks: [MusicTrack]) -> [MusicTrack] {
+        switch self {
+        case .songs, .albums, .artists:
+            return tracks
+        case .downloaded:
+            return tracks.filter { if case .downloaded = $0.source { return true }; return false }
+        case let .album(name):
+            return tracks.filter { $0.album == name }
+        case let .artist(name):
+            return tracks.filter { $0.artist == name }
+        }
+    }
+
+    func child(named name: String) -> LibraryCategory? {
+        switch self {
+        case .albums: return .album(name)
+        case .artists: return .artist(name)
+        default: return nil
         }
     }
 }
@@ -24,9 +53,12 @@ final class TrackListViewController: UIViewController, UICollectionViewDataSourc
     var onPlay: (([MusicTrack], Int) -> Void)?
     var onDelete: ((MusicTrack) -> Void)?
 
+    private let viewModel: LibraryViewModel?
     private var groups = [(name: String, tracks: [MusicTrack])]()
     private var sortKey = SortKey.album
+    private var hasSelectedSort = false
     private var collectionView: UICollectionView!
+    private var cancellable: AnyCancellable?
 
     init(
         category: LibraryCategory,
@@ -35,12 +67,25 @@ final class TrackListViewController: UIViewController, UICollectionViewDataSourc
         onPlay: (([MusicTrack], Int) -> Void)?
     ) {
         self.category = category
-        self.tracks = category == .downloaded
-            ? tracks.filter { if case .downloaded = $0.source { return true }; return false }
-            : tracks
+        viewModel = nil
+        self.tracks = category.filteredTracks(from: tracks)
         self.onPlay = onPlay
         super.init(nibName: nil, bundle: nil)
         self.title = title ?? category.title
+        rebuildGroups()
+    }
+
+    init(
+        category: LibraryCategory,
+        viewModel: LibraryViewModel,
+        onPlay: (([MusicTrack], Int) -> Void)?
+    ) {
+        self.category = category
+        self.viewModel = viewModel
+        tracks = category.filteredTracks(from: viewModel.tracks)
+        self.onPlay = onPlay
+        super.init(nibName: nil, bundle: nil)
+        title = category.title
         rebuildGroups()
     }
 
@@ -53,6 +98,7 @@ final class TrackListViewController: UIViewController, UICollectionViewDataSourc
         super.viewDidLoad()
         view.backgroundColor = Theme.background
         buildActionsAndList()
+        bindViewModel()
     }
 
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
@@ -92,12 +138,21 @@ final class TrackListViewController: UIViewController, UICollectionViewDataSourc
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         if isGrouped {
             let group = groups[indexPath.item]
-            let list = TrackListViewController(
-                category: .songs,
-                title: group.name,
-                tracks: group.tracks,
-                onPlay: onPlay
-            )
+            guard let childCategory = category.child(named: group.name) else { return }
+            let list: TrackListViewController
+            if let viewModel {
+                list = TrackListViewController(
+                    category: childCategory,
+                    viewModel: viewModel,
+                    onPlay: onPlay
+                )
+            } else {
+                list = TrackListViewController(
+                    category: childCategory,
+                    tracks: tracks,
+                    onPlay: onPlay
+                )
+            }
             list.onDelete = onDelete
             navigationController?.pushViewController(list, animated: true)
         } else {
@@ -114,7 +169,7 @@ final class TrackListViewController: UIViewController, UICollectionViewDataSourc
     }
 
     private var isGrouped: Bool {
-        category == .albums || category == .artists
+        category.isGrouped
     }
 
     private func buildActionsAndList() {
@@ -176,11 +231,31 @@ final class TrackListViewController: UIViewController, UICollectionViewDataSourc
 
     private func sortTracks() {
         sortKey = sortKey.next
+        hasSelectedSort = true
+        applySelectedSort()
+        rebuildGroups()
+        collectionView.reloadData()
+    }
+
+    private func bindViewModel() {
+        guard let viewModel else { return }
+        cancellable = viewModel.$tracks.sink { [weak self] tracks in
+            self?.replaceTracks(with: tracks)
+        }
+    }
+
+    private func replaceTracks(with allTracks: [MusicTrack]) {
+        tracks = category.filteredTracks(from: allTracks)
+        applySelectedSort()
+        rebuildGroups()
+        collectionView?.reloadData()
+    }
+
+    private func applySelectedSort() {
+        guard hasSelectedSort else { return }
         tracks.sort { lhs, rhs in
             sortKey.value(for: lhs).localizedCaseInsensitiveCompare(sortKey.value(for: rhs)) == .orderedAscending
         }
-        rebuildGroups()
-        collectionView.reloadData()
     }
 
     private func rebuildGroups() {

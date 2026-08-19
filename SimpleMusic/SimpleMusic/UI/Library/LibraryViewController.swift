@@ -136,7 +136,7 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
         case let .category(category, _):
             let list = TrackListViewController(
                 category: category,
-                tracks: viewModel.tracks,
+                viewModel: viewModel,
                 onPlay: onSelectTrack
             )
             list.onDelete = onDeleteTrack

@@ -1,4 +1,5 @@
 import CoreData
+import MediaPlayer
 import XCTest
 @testable import SimpleMusic
 
@@ -33,7 +34,7 @@ final class LocalMusicStoreTests: XCTestCase {
 
         gate.open()
         let tracks = try await fetch.value
-        XCTAssertEqual(tracks.map(\MusicTrack.id), ["background"])
+        XCTAssertEqual(tracks.map(\.id), ["background"])
         XCTAssertEqual(tracks.first?.source, .downloaded(fileName: "background.m4a"))
     }
 
@@ -86,6 +87,38 @@ final class LocalMusicStoreTests: XCTestCase {
         XCTAssertTrue(try fixture.musicStore.fetchTracks().isEmpty)
     }
 
+    func testCatalogExcludesEmptyFileAndDeletesItsIndex() async throws {
+        let fixture = try makeCatalogFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        _ = try fixture.musicStore.insert(metadata(id: "empty", fileName: "empty.mp3"))
+        try Data().write(to: fixture.root.appendingPathComponent("empty.mp3"))
+
+        let tracks = try await fixture.catalog.loadTracks()
+
+        XCTAssertTrue(tracks.isEmpty)
+        XCTAssertTrue(try fixture.musicStore.fetchTracks().isEmpty)
+    }
+
+    /// 自动刷新遇到越界索引名时必须保留记录并暴露失败，不能把配置/索引异常当成文件损坏清理。
+    func testAutomaticReloadKeepsTraversalIndexAndReportsLocalFailure() async throws {
+        let fixture = try makeCatalogFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let track = try fixture.musicStore.insert(
+            metadata(id: "traversal-reload", fileName: "../outside.mp3")
+        )
+        let viewModel = LibraryViewModel(
+            library: CatalogTestMusicLibrary(),
+            localStore: fixture.catalog
+        )
+
+        await viewModel.requestReload()
+
+        guard case .failed = viewModel.localState else {
+            return XCTFail("越界索引必须让本地来源进入 failed，而非静默清理")
+        }
+        XCTAssertEqual(try fixture.musicStore.fetchTracks().map(\.id), [track.id])
+    }
+
     func testCatalogKeepsIndexWhenLeaseCreationFailsTransiently() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -106,6 +139,61 @@ final class LocalMusicStoreTests: XCTestCase {
         XCTAssertTrue(
             FileManager.default.fileExists(atPath: root.appendingPathComponent("transient.mp3").path)
         )
+    }
+
+    /// 权限与未知文件访问错误不是确定损坏；catalog 必须传播 errno 并保留文件和索引。
+    func testCatalogKeepsIndexForInjectedFileAccessFailures() async throws {
+        for errorCode in [EACCES, EIO] {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let fileStore = try DownloadFileStore(rootURL: root)
+            let musicStore = try LocalMusicStore.inMemory()
+            let track = try musicStore.insert(
+                metadata(id: "access-\(errorCode)", fileName: "protected.mp3")
+            )
+            let fileURL = root.appendingPathComponent("protected.mp3")
+            try Data("valid".utf8).write(to: fileURL)
+            let catalog = LocalMusicCatalog(
+                musicStore: musicStore,
+                fileStore: fileStore,
+                leaseProvider: { _ in
+                    throw DownloadFileStoreError.fileAccessFailed(errno: errorCode)
+                },
+                playabilityCheck: { _ in true }
+            )
+
+            do {
+                _ = try await catalog.loadTracks()
+                XCTFail("fileAccessFailed 必须向上抛")
+            } catch let DownloadFileStoreError.fileAccessFailed(actualCode) {
+                XCTAssertEqual(actualCode, errorCode)
+            } catch {
+                XCTFail("应保留原始文件访问错误，实际为 \(error)")
+            }
+            XCTAssertEqual(try musicStore.fetchTracks().map(\.id), [track.id])
+            XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
+        }
+    }
+
+    /// AVFoundation 的瞬时读取错误必须保留索引；只有明确返回 false 才代表确定不可播放。
+    func testCatalogKeepsIndexWhenPlayabilityCheckThrows() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fileStore = try DownloadFileStore(rootURL: root)
+        let musicStore = try LocalMusicStore.inMemory()
+        let track = try musicStore.insert(metadata(id: "av-error", fileName: "av-error.mp3"))
+        let fileURL = root.appendingPathComponent("av-error.mp3")
+        try Data("valid".utf8).write(to: fileURL)
+        let catalog = LocalMusicCatalog(
+            musicStore: musicStore,
+            fileStore: fileStore,
+            playabilityCheck: { _ in throw CatalogPlayabilityError.transientRead }
+        )
+
+        await XCTAssertThrowsErrorAsync(_ = try await catalog.loadTracks())
+
+        XCTAssertEqual(try musicStore.fetchTracks().map(\.id), [track.id])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
     }
 
     func testCatalogExcludesDamagedRecordAndDeletesItsIndex() async throws {
@@ -257,6 +345,16 @@ final class LocalMusicStoreTests: XCTestCase {
         }
         return condition()
     }
+}
+
+private final class CatalogTestMusicLibrary: MusicLibraryLoading {
+    @MainActor let authorizationStatus: MPMediaLibraryAuthorizationStatus = .denied
+
+    func loadTracks() async throws -> [SimpleMusic.MusicTrack] { [] }
+}
+
+private enum CatalogPlayabilityError: Error {
+    case transientRead
 }
 
 private func XCTAssertThrowsErrorAsync(

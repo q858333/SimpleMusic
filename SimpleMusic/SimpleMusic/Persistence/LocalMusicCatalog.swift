@@ -7,7 +7,7 @@ enum LocalMusicCatalogError: Error {
 
 /// 把 Core Data 索引与受限下载目录组合成 UI 唯一可见的本地歌曲来源。
 final class LocalMusicCatalog: @unchecked Sendable {
-    typealias PlayabilityCheck = @MainActor @Sendable (URL) async -> Bool
+    typealias PlayabilityCheck = @MainActor @Sendable (URL) async throws -> Bool
     typealias LeaseProvider = @Sendable (String) throws -> PlaybackFileLease
 
     private let musicStore: LocalMusicStore
@@ -21,7 +21,7 @@ final class LocalMusicCatalog: @unchecked Sendable {
         leaseProvider: LeaseProvider? = nil,
         playabilityCheck: @escaping PlayabilityCheck = { url in
             let asset = AVURLAsset(url: url)
-            return (try? await asset.load(.isPlayable)) == true
+            return try await asset.load(.isPlayable)
         }
     ) {
         self.musicStore = musicStore
@@ -44,7 +44,7 @@ final class LocalMusicCatalog: @unchecked Sendable {
                 lease = try leaseProvider(fileName)
             } catch let error as DownloadFileStoreError {
                 switch error {
-                case .invalidFileName, .fileNotFound, .notRegularFile, .emptyFile:
+                case .fileNotFound, .notRegularFile, .emptyFile:
                     break
                 default:
                     // staging 创建或复制等瞬时故障不得让仍有效的用户索引丢失。
@@ -57,7 +57,13 @@ final class LocalMusicCatalog: @unchecked Sendable {
                 throw error
             }
 
-            let isPlayable = await playabilityCheck(lease.fileURL)
+            let isPlayable: Bool
+            do {
+                isPlayable = try await playabilityCheck(lease.fileURL)
+            } catch {
+                lease.release()
+                throw error
+            }
             lease.release()
             if isPlayable {
                 playableTracks.append(track)

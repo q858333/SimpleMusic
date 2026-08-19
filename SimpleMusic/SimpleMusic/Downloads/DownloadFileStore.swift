@@ -9,6 +9,7 @@ enum DownloadFileStoreError: Error {
     case fileNotFound
     case notRegularFile
     case emptyFile
+    case fileAccessFailed(errno: Int32)
     case playbackLeaseCreationFailed
     case playbackLeaseCopyFailed
 }
@@ -41,6 +42,12 @@ nonisolated final class PlaybackFileLease: @unchecked Sendable {
 
 /// 下载文件的受限目录存储；不可变根路径可跨线程使用，预留状态各自以锁保护。
 nonisolated struct DownloadFileStore: @unchecked Sendable {
+    typealias SourceOpener = @Sendable (String) -> (descriptor: Int32, errorCode: Int32)
+    typealias SourceStatusReader = @Sendable (
+        Int32,
+        UnsafeMutablePointer<stat>
+    ) -> (result: Int32, errorCode: Int32)
+
     fileprivate final class Owner {}
 
     /// 下载目标的不可伪造凭证；调用方只能读取路径，不能自行构造或重置状态。
@@ -64,9 +71,23 @@ nonisolated struct DownloadFileStore: @unchecked Sendable {
 
     private let rootURL: URL
     private let owner = Owner()
+    private let sourceOpener: SourceOpener
+    private let sourceStatusReader: SourceStatusReader
 
-    init(rootURL: URL) throws {
+    init(
+        rootURL: URL,
+        sourceOpener: @escaping SourceOpener = { path in
+            let descriptor = Darwin.open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+            return (descriptor, descriptor < 0 ? errno : 0)
+        },
+        sourceStatusReader: @escaping SourceStatusReader = { descriptor, status in
+            let result = Darwin.fstat(descriptor, status)
+            return (result, result < 0 ? errno : 0)
+        }
+    ) throws {
         self.rootURL = rootURL
+        self.sourceOpener = sourceOpener
+        self.sourceStatusReader = sourceStatusReader
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
     }
 
@@ -74,18 +95,19 @@ nonisolated struct DownloadFileStore: @unchecked Sendable {
     func playbackLease(for fileName: String) throws -> PlaybackFileLease {
         let candidate = try controlledCandidate(for: fileName)
         let standardizedRoot = rootURL.standardizedFileURL
-        let sourceDescriptor = Darwin.open(candidate.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        let openResult = sourceOpener(candidate.path)
+        let sourceDescriptor = openResult.descriptor
         guard sourceDescriptor >= 0 else {
-            if errno == ENOENT {
-                throw DownloadFileStoreError.fileNotFound
-            }
-            throw DownloadFileStoreError.notRegularFile
+            throw sourceAccessError(errno: openResult.errorCode)
         }
         defer { Darwin.close(sourceDescriptor) }
 
         var sourceStatus = stat()
-        guard fstat(sourceDescriptor, &sourceStatus) == 0,
-              (sourceStatus.st_mode & S_IFMT) == S_IFREG else {
+        let statusResult = sourceStatusReader(sourceDescriptor, &sourceStatus)
+        guard statusResult.result == 0 else {
+            throw sourceAccessError(errno: statusResult.errorCode)
+        }
+        guard (sourceStatus.st_mode & S_IFMT) == S_IFREG else {
             throw DownloadFileStoreError.notRegularFile
         }
         guard sourceStatus.st_size > 0 else {
@@ -214,6 +236,17 @@ nonisolated struct DownloadFileStore: @unchecked Sendable {
             throw DownloadFileStoreError.invalidFileName
         }
         return candidate
+    }
+
+    private func sourceAccessError(errno errorCode: Int32) -> DownloadFileStoreError {
+        switch errorCode {
+        case ENOENT:
+            return .fileNotFound
+        case ELOOP:
+            return .notRegularFile
+        default:
+            return .fileAccessFailed(errno: errorCode)
+        }
     }
 
     private func copy(from sourceDescriptor: Int32, to destinationDescriptor: Int32) throws {
