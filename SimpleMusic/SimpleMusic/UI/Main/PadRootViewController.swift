@@ -47,11 +47,15 @@ final class PadRootViewController: UIViewController {
         container.isAccessibilityElement = true
         container.accessibilityLabel = "点击迷你播放器，从右侧打开播放页面"
         container.accessibilityTraits = .staticText
-        container.backgroundColor = Theme.accent.withAlphaComponent(0.12)
-        container.layer.cornerRadius = 12
-        container.layer.borderWidth = 0.5
-        container.layer.borderColor = Theme.accent.withAlphaComponent(0.28).cgColor
         container.isHidden = true
+
+        let bubbleBody = UIView()
+        bubbleBody.backgroundColor = Theme.accent.withAlphaComponent(0.12)
+        bubbleBody.layer.cornerRadius = 12
+        bubbleBody.layer.borderWidth = 0.5
+        bubbleBody.layer.borderColor = Theme.accent.withAlphaComponent(0.28).cgColor
+
+        let arrow = PlayerGuideArrowView()
 
         let icon = UIImageView(image: UIImage(systemName: "hand.tap.fill"))
         icon.tintColor = Theme.accent
@@ -68,7 +72,19 @@ final class PadRootViewController: UIViewController {
         stack.axis = .horizontal
         stack.alignment = .center
         stack.spacing = 8
-        container.addSubview(stack)
+        container.addSubview(bubbleBody)
+        container.addSubview(arrow)
+        bubbleBody.addSubview(stack)
+        bubbleBody.snp.makeConstraints { make in
+            make.top.leading.trailing.equalToSuperview()
+        }
+        arrow.snp.makeConstraints { make in
+            // 与气泡主体轻微重叠，避免主体边框和箭头之间出现缝隙。
+            make.top.equalTo(bubbleBody.snp.bottom).offset(-0.5)
+            make.bottom.centerX.equalToSuperview()
+            make.width.equalTo(20)
+            make.height.equalTo(10)
+        }
         stack.snp.makeConstraints { make in
             make.edges.equalToSuperview().inset(
                 UIEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
@@ -323,5 +339,44 @@ final class PadRootViewController: UIViewController {
             make.height.greaterThanOrEqualTo(44)
         }
         return button
+    }
+}
+
+/// 气泡底部的向下三角箭头；独立视图便于在尺寸变化后重新绘制清晰路径。
+private final class PlayerGuideArrowView: UIView {
+    override class var layerClass: AnyClass { CAShapeLayer.self }
+
+    private var shapeLayer: CAShapeLayer {
+        guard let shapeLayer = layer as? CAShapeLayer else {
+            preconditionFailure("PlayerGuideArrowView 必须使用 CAShapeLayer")
+        }
+        return shapeLayer
+    }
+
+    init() {
+        super.init(frame: .zero)
+        accessibilityIdentifier = "pad.playerGuide.arrow"
+        isUserInteractionEnabled = false
+        backgroundColor = .clear
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("PlayerGuideArrowView 仅支持纯代码初始化")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let path = UIBezierPath()
+        path.move(to: CGPoint(x: bounds.minX, y: bounds.minY))
+        path.addLine(to: CGPoint(x: bounds.maxX, y: bounds.minY))
+        path.addLine(to: CGPoint(x: bounds.midX, y: bounds.maxY))
+        path.close()
+
+        shapeLayer.path = path.cgPath
+        shapeLayer.fillColor = Theme.accent.withAlphaComponent(0.12).cgColor
+        shapeLayer.strokeColor = Theme.accent.withAlphaComponent(0.28).cgColor
+        shapeLayer.lineWidth = 0.5
+        shapeLayer.lineJoin = .round
     }
 }

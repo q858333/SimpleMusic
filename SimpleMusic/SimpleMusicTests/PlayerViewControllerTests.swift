@@ -456,6 +456,47 @@ final class PlayerViewControllerTests: XCTestCase {
         XCTAssertTrue(nextGuide.isHidden)
     }
 
+    /// 如果气泡没有向下箭头，或箭头偏离气泡底部，就不能清楚指向下方迷你播放器。
+    func testPadPlayerGuideArrowPointsDownAtMiniPlayer() async throws {
+        let suiteName = "PlayerViewControllerTests.pad-guide-arrow.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot())
+        let pad = PadRootViewController(
+            dependencies: makeDependencies(snapshots: snapshots),
+            playerGuideDefaults: defaults
+        )
+        pad.loadViewIfNeeded()
+        pad.view.frame = CGRect(x: 0, y: 0, width: 834, height: 1194)
+        pad.view.layoutIfNeeded()
+
+        snapshots.send(PlaybackSnapshot(
+            status: .playing,
+            track: makeTrack(),
+            elapsed: 0,
+            duration: 180,
+            queueIndex: 0,
+            queueCount: 1
+        ))
+        let guide = try XCTUnwrap(findView(identifier: "pad.playerGuide", in: pad.view))
+        await waitUntil { !guide.isHidden }
+        pad.view.layoutIfNeeded()
+
+        let arrow = try XCTUnwrap(findView(identifier: "pad.playerGuide.arrow", in: guide))
+        let miniPlayer = try XCTUnwrap(findView(identifier: "mini.open", in: pad.view)?.superview)
+        let shapeLayer = try XCTUnwrap(arrow.layer as? CAShapeLayer)
+        let path = try XCTUnwrap(shapeLayer.path)
+        let arrowFrame = arrow.convert(arrow.bounds, to: pad.view)
+        let guideFrame = guide.convert(guide.bounds, to: pad.view)
+        let miniFrame = miniPlayer.convert(miniPlayer.bounds, to: pad.view)
+
+        XCTAssertEqual(arrowFrame.maxY, guideFrame.maxY, accuracy: 0.5)
+        XCTAssertEqual(arrowFrame.midX, guideFrame.midX, accuracy: 0.5)
+        XCTAssertLessThan(arrowFrame.maxY, miniFrame.minY)
+        XCTAssertTrue(path.contains(CGPoint(x: arrow.bounds.midX, y: arrow.bounds.maxY - 1)))
+        XCTAssertFalse(path.contains(CGPoint(x: 1, y: arrow.bounds.maxY - 1)))
+    }
+
     /// 如果曲目消失后引导仍悬浮，提示会指向已经隐藏的迷你播放器。
     func testPadPlayerGuideHidesWhenPlaybackBecomesEmptyAndKeepsAccessibleLayout() async throws {
         let suiteName = "PlayerViewControllerTests.pad-guide-empty.\(UUID().uuidString)"
