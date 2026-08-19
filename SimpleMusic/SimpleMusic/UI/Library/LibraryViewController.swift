@@ -388,7 +388,7 @@ private final class CategoryCell: UICollectionViewCell {
         layer.cornerRadius = Theme.cardRadius
         iconView.tintColor = Theme.accent
         iconView.contentMode = .scaleAspectFit
-        label.font = .preferredFont(forTextStyle: .caption1)
+        label.font = .preferredFont(forTextStyle: .subheadline)
         label.adjustsFontForContentSizeCategory = true
         label.textAlignment = .center
         contentView.addSubview(iconView)
