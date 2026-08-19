@@ -210,6 +210,7 @@ final class AppCoordinatorTests: XCTestCase {
             info["UISupportedInterfaceOrientations~ipad"] as? [String],
             ["UIInterfaceOrientationPortrait"]
         )
+        XCTAssertEqual(info["UIRequiresFullScreen"] as? Bool, true)
         XCTAssertNil(applicationConfigurations?.first?["UISceneStoryboardFile"])
         XCTAssertFalse(
             FileManager.default.fileExists(
@@ -222,6 +223,61 @@ final class AppCoordinatorTests: XCTestCase {
             encoding: .utf8
         )
         XCTAssertFalse(project.contains("INFOPLIST_KEY_UIMainStoryboardFile"))
+    }
+
+    /// 如果 App 自身隐私清单缺失、格式无效或 required-reason 声明漂移，此测试应失败。
+    func testAppPrivacyManifestDeclaresActualRequiredReasonAPIs() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let manifestURL = repositoryRoot.appendingPathComponent("SimpleMusic/PrivacyInfo.xcprivacy")
+        let data = try Data(contentsOf: manifestURL)
+        let manifest = try XCTUnwrap(
+            PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        )
+        let accessedTypes = try XCTUnwrap(manifest["NSPrivacyAccessedAPITypes"] as? [[String: Any]])
+        let pairs: [(String, [String])] = accessedTypes.compactMap { entry in
+            guard let category = entry["NSPrivacyAccessedAPIType"] as? String,
+                  let values = entry["NSPrivacyAccessedAPITypeReasons"] as? [String] else {
+                return nil
+            }
+            return (category, values)
+        }
+        let reasons = Dictionary(uniqueKeysWithValues: pairs)
+
+        XCTAssertEqual(manifest["NSPrivacyTracking"] as? Bool, false)
+        XCTAssertEqual((manifest["NSPrivacyCollectedDataTypes"] as? [Any])?.count, 0)
+        XCTAssertEqual(reasons["NSPrivacyAccessedAPICategoryUserDefaults"], ["CA92.1"])
+        XCTAssertEqual(reasons["NSPrivacyAccessedAPICategoryFileTimestamp"], ["C617.1"])
+    }
+
+    /// 如果批准图标没有完整恢复三个 appearance 槽位，或 PNG 不是原生 1024 正方形，此测试应失败。
+    @MainActor
+    func testAppIconCatalogContainsApproved1024Assets() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let iconRoot = repositoryRoot.appendingPathComponent(
+            "SimpleMusic/Assets.xcassets/AppIcon.appiconset",
+            isDirectory: true
+        )
+        let contentsData = try Data(contentsOf: iconRoot.appendingPathComponent("Contents.json"))
+        let contents = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: contentsData) as? [String: Any]
+        )
+        let images = try XCTUnwrap(contents["images"] as? [[String: Any]])
+        let expectedNames = Set([
+            "app-icon-record-v3-1024.png",
+            "app-icon-record-dark-1024.png",
+            "app-icon-record-tinted-1024.png"
+        ])
+        let actualNames = Set(images.compactMap { $0["filename"] as? String })
+
+        XCTAssertEqual(actualNames, expectedNames)
+        for name in expectedNames {
+            let image = try XCTUnwrap(UIImage(contentsOfFile: iconRoot.appendingPathComponent(name).path))
+            XCTAssertEqual(image.size, CGSize(width: 1024, height: 1024), name)
+        }
     }
 
     @MainActor
