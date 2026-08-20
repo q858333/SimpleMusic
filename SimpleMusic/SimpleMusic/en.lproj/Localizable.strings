@@ -11,6 +11,7 @@
 "track.unknown_album" = "Unknown Album";
 "track.downloaded" = "Downloaded";
 "track.more_actions" = "More Actions";
+"track.accessibility" = "%1$@, %2$@, %3$@";
 "track_group.accessibility" = "%1$@, %2$@";
 "storage.persistence.unavailable" = "Local storage is temporarily unavailable. DiskTone is using memory only; your original data was not deleted. Restart the app to try again.";
 "storage.persistence.unavailable_with_detail" = "%1$@ (%2$@)";
@@ -41,7 +42,7 @@
 "list.shuffle" = "Shuffle";
 "list.sort" = "Sort";
 "deletion.title" = "Delete Local Song?";
-"deletion.message" = "Remove “%@” and its download record from this device?";
+"deletion.message" = "Remove “%1$@” and its download record from this device?";
 "search.title" = "Search";
 "search.placeholder" = "Search songs, artists, or albums";
 "search.empty_library" = "There are no songs in your library";

@@ -11,6 +11,7 @@
 "track.unknown_album" = "未知专辑";
 "track.downloaded" = "已下载";
 "track.more_actions" = "更多操作";
+"track.accessibility" = "%1$@，%2$@，%3$@";
 "track_group.accessibility" = "%1$@，%2$@";
 "storage.persistence.unavailable" = "本地持久化暂不可用，已进入内存模式；原始资料未删除，请重启应用重试。";
 "storage.persistence.unavailable_with_detail" = "%1$@（%2$@）";
@@ -41,7 +42,7 @@
 "list.shuffle" = "随机播放";
 "list.sort" = "排序";
 "deletion.title" = "删除本地歌曲？";
-"deletion.message" = "将从此设备移除“%@”及其下载记录。";
+"deletion.message" = "将从此设备移除“%1$@”及其下载记录。";
 "search.title" = "搜索";
 "search.placeholder" = "搜索歌曲、艺人或专辑";
 "search.empty_library" = "资料库中没有歌曲";

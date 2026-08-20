@@ -11,6 +11,7 @@
 "track.unknown_album" = "未知專輯";
 "track.downloaded" = "已下載";
 "track.more_actions" = "更多操作";
+"track.accessibility" = "%1$@，%2$@，%3$@";
 "track_group.accessibility" = "%1$@，%2$@";
 "storage.persistence.unavailable" = "本機持久化儲存空間暫時無法使用，已切換為記憶體模式；原始資料未刪除，請重新啟動 App 後再試。";
 "storage.persistence.unavailable_with_detail" = "%1$@（%2$@）";
@@ -41,7 +42,7 @@
 "list.shuffle" = "隨機播放";
 "list.sort" = "排序";
 "deletion.title" = "刪除本機歌曲？";
-"deletion.message" = "將從此裝置移除「%@」及其下載記錄。";
+"deletion.message" = "將從此裝置移除「%1$@」及其下載記錄。";
 "search.title" = "搜尋";
 "search.placeholder" = "搜尋歌曲、藝人或專輯";
 "search.empty_library" = "資料庫中沒有歌曲";

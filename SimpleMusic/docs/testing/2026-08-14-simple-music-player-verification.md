@@ -125,14 +125,14 @@ reviewer 的 7 项 Important 及最终复审的两处闭环已在 `979d8c2`、`8
 
 ## 本地化三语言验证（2026-08-20，PARTIAL / DEFERRED）
 
-- 分支：`codex/simplemusic-localization`；验证基线 HEAD：`80febe4d0d23005a551664ed1aa0e4f13f25d103`。
+- 分支：`codex/simplemusic-localization`；本 wave 修复起点：`884082b`。
 - 环境：Xcode 26.3（17C529）、macOS 26.2（25C56）、iOS Simulator 26.4（23E244）。
 - 语言约束：系统跟随，`en` 为 development/fallback，仅包含 `en` / `zh-Hans` / `zh-Hant`，繁中按台湾措辞。
-- 总体裁决：`PARTIAL / DEFERRED`，不得解释为 Task 8 完整 PASS。自动测试、三语言资源与 simulator/device build 均 PASS；人工视觉只覆盖 iPhone 三语资料库根页，以及 iPad 三语启动与系统弹窗内 app permission copy。
+- 总体裁决：`PARTIAL / DEFERRED`，不得解释为 Task 8 完整 PASS。自动测试、三语言资源与 simulator/device build 均 PASS；人工视觉只覆盖 iPhone 三语资料库根页。iPad 截图只证明 app 启动至系统权限弹窗，不构成弹窗语言或三语 permission copy 的视觉覆盖。
 
 ### Production Swift 用户文案审计
 
-`LocalizationTests.testProductionSwiftHasNoUnlocalizedHanStringLiterals` 递归读取 40 个 production Swift 文件，以完整 source 词法状态扫描 ordinary/raw、single-line/multiline Swift string literal，并递归扫描 interpolation 内的 Swift code；对含 Han Unicode scalar 的 literal segment 输出 `file:line` 与原 literal。允许规则只接受 `NSLog`、`fatalError`、`preconditionFailure` 的直接 literal 参数，嵌套用户调用不会因外层诊断调用而放行，没有整文件白名单。Fix round1 的 production audit 1/1 passed，完整 `LocalizationTests` 13/13 passed，真实 production 用户可见遗漏为 0；证据为 `/private/tmp/simplemusic-localization-production-audit-fix1.xcresult` 与 `/private/tmp/simplemusic-localization-tests-fix1.xcresult`。
+`LocalizationTests.testProductionSwiftHasNoUnlocalizedHanStringLiterals` 递归读取 40 个 production Swift 文件，以完整 source 词法状态扫描 ordinary/raw、single-line/multiline Swift string literal，并递归扫描 interpolation 内的 Swift code；对含 Han Unicode scalar 的 literal segment 输出 `file:line` 与原 literal。允许规则只接受 `NSLog`、`fatalError`、`preconditionFailure` 的直接 literal 参数，嵌套用户调用不会因外层诊断调用而放行，没有整文件白名单。Fix round1 的 production audit 1/1 passed，完整 `LocalizationTests` 13/13 passed；在该扫描器覆盖的 Swift 字符串字面量范围内，未发现未允许的 production Han string literal。证据为 `/private/tmp/simplemusic-localization-production-audit-fix1.xcresult` 与 `/private/tmp/simplemusic-localization-tests-fix1.xcresult`。
 
 首轮审计曾把 `TrackCell.swift:98` 的 `"\\(track.artist) · \\(track.album)"` 误报为 Han literal，原因是 Foundation 便捷 regular-expression search 对 `\p{Han}` 的解析不符合预期；其后按行 regex 又被 review 证明会漏 ordinary/raw multiline literal，并会错误处理 raw direct diagnostic 与外层 allowed call interpolation 中的嵌套用户 literal。Fix round1 先新增 synthetic fixtures 并取得 2/2 可信 RED，再改为完整 source lexer 后 2/2 GREEN；未改 production。首轮 `zh-Hans` focused 另暴露两个测试语言绑定错误：主 bundle 正确返回中文时旧测试仍固定期待英文，以及在中文 locale 下强行混用英文 bundle 做复数选择。测试改为校验当前 app language 的 main bundle 输出后三语言通过，不属于 production 遗漏。
 
@@ -140,25 +140,25 @@ reviewer 的 7 项 Important 及最终复审的两处闭环已在 `979d8c2`、`8
 
 | 验证项 | 命令摘要 | 退出码 | 机器汇总 / 产物 |
 | --- | --- | ---: | --- |
-| en focused | `xcodebuild ... -testLanguage en <5 个 only-testing> test` | 0 | 115 passed，0 failed，0 skipped；`/private/tmp/simplemusic-localization-focused-v2-en.{log,xcresult}` |
-| zh-Hans focused | `xcodebuild ... -testLanguage zh-Hans <5 个 only-testing> test` | 0 | 115 passed，0 failed，0 skipped；`/private/tmp/simplemusic-localization-focused-v2-zh-Hans.{log,xcresult}` |
-| zh-Hant focused | `xcodebuild ... -testLanguage zh-Hant <5 个 only-testing> test` | 0 | 115 passed，0 failed，0 skipped；`/private/tmp/simplemusic-localization-focused-v2-zh-Hant.{log,xcresult}` |
-| full | `xcodebuild ... -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max,OS=26.4' test` | 0 | 231 passed，0 failed，0 skipped；`/private/tmp/simplemusic-localization-full.{log,xcresult}` |
-| generic simulator build | `xcodebuild ... -destination 'generic/platform=iOS Simulator' build` | 0 | `** BUILD SUCCEEDED **`；`/private/tmp/simplemusic-localization-sim-build.{log,xcresult}` |
-| generic device build | `xcodebuild ... -destination 'generic/platform=iOS' build` | 0 | `** BUILD SUCCEEDED **`；无签名编译，未安装到真机；`/private/tmp/simplemusic-localization-device-build.{log,xcresult}` |
-| 独立 DerivedData | `xcodebuild ... -derivedDataPath /private/tmp/simplemusic-localization-dd build` | 0 | `** BUILD SUCCEEDED **`；app 路径见下 |
+| en focused | `xcodebuild ... -testLanguage en <5 个 only-testing> test` | 0 | 123 passed，0 failed，0 skipped；`/private/tmp/simplemusic-finalfix-focused-en.{log,xcresult}` |
+| zh-Hans focused | `xcodebuild ... -testLanguage zh-Hans <5 个 only-testing> test` | 0 | 123 passed，0 failed，0 skipped；`/private/tmp/simplemusic-finalfix-focused-zh-Hans.{log,xcresult}` |
+| zh-Hant focused | `xcodebuild ... -testLanguage zh-Hant <5 个 only-testing> test` | 0 | 123 passed，0 failed，0 skipped；`/private/tmp/simplemusic-finalfix-focused-zh-Hant.{log,xcresult}` |
+| full | `xcodebuild ... -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max,OS=26.4' test` | 0 | 239 passed，0 failed，0 skipped；`/private/tmp/simplemusic-finalfix-full.{log,xcresult}` |
+| generic simulator build | `xcodebuild ... -destination 'generic/platform=iOS Simulator' build` | 0 | `** BUILD SUCCEEDED **`；`/private/tmp/simplemusic-finalfix-sim-build.{log,xcresult}` |
+| generic device build | `xcodebuild ... -destination 'generic/platform=iOS' build` | 0 | `** BUILD SUCCEEDED **`；无签名编译，未安装到真机；`/private/tmp/simplemusic-finalfix-device-build.{log,xcresult}` |
+| 独立 DerivedData | `xcodebuild ... -derivedDataPath /private/tmp/simplemusic-finalfix-dd build` | 0 | `** BUILD SUCCEEDED **`；app 路径见下 |
 
 focused 覆盖 `LocalizationTests`、`AppCoordinatorTests`、`LibraryViewModelTests`、`PlayerViewControllerTests`、`DownloadAndSettingsFlowTests`，用自动化检查权限页、资料库/搜索、播放器、下载、设置与关于页的文案和主要 UI 契约。
 
 ### App bundle 资源审计
 
-产物：`/private/tmp/simplemusic-localization-dd/Build/Products/Debug-iphonesimulator/SimpleMusic.app`。共找到 9 个编译资源文件；三语言的 `Localizable.strings`、`Localizable.stringsdict`、`InfoPlist.strings` 均为 Apple binary property list。
+产物：`/private/tmp/simplemusic-finalfix-dd/Build/Products/Debug-iphonesimulator/SimpleMusic.app`。共找到 9 个编译资源文件；三语言的 `Localizable.strings`、`Localizable.stringsdict`、`InfoPlist.strings` 均为 Apple binary property list。
 
 | 语言 | Localizable keys | stringsdict 顶层 keys | InfoPlist keys | display name | Music Library 权限说明 |
 | --- | ---: | ---: | ---: | --- | --- |
-| en | 99 | 1 | 2 | DiskTone | `DiskTone uses your music library to browse and play music on this device.` |
-| zh-Hans | 99 | 1 | 2 | 听见 | `“听见”使用你的音乐资料库，以浏览并播放此设备上的音乐。` |
-| zh-Hant | 99 | 1 | 2 | 聽見 | `「聽見」會使用你的音樂資料庫，以瀏覽並播放此裝置上的音樂。` |
+| en | 100 | 1 | 2 | DiskTone | `DiskTone uses your music library to browse and play music on this device.` |
+| zh-Hans | 100 | 1 | 2 | 听见 | `“听见”使用你的音乐资料库，以浏览并播放此设备上的音乐。` |
+| zh-Hant | 100 | 1 | 2 | 聽見 | `「聽見」會使用你的音樂資料庫，以瀏覽並播放此裝置上的音樂。` |
 
 构建产物 `Info.plist` 的 `CFBundleDevelopmentRegion = en`、`CFBundleIdentifier = DB.SimpleMusic`；未发现缺少语言、key 数不一致、格式参数不一致或 InfoPlist 缺项。
 
@@ -171,17 +171,17 @@ focused 覆盖 `LocalizationTests`、`AppCoordinatorTests`、`LibraryViewModelTe
 | iPhone / en | `/private/tmp/simplemusic-localization-iphone-en.png` | 1320×2868 | Library 主页英文，无 key/明显截断 |
 | iPhone / zh-Hans | `/private/tmp/simplemusic-localization-iphone-zh-Hans.png` | 1320×2868 | 资料库主页简中，无 key/明显截断 |
 | iPhone / zh-Hant | `/private/tmp/simplemusic-localization-iphone-zh-Hant.png` | 1320×2868 | 資料庫主頁繁中，无 key/明顯截斷 |
-| iPad / en | `/private/tmp/simplemusic-localization-ipad-en.png` | 1640×2360 | app 已英文启动；被系统 Apple Music 权限弹窗遮挡 |
-| iPad / zh-Hans | `/private/tmp/simplemusic-localization-ipad-zh-Hans.png` | 1640×2360 | app 已简中启动；被系统 Apple Music 权限弹窗遮挡 |
-| iPad / zh-Hant | `/private/tmp/simplemusic-localization-ipad-zh-Hant.png` | 1640×2360 | app 已繁中启动；被系统 Apple Music 权限弹窗遮挡 |
+| iPad / en 参数 | `/private/tmp/simplemusic-localization-ipad-en.png` | 1640×2360 | app 启动至系统弹窗；不裁定弹窗或 permission copy 语言 |
+| iPad / zh-Hans 参数 | `/private/tmp/simplemusic-localization-ipad-zh-Hans.png` | 1640×2360 | app 启动至系统弹窗；不裁定弹窗或 permission copy 语言 |
+| iPad / zh-Hant 参数 | `/private/tmp/simplemusic-localization-ipad-zh-Hant.png` | 1640×2360 | app 启动至系统弹窗；不裁定弹窗或 permission copy 语言 |
 
-iPhone 三张只能证明启动后资料库根页的主要文案；iPad 三张只能证明 app 启动和弹窗内 app permission copy，不能证明关闭弹窗后的 iPad 主页。权限、资料库、搜索、播放器、下载、设置、关于页面的逐语言人工 visual、混合语言和截断检查均未完成；focused 只提供自动化契约覆盖，不能替代页面人工视觉验收。这些项目需要用户或真机 release pass，本轮视觉结论为 `PARTIAL / DEFERRED`。
+iPhone 三张只能证明启动后资料库根页的主要文案；iPad 三张只能证明 app 启动至系统权限弹窗，不能证明关闭弹窗后的 iPad 主页。app-only `-AppleLanguages` 不会切换模拟器系统语言，因此不能证明系统权限弹窗语言；三语 permission copy 仍需分别在对应系统语言与真机权限流程中复核，状态为 `DEFERRED`。权限、资料库、搜索、播放器、下载、设置、关于页面的逐语言人工 visual、混合语言和截断检查均未完成；focused 只提供自动化契约覆盖，不能替代页面人工视觉验收。本轮视觉结论为 `PARTIAL / DEFERRED`。
 
 ### Warnings 与 deferred
 
 - 三类构建中 app 自有 Swift warning 均为 0。全新 generic simulator / device 构建分别重新编译 Pods，因此记录 IQKeyboardManager 既有 deprecated/implicit-retain warning（simulator 44、device 22）；还有 Metal toolchain Swift search path warning（simulator 6、device 3）和项目未使用 AppIntents 的 metadata skip（各1）。它们不是本地化产品失败。
 - 测试运行期还有模拟器的 DVT device metadata、CoreUI theme、未授权 `MPMediaLibrary`、MediaRemote AVF、CA launch metric 与部分 unit-test appearance-transition 日志；xcresult 仍均为 0 failed / 0 skipped。
-- iPad 系统 Apple Music 弹窗的按钮语言由模拟器系统中文环境控制，不随 app-only `-AppleLanguages` 参数切换；真机三语系统按钮、权限时序和真实 Music Library 行为全部 DEFERRED，发布前必须在真机复核。
+- iPad 系统 Apple Music 弹窗的语言由模拟器系统语言环境控制，不随 app-only `-AppleLanguages` 参数切换；当前截图不能证明三语系统按钮或三语 permission copy。它们与权限时序、真实 Music Library 行为均为 `DEFERRED`，发布前必须切换真实系统语言并在真机复核。
 - 只读 Simulator state 工具曾挂起约 14 分钟，且 `simctl privacy` 无法清除 iPad 已显示的系统权限弹窗；按裁决不再尝试 GUI 自动化，因此上述全页面逐语言人工视觉检查维持 DEFERRED。
 - Task 7 reviewer 保留的 `@unknown default` minor 仍 deferred：当前 closed enum 无法构造未知 case，本轮不为此新增 production seam。
 - `/private/tmp` 日志、xcresult 和六张截图均为本机临时证据，不随 git commit 持久化；文件被系统清理后不能从仓库复核像素内容。

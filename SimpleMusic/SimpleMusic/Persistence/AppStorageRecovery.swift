@@ -54,7 +54,7 @@ struct PersistentStoreFactory {
             let detail = [loadingError, memoryError]
                 .compactMap { $0 }
                 .map(String.init(describing:))
-                .joined(separator: "；")
+                .joined(separator: "; ")
             let baseWarning = L10n.text("storage.persistence.unavailable")
             // 保留系统错误详情，便于用户在不丢失资料的降级状态下诊断问题。
             let warning = detail.isEmpty

@@ -143,10 +143,9 @@ final class PermissionViewController: UIViewController {
         identifier: String,
         action: Selector
     ) -> UIButton {
-        var configuration = UIButton.Configuration.plain()
-        configuration.title = title
-        let button = UIButton(configuration: configuration)
+        let button = UIButton(type: .system)
         button.accessibilityIdentifier = identifier
+        button.setTitle(title, for: .normal)
         button.setTitleColor(titleColor, for: .normal)
         button.titleLabel?.font = .preferredFont(forTextStyle: .headline)
         button.titleLabel?.adjustsFontForContentSizeCategory = true

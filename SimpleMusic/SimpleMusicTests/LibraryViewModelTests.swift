@@ -989,6 +989,26 @@ final class LibraryViewModelTests: XCTestCase {
         })
     }
 
+    /// 如果歌曲行 VoiceOver 文案继续硬编码中文标点，英文运行将不会读出语言对应的分隔。
+    @MainActor
+    func testTrackCellUsesActiveLanguageAccessibilityFormat() throws {
+        let expectedByLanguage = [
+            "en": "Title, Artist, Album",
+            "zh-Hans": "Title，Artist，Album",
+            "zh-Hant": "Title，Artist，Album",
+        ]
+        let activeLanguage = Bundle.main.preferredLocalizations.first ?? "en"
+        let cell = TrackCell(frame: CGRect(x: 0, y: 0, width: 360, height: 66))
+        cell.configure(with: makeTrack(
+            id: "accessible-track",
+            title: "Title",
+            artist: "Artist",
+            album: "Album"
+        ))
+
+        XCTAssertEqual(cell.accessibilityLabel, try XCTUnwrap(expectedByLanguage[activeLanguage]))
+    }
+
     /// 系统歌曲没有本地删除动作，不能显示会产生空回调的“更多”按钮。
     @MainActor
     func testTrackCellHidesMoreActionForSystemTrack() throws {

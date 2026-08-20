@@ -41,6 +41,22 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: originalStore), Data("user-store".utf8))
     }
 
+    func testPersistentStoreWarningJoinsMultipleErrorsWithLanguageNeutralSeparator() throws {
+        let persistent = NSPersistentContainer(name: "SimpleMusic")
+        let memory = NSPersistentContainer(name: "SimpleMusic")
+        let factory = PersistentStoreFactory(
+            makePersistentContainer: { persistent },
+            makeMemoryContainer: { memory },
+            load: { container, completion in
+                completion(container === persistent ? TestStoreError.failed : TestStoreError.unavailable)
+            }
+        )
+
+        let warning = try XCTUnwrap(factory.resolve().warning)
+
+        XCTAssertTrue(warning.contains("failed; unavailable"), warning)
+    }
+
     @MainActor
     func testSaveFailurePostsNotificationInsteadOfCrashing() throws {
         let container = NSPersistentContainer(name: "SimpleMusic")
@@ -250,9 +266,28 @@ final class AppCoordinatorTests: XCTestCase {
             .compactMap { ($0 as? UILabel)?.text }
 
         XCTAssertEqual(title.text, L10n.text("permission.title"))
-        XCTAssertEqual(allowButton.configuration?.title, L10n.text("permission.allow"))
+        XCTAssertEqual(allowButton.title(for: .normal), L10n.text("permission.allow"))
         XCTAssertTrue(copy.contains(L10n.text("permission.body")))
         XCTAssertTrue(copy.contains(L10n.text("permission.direct_link_note")))
+    }
+
+    /// 如果 UIButton.Configuration 刷新覆盖 legacy title 样式，允许按钮将不再以白色 headline 实际渲染。
+    @MainActor
+    func testPermissionAllowButtonRendersLocalizedWhiteHeadlineTitle() throws {
+        let controller = PermissionViewController(onAllow: {}, onDefer: {})
+        controller.loadViewIfNeeded()
+        let allowButton = try XCTUnwrap(
+            findView(identifier: "permission.allow", in: controller.view) as? UIButton
+        )
+        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
+        controller.view.layoutIfNeeded()
+        allowButton.setNeedsUpdateConfiguration()
+        allowButton.updateConfiguration()
+        allowButton.layoutIfNeeded()
+
+        XCTAssertEqual(allowButton.title(for: .normal), L10n.text("permission.allow"))
+        XCTAssertEqual(allowButton.titleLabel?.font, UIFont.preferredFont(forTextStyle: .headline))
+        XCTAssertEqual(allowButton.titleLabel?.textColor, .white)
     }
 
     /// 如果允许按钮重复触发请求，或权限结果不是允许时无法进入主界面，此测试应失败。

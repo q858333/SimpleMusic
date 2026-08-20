@@ -64,6 +64,37 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
+    func testDeletionMessageUsesFirstPositionalObjectParameterAcrossLanguages() throws {
+        let expected = ["%1$@"]
+
+        for language in ["en", "zh-Hans", "zh-Hant"] {
+            let copy = try XCTUnwrap(
+                stringsDictionary(language: language, name: "Localizable")["deletion.message"]
+            )
+            XCTAssertEqual(formatSpecifiers(in: copy), expected, "language=\(language)")
+        }
+    }
+
+    func testTrackAccessibilityFormatUsesLocalizedPunctuationAcrossLanguages() throws {
+        let expectedByLanguage = [
+            "en": "Title, Artist, Album",
+            "zh-Hans": "Title，Artist，Album",
+            "zh-Hant": "Title，Artist，Album",
+        ]
+
+        for language in ["en", "zh-Hans", "zh-Hant"] {
+            XCTAssertEqual(
+                L10n.formatted(
+                    "track.accessibility",
+                    bundle: try languageBundle(language),
+                    arguments: ["Title", "Artist", "Album"]
+                ),
+                expectedByLanguage[language],
+                "language=\(language)"
+            )
+        }
+    }
+
     func testTrackCountUsesActiveLanguagePluralFormat() throws {
         let expectedByLanguage = [
             "en": ["1 song", "2 songs"],
@@ -163,6 +194,20 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(
             try unlocalizedHanStringLiterals(in: source, relativePath: "Diagnostics.swift"),
             ["Diagnostics.swift:7 \"用户文案\""]
+        )
+    }
+
+    func testScannerSkipsBlockAndNestedBlockCommentsButFindsFollowingLiteral() throws {
+        let source = ####"""
+        /* “普通注释” #"伪原始字面量"#
+           /* ##"嵌套注释中文"## */
+        */
+        let visible = #"注释后用户文案"#
+        """####
+
+        XCTAssertEqual(
+            try unlocalizedHanStringLiterals(in: source, relativePath: "BlockComments.swift"),
+            ["BlockComments.swift:4 #\"注释后用户文案\"#"]
         )
     }
 

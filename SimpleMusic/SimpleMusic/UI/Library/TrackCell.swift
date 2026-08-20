@@ -111,7 +111,7 @@ final class TrackCell: UICollectionViewCell {
             downloadedLabel.isHidden = true
             moreButton.isHidden = true
         }
-        accessibilityLabel = [track.title, track.artist, track.album].joined(separator: "，")
+        accessibilityLabel = L10n.format("track.accessibility", track.title, track.artist, track.album)
     }
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
