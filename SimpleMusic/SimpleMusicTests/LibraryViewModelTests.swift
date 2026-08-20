@@ -670,11 +670,12 @@ final class LibraryViewModelTests: XCTestCase {
 
     /// 如果资料库首页仍写死中文标题、入口名称或辅助功能提示，此测试应失败。
     @MainActor
-    func testLibraryHomeUsesLocalizedTitleCategoriesAndNavigationActions() throws {
+    func testLibraryHomeUsesLocalizedTitleCategoriesAndNavigationActions() async throws {
         let viewModel = LibraryViewModel(
-            library: StubMusicLibrary(tracks: []),
+            library: StubMusicLibrary(tracks: [makeTrack(id: "recent")]),
             localStore: StubLocalMusicStore(tracks: [])
         )
+        await viewModel.reload()
         let library = LibraryViewController(viewModel: viewModel)
         let navigation = UINavigationController(rootViewController: library)
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
@@ -707,6 +708,16 @@ final class LibraryViewModelTests: XCTestCase {
                     .contains(L10n.text(expected))
             )
         }
+
+        let header = library.collectionView(
+            collection,
+            viewForSupplementaryElementOfKind: UICollectionView.elementKindSectionHeader,
+            at: IndexPath(item: 0, section: 1)
+        )
+        let headerText = try XCTUnwrap(
+            allSubviews(in: header).compactMap { ($0 as? UILabel)?.text }.first
+        )
+        XCTAssertEqual(headerText, L10n.text("library.recently_added"))
     }
 
     /// 如果资料库来源错误或空资料库提示没有走资源键，此测试应失败。
@@ -757,6 +768,34 @@ final class LibraryViewModelTests: XCTestCase {
                 .compactMap { ($0 as? UILabel)?.text }
                 .contains(L10n.text("library.permission_required"))
         )
+    }
+
+    /// 如果真实资料库空状态单元格绕过资源键，此测试应失败。
+    @MainActor
+    func testLibraryEmptyStateUsesLocalizedMessage() async throws {
+        let viewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: []),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        await viewModel.reload()
+        let library = LibraryViewController(viewModel: viewModel)
+        let navigation = UINavigationController(rootViewController: library)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = navigation
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        navigation.view.layoutIfNeeded()
+        let collection = try XCTUnwrap(
+            allSubviews(in: library.view).compactMap { $0 as? UICollectionView }.first
+        )
+        let emptyNotice = try XCTUnwrap(
+            collection.cellForItem(at: IndexPath(item: 0, section: 0))
+        )
+        let emptyText = try XCTUnwrap(
+            allSubviews(in: emptyNotice).compactMap { ($0 as? UILabel)?.text }.first
+        )
+
+        XCTAssertEqual(emptyText, L10n.text("library.empty"))
     }
 
     /// 如果任一资料库列表把标题或操作按钮固定为中文，此测试应失败。
