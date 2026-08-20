@@ -45,7 +45,7 @@ final class PadRootViewController: UIViewController {
         let container = UIView()
         container.accessibilityIdentifier = "pad.playerGuide"
         container.isAccessibilityElement = true
-        container.accessibilityLabel = "点击迷你播放器，从右侧打开播放页面"
+        container.accessibilityLabel = L10n.text("pad.player_guide")
         container.accessibilityTraits = .staticText
         container.isHidden = true
 
@@ -61,7 +61,7 @@ final class PadRootViewController: UIViewController {
         icon.setContentHuggingPriority(.required, for: .horizontal)
 
         let label = UILabel()
-        label.text = "点击迷你播放器，从右侧打开播放页面"
+        label.text = L10n.text("pad.player_guide")
         label.font = .preferredFont(forTextStyle: .footnote)
         label.adjustsFontForContentSizeCategory = true
         label.textColor = .label
@@ -222,17 +222,17 @@ final class PadRootViewController: UIViewController {
         let titleLabel = UILabel()
         titleLabel.font = .preferredFont(forTextStyle: .title2)
         titleLabel.adjustsFontForContentSizeCategory = true
-        titleLabel.text = "听见"
+        titleLabel.text = L10n.text("app.name")
         titleLabel.textColor = .label
 
-        let libraryButton = sidebarButton(title: "资料库", symbol: "music.note.list")
+        let libraryButton = sidebarButton(title: L10n.text("tab.library"), symbol: "music.note.list")
         libraryButton.accessibilityIdentifier = "pad.library"
         libraryButton.addAction(UIAction { [weak self] _ in
             guard let navigation = self?.libraryNavigationController else { return }
             self?.showContent(navigation)
         }, for: .touchUpInside)
 
-        let searchButton = sidebarButton(title: "搜索", symbol: "magnifyingglass")
+        let searchButton = sidebarButton(title: L10n.text("tab.search"), symbol: "magnifyingglass")
         searchButton.accessibilityIdentifier = "pad.search"
         searchButton.addAction(UIAction { [weak self] _ in
             guard let navigation = self?.searchNavigationController else { return }

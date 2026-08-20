@@ -693,6 +693,8 @@ final class LibraryViewModelTests: XCTestCase {
 
         XCTAssertTrue(library.viewModel === viewModel)
         XCTAssertTrue(search.viewModel === viewModel)
+        XCTAssertEqual(controllers[0].tabBarItem.title, L10n.text("tab.library"))
+        XCTAssertEqual(controllers[1].tabBarItem.title, L10n.text("tab.search"))
     }
 
     /// 如果歌曲行偏离 46pt 封面、两行动态字体、下载标识或更多操作触控目标，此测试应失败。
@@ -1110,7 +1112,13 @@ final class LibraryViewModelTests: XCTestCase {
         let searchButton = try XCTUnwrap(
             findView(identifier: "pad.search", in: sut.view) as? UIButton
         )
+        let sidebar = try XCTUnwrap(findView(identifier: "pad.sidebar", in: sut.view))
+        let sidebarText = allSubviews(in: sidebar)
+            .compactMap { ($0 as? UILabel)?.text }
 
+        XCTAssertEqual(libraryButton.configuration?.title, L10n.text("tab.library"))
+        XCTAssertEqual(searchButton.configuration?.title, L10n.text("tab.search"))
+        XCTAssertTrue(sidebarText.contains(L10n.text("app.name")))
         searchButton.sendActions(for: .touchUpInside)
         let search = try XCTUnwrap(descendant(SearchViewController.self, in: sut))
         XCTAssertTrue(search.viewModel === viewModel)

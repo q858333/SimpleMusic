@@ -92,12 +92,12 @@ final class MainTabBarController: UITabBarController {
         searchViewController.onDeleteTrack = onDeleteTrack
 
         libraryViewController.tabBarItem = UITabBarItem(
-            title: "资料库",
+            title: L10n.text("tab.library"),
             image: UIImage(systemName: "music.note.list"),
             selectedImage: nil
         )
         searchViewController.tabBarItem = UITabBarItem(
-            title: "搜索",
+            title: L10n.text("tab.search"),
             image: UIImage(systemName: "magnifyingglass"),
             selectedImage: nil
         )

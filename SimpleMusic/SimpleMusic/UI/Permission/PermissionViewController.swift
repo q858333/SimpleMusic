@@ -26,10 +26,11 @@ final class PermissionViewController: UIViewController {
 
     private let titleLabel: UILabel = {
         let label = UILabel()
+        label.accessibilityIdentifier = "permission.title"
         label.font = .preferredFont(forTextStyle: .largeTitle)
         label.adjustsFontForContentSizeCategory = true
         label.numberOfLines = 0
-        label.text = "访问你的音乐资料库"
+        label.text = L10n.text("permission.title")
         return label
     }()
 
@@ -39,12 +40,12 @@ final class PermissionViewController: UIViewController {
         label.adjustsFontForContentSizeCategory = true
         label.numberOfLines = 0
         label.textColor = .secondaryLabel
-        label.text = "允许「听见」读取设备上的歌曲、专辑和艺人信息。你的音乐仅在本机浏览和播放。"
+        label.text = L10n.text("permission.body")
         return label
     }()
 
     private lazy var allowButton: UIButton = makeButton(
-        title: "允许访问",
+        title: L10n.text("permission.allow"),
         backgroundColor: Theme.accent,
         titleColor: .white,
         identifier: "permission.allow",
@@ -52,7 +53,7 @@ final class PermissionViewController: UIViewController {
     )
 
     private lazy var deferButton: UIButton = makeButton(
-        title: "暂不",
+        title: L10n.text("permission.not_now"),
         backgroundColor: .systemGray5,
         titleColor: .label,
         identifier: "permission.defer",
@@ -65,7 +66,7 @@ final class PermissionViewController: UIViewController {
         label.adjustsFontForContentSizeCategory = true
         label.numberOfLines = 0
         label.textColor = .secondaryLabel
-        label.text = "也可以在资料库中粘贴 .mp3、.m4a 或 .wav 音频直链，下载后与系统歌曲一起播放。"
+        label.text = L10n.text("permission.direct_link_note")
         return label
     }()
 
@@ -142,9 +143,10 @@ final class PermissionViewController: UIViewController {
         identifier: String,
         action: Selector
     ) -> UIButton {
-        let button = UIButton(type: .system)
+        var configuration = UIButton.Configuration.plain()
+        configuration.title = title
+        let button = UIButton(configuration: configuration)
         button.accessibilityIdentifier = identifier
-        button.setTitle(title, for: .normal)
         button.setTitleColor(titleColor, for: .normal)
         button.titleLabel?.font = .preferredFont(forTextStyle: .headline)
         button.titleLabel?.adjustsFontForContentSizeCategory = true

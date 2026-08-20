@@ -482,7 +482,7 @@ final class PlayerViewControllerTests: XCTestCase {
 
         XCTAssertFalse(guide.isHidden)
         XCTAssertTrue(guide.isAccessibilityElement)
-        XCTAssertEqual(guide.accessibilityLabel, "点击迷你播放器，从右侧打开播放页面")
+        XCTAssertEqual(guide.accessibilityLabel, L10n.text("pad.player_guide"))
 
         let openButton = try XCTUnwrap(
             findView(identifier: "mini.open", in: pad.view) as? UIButton

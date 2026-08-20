@@ -235,6 +235,26 @@ final class AppCoordinatorTests: XCTestCase {
         }
     }
 
+    /// 如果首次授权页仍保留固定语言文案，系统语言切换后会显示错误语言。
+    @MainActor
+    func testPermissionScreenUsesLocalizedCopy() throws {
+        let controller = PermissionViewController(onAllow: {}, onDefer: {})
+        controller.loadViewIfNeeded()
+        let title = try XCTUnwrap(
+            findView(identifier: "permission.title", in: controller.view) as? UILabel
+        )
+        let allowButton = try XCTUnwrap(
+            findView(identifier: "permission.allow", in: controller.view) as? UIButton
+        )
+        let copy = allViews(in: controller.view)
+            .compactMap { ($0 as? UILabel)?.text }
+
+        XCTAssertEqual(title.text, L10n.text("permission.title"))
+        XCTAssertEqual(allowButton.configuration?.title, L10n.text("permission.allow"))
+        XCTAssertTrue(copy.contains(L10n.text("permission.body")))
+        XCTAssertTrue(copy.contains(L10n.text("permission.direct_link_note")))
+    }
+
     /// 如果允许按钮重复触发请求，或权限结果不是允许时无法进入主界面，此测试应失败。
     @MainActor
     func testAllowRequestsOnceAndEntersMainOnceRegardlessOfResult() async throws {
