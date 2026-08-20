@@ -5,7 +5,7 @@ import UIKit
 final class AboutViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "关于听见"
+        title = L10n.text("about.page_title")
         view.backgroundColor = Theme.background
         buildInterface()
     }
@@ -17,9 +17,9 @@ final class AboutViewController: UIViewController {
         icon.isAccessibilityElement = false
         icon.snp.makeConstraints { make in make.size.equalTo(72) }
 
-        let name = makeLabel("听见", style: .title1, color: .label)
+        let name = makeLabel(L10n.text("app.name"), style: .title1, color: .label)
         name.textAlignment = .center
-        let subtitle = makeLabel("为设备音乐与本地下载而设计", style: .body, color: .secondaryLabel)
+        let subtitle = makeLabel(L10n.text("about.subtitle"), style: .body, color: .secondaryLabel)
         subtitle.textAlignment = .center
 
         let hero = UIStackView(arrangedSubviews: [icon, name, subtitle])
@@ -28,12 +28,12 @@ final class AboutViewController: UIViewController {
         hero.spacing = 8
 
         let format = card(
-            title: "MP3、M4A、WAV",
-            detail: "仅支持直接指向音频文件的下载链接。"
+            title: L10n.text("about.formats_title"),
+            detail: L10n.text("about.formats_detail")
         )
         let privacy = card(
-            title: "隐私原则",
-            detail: "音乐仅保存在本机，不上传、不进行云同步；不解析音乐平台或普通网页链接。"
+            title: L10n.text("about.privacy_title"),
+            detail: L10n.text("about.privacy_detail")
         )
         let content = UIStackView(arrangedSubviews: [hero, format, privacy])
         content.axis = .vertical

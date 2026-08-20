@@ -62,7 +62,7 @@ final class SettingsViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "设置"
+        title = L10n.text("settings.title")
         view.backgroundColor = Theme.background
         buildInterface()
         syncValues()
@@ -79,7 +79,7 @@ final class SettingsViewController: UIViewController {
         content.spacing = 24
 
         let permissionButton = makeRowButton(identifier: "settings.permission")
-        let permissionTitle = makeLabel("音乐资料库权限", style: .body)
+        let permissionTitle = makeLabel(L10n.text("settings.permission_title"), style: .body)
         permissionStatusLabel.font = .preferredFont(forTextStyle: .subheadline)
         permissionStatusLabel.adjustsFontForContentSizeCategory = true
         permissionStatusLabel.textColor = .secondaryLabel
@@ -92,32 +92,32 @@ final class SettingsViewController: UIViewController {
         permissionButton.addAction(UIAction { [weak self] _ in self?.handlePermission() }, for: .touchUpInside)
 
         cellularSwitch.accessibilityIdentifier = "settings.cellular"
-        cellularSwitch.accessibilityLabel = "允许蜂窝网络下载"
+        cellularSwitch.accessibilityLabel = L10n.text("settings.cellular_title")
         cellularSwitch.addAction(UIAction { [weak self] _ in
             guard let self else { return }
             settingsStore.allowsCellularDownloads = cellularSwitch.isOn
         }, for: .valueChanged)
         let cellularRow = makeSwitchRow(
-            title: "允许蜂窝网络下载",
-            detail: "关闭时仅通过 Wi-Fi 下载音频",
+            title: L10n.text("settings.cellular_title"),
+            detail: L10n.text("settings.cellular_detail"),
             toggle: cellularSwitch
         )
 
         autoPlaySwitch.accessibilityIdentifier = "settings.autoplay"
-        autoPlaySwitch.accessibilityLabel = "下载后自动播放"
+        autoPlaySwitch.accessibilityLabel = L10n.text("settings.autoplay_title")
         autoPlaySwitch.addAction(UIAction { [weak self] _ in
             guard let self else { return }
             settingsStore.autoPlayAfterDownload = autoPlaySwitch.isOn
         }, for: .valueChanged)
         let autoPlayRow = makeSwitchRow(
-            title: "下载后自动播放",
-            detail: "关闭时完成后停留在下载结果页",
+            title: L10n.text("settings.autoplay_title"),
+            detail: L10n.text("settings.autoplay_detail"),
             toggle: autoPlaySwitch
         )
 
         let aboutButton = makeRowButton(identifier: "settings.about")
         var configuration = UIButton.Configuration.plain()
-        configuration.title = "关于听见"
+        configuration.title = L10n.text("settings.about_title")
         configuration.image = UIImage(systemName: "chevron.right")
         configuration.imagePlacement = .trailing
         configuration.imagePadding = 12
@@ -131,9 +131,9 @@ final class SettingsViewController: UIViewController {
             self?.showAbout()
         }, for: .touchUpInside)
 
-        content.addArrangedSubview(section(title: "资料库", rows: [permissionButton]))
-        content.addArrangedSubview(section(title: "下载", rows: [cellularRow, autoPlayRow]))
-        content.addArrangedSubview(section(title: "关于", rows: [aboutButton]))
+        content.addArrangedSubview(section(title: L10n.text("settings.section.library"), rows: [permissionButton]))
+        content.addArrangedSubview(section(title: L10n.text("settings.section.download"), rows: [cellularRow, autoPlayRow]))
+        content.addArrangedSubview(section(title: L10n.text("settings.section.about"), rows: [aboutButton]))
 
         let scrollView = UIScrollView()
         scrollView.alwaysBounceVertical = true
@@ -236,11 +236,11 @@ final class SettingsViewController: UIViewController {
 
     private static func permissionText(_ status: MPMediaLibraryAuthorizationStatus) -> String {
         switch status {
-        case .notDetermined: return "未请求"
-        case .denied: return "已拒绝 · 去设置"
-        case .restricted: return "受限 · 去设置"
-        case .authorized: return "已允许"
-        @unknown default: return "去设置"
+        case .notDetermined: return L10n.text("settings.permission_status.not_requested")
+        case .denied: return L10n.text("settings.permission_status.denied")
+        case .restricted: return L10n.text("settings.permission_status.restricted")
+        case .authorized: return L10n.text("settings.permission_status.authorized")
+        @unknown default: return L10n.text("settings.permission_status.open_settings")
         }
     }
 }

@@ -366,7 +366,7 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         XCTAssertTrue(releasedWhileSuspended)
     }
 
-    func testSettingsUsesRealSwitchesDynamicTypeAndAboutContentIsFixed() throws {
+    func testSettingsAndAboutUseLocalizedCopy() throws {
         let defaults = UserDefaults(suiteName: #function)!
         defaults.removePersistentDomain(forName: #function)
         let settings = makeSettingsController(
@@ -379,13 +379,56 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
 
         XCTAssertEqual(switches.count, 2)
         XCTAssertTrue(labels.filter { $0.text != nil }.allSatisfy(\.adjustsFontForContentSizeCategory))
+        XCTAssertEqual(settings.title, L10n.text("settings.title"))
+        XCTAssertEqual(switches[0].accessibilityLabel, L10n.text("settings.cellular_title"))
+        XCTAssertEqual(switches[1].accessibilityLabel, L10n.text("settings.autoplay_title"))
+        XCTAssertTrue(labelTexts(in: settings).contains(L10n.text("settings.permission_title")))
+        XCTAssertTrue(labelTexts(in: settings).contains(L10n.text("settings.cellular_title")))
+        XCTAssertTrue(labelTexts(in: settings).contains(L10n.text("settings.cellular_detail")))
+        XCTAssertTrue(labelTexts(in: settings).contains(L10n.text("settings.autoplay_title")))
+        XCTAssertTrue(labelTexts(in: settings).contains(L10n.text("settings.autoplay_detail")))
+        XCTAssertTrue(labelTexts(in: settings).contains(L10n.text("settings.section.library")))
+        XCTAssertTrue(labelTexts(in: settings).contains(L10n.text("settings.section.download")))
+        XCTAssertTrue(labelTexts(in: settings).contains(L10n.text("settings.section.about")))
+        XCTAssertEqual(
+            buttonTitle("settings.about", in: settings),
+            L10n.text("settings.about_title")
+        )
 
         let about = AboutViewController()
         about.loadViewIfNeeded()
-        let copy = allViews(in: about.view).compactMap { ($0 as? UILabel)?.text }.joined(separator: " ")
-        XCTAssertTrue(copy.contains("MP3、M4A、WAV"))
-        XCTAssertTrue(copy.contains("仅保存在本机"))
-        XCTAssertTrue(copy.contains("不解析音乐平台或普通网页链接"))
+        let copy = labelTexts(in: about).joined(separator: " ")
+        XCTAssertEqual(about.title, L10n.text("about.page_title"))
+        XCTAssertTrue(copy.contains(L10n.text("app.name")))
+        XCTAssertTrue(copy.contains(L10n.text("about.subtitle")))
+        XCTAssertTrue(copy.contains(L10n.text("about.formats_title")))
+        XCTAssertTrue(copy.contains(L10n.text("about.formats_detail")))
+        XCTAssertTrue(copy.contains(L10n.text("about.privacy_title")))
+        XCTAssertTrue(copy.contains(L10n.text("about.privacy_detail")))
+    }
+
+    func testPermissionStatusesUseLocalizedCopy() throws {
+        let cases: [(MPMediaLibraryAuthorizationStatus, String)] = [
+            (.notDetermined, "settings.permission_status.not_requested"),
+            (.denied, "settings.permission_status.denied"),
+            (.restricted, "settings.permission_status.restricted"),
+            (.authorized, "settings.permission_status.authorized")
+        ]
+
+        for (status, key) in cases {
+            let defaults = UserDefaults(suiteName: "\(#function).\(key)")!
+            defaults.removePersistentDomain(forName: "\(#function).\(key)")
+            let settings = makeSettingsController(
+                settingsStore: SettingsStore(defaults: defaults),
+                status: { status }
+            )
+            settings.loadViewIfNeeded()
+
+            XCTAssertTrue(
+                labelTexts(in: settings).contains(L10n.text(key)),
+                "status=\(status)"
+            )
+        }
     }
 
     func testSettingsActionPushesOnlyOnceOnPhoneAndPad() throws {
