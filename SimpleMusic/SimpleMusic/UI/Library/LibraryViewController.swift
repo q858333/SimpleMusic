@@ -26,7 +26,7 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "资料库"
+        title = L10n.text("library.title")
         navigationController?.navigationBar.prefersLargeTitles = true
         view.backgroundColor = Theme.background
         configureNavigationActions()
@@ -38,12 +38,12 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
     private func configureNavigationActions() {
         let download = navigationButton(
             symbol: "arrow.down.circle",
-            accessibilityLabel: "下载音频",
+            accessibilityLabel: L10n.text("library.download_audio"),
             action: { [weak self] in self?.onDownload?() }
         )
         let settings = navigationButton(
             symbol: "gearshape",
-            accessibilityLabel: "打开设置",
+            accessibilityLabel: L10n.text("library.open_settings"),
             action: { [weak self] in self?.onSettings?() }
         )
         navigationItem.rightBarButtonItems = [
@@ -207,7 +207,7 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
         next.append(
             Section(
                 kind: .recentAdded,
-                title: "最近添加",
+                title: L10n.text("library.recently_added"),
                 items: viewModel.tracks.map(Item.track)
             )
         )
@@ -223,7 +223,7 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
         }
         switch viewModel.systemState {
         case .permissionRequired:
-            messages.append(.notice("尚未授权系统音乐资料库，只显示已下载歌曲。", "lock"))
+            messages.append(.notice(L10n.text("library.permission_required"), "lock"))
         case let .failed(message):
             messages.append(.notice(message, "exclamationmark.triangle"))
         default:
@@ -237,7 +237,7 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
         let finishedLocal = ![.idle, .loading].contains(viewModel.localState)
         if viewModel.tracks.isEmpty, finishedSystem, finishedLocal {
             messages.append(
-                .notice("资料库还是空的\n授权系统音乐或添加本地音频后会显示在这里。", "music.note.list")
+                .notice(L10n.text("library.empty"), "music.note.list")
             )
         }
         return messages

@@ -123,7 +123,7 @@ final class LibraryViewModel {
             try await deleteLocalTrack(track)
             await requestReload()
         } catch {
-            localState = .failed("无法删除本地歌曲")
+            localState = .failed(L10n.text("library.error.delete_local"))
         }
     }
 
@@ -151,7 +151,7 @@ final class LibraryViewModel {
             systemTracks = loadedTracks
             systemState = loadedTracks.isEmpty ? .empty : .loaded
         case .failure:
-            systemState = .failed("无法读取系统音乐资料库")
+            systemState = .failed(L10n.text("library.error.system"))
         }
         publishMergedTracks()
     }
@@ -167,7 +167,7 @@ final class LibraryViewModel {
             localState = loadedTracks.isEmpty ? .empty : .loaded
         case let .failure(error):
             localState = .failed(
-                (error as? LocalizedError)?.errorDescription ?? "无法读取已下载歌曲"
+                (error as? LocalizedError)?.errorDescription ?? L10n.text("library.error.local")
             )
         }
         publishMergedTracks()

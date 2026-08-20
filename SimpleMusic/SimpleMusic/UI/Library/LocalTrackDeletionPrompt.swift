@@ -8,12 +8,12 @@ extension UIViewController {
     ) {
         guard case .downloaded = track.source, presentedViewController == nil else { return }
         let alert = UIAlertController(
-            title: "删除本地歌曲？",
-            message: "将从此设备移除“\(track.title)”及其下载记录。",
+            title: L10n.text("deletion.title"),
+            message: L10n.format("deletion.message", track.title),
             preferredStyle: .alert
         )
-        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        alert.addAction(UIAlertAction(title: "删除", style: .destructive) { _ in onConfirm() })
+        alert.addAction(UIAlertAction(title: L10n.text("common.cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.text("common.delete"), style: .destructive) { _ in onConfirm() })
         present(alert, animated: true)
     }
 }

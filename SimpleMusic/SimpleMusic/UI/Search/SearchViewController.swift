@@ -39,7 +39,7 @@ final class SearchViewController: UIViewController,
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "搜索"
+        title = L10n.text("search.title")
         view.backgroundColor = Theme.background
         buildSearch()
         buildCollectionView()
@@ -86,8 +86,8 @@ final class SearchViewController: UIViewController,
     private func buildSearch() {
         searchController.searchResultsUpdater = self
         searchController.obscuresBackgroundDuringPresentation = false
-        searchController.searchBar.placeholder = "搜索歌曲、艺人或专辑"
-        searchController.searchBar.accessibilityLabel = "搜索歌曲、艺人或专辑"
+        searchController.searchBar.placeholder = L10n.text("search.placeholder")
+        searchController.searchBar.accessibilityLabel = L10n.text("search.placeholder")
         navigationItem.searchController = searchController
         navigationItem.hidesSearchBarWhenScrolling = false
         definesPresentationContext = true
@@ -143,7 +143,7 @@ final class SearchViewController: UIViewController,
         collectionView?.reloadData()
         let query = searchController.searchBar.text?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        emptyLabel.text = query.isEmpty ? "资料库中没有歌曲" : "没有找到匹配的歌曲"
+        emptyLabel.text = L10n.text(query.isEmpty ? "search.empty_library" : "search.no_results")
         emptyLabel.isHidden = !results.isEmpty
     }
 }

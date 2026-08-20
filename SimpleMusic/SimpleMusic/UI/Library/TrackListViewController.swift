@@ -12,10 +12,10 @@ enum LibraryCategory: Equatable {
 
     var title: String {
         switch self {
-        case .songs: return "歌曲"
-        case .albums: return "专辑"
-        case .artists: return "艺人"
-        case .downloaded: return "已下载"
+        case .songs: return L10n.text("category.songs")
+        case .albums: return L10n.text("category.albums")
+        case .artists: return L10n.text("category.artists")
+        case .downloaded: return L10n.text("category.downloaded")
         case let .album(name), let .artist(name): return name
         }
     }
@@ -173,15 +173,15 @@ final class TrackListViewController: UIViewController, UICollectionViewDataSourc
     }
 
     private func buildActionsAndList() {
-        let playAll = actionButton(title: "全部播放", identifier: "list.playAll") { [weak self] in
+        let playAll = actionButton(title: L10n.text("list.play_all"), identifier: "list.playAll") { [weak self] in
             guard let self, !tracks.isEmpty else { return }
             onPlay?(tracks, 0)
         }
-        let shuffle = actionButton(title: "随机播放", identifier: "list.shuffle") { [weak self] in
+        let shuffle = actionButton(title: L10n.text("list.shuffle"), identifier: "list.shuffle") { [weak self] in
             guard let self, !tracks.isEmpty else { return }
             onPlay?(tracks.shuffled(), 0)
         }
-        let sort = actionButton(title: "排序", identifier: "list.sort") { [weak self] in
+        let sort = actionButton(title: L10n.text("list.sort"), identifier: "list.sort") { [weak self] in
             self?.sortTracks()
         }
         let actions = UIStackView(arrangedSubviews: [playAll, shuffle, sort])
@@ -225,6 +225,7 @@ final class TrackListViewController: UIViewController, UICollectionViewDataSourc
         configuration.baseForegroundColor = Theme.accent
         let button = UIButton(configuration: configuration)
         button.accessibilityIdentifier = identifier
+        button.accessibilityLabel = title
         button.addAction(UIAction { _ in action() }, for: .touchUpInside)
         return button
     }
@@ -327,7 +328,8 @@ private final class TrackGroupCell: UICollectionViewCell {
 
     func configure(title: String, count: Int) {
         titleLabel.text = title
-        countLabel.text = "\(count) 首"
-        accessibilityLabel = "\(title)，\(count) 首"
+        let countText = L10n.plural("tracks.count", count: count)
+        countLabel.text = countText
+        accessibilityLabel = L10n.format("track_group.accessibility", title, countText)
     }
 }

@@ -42,7 +42,7 @@ final class TrackCell: UICollectionViewCell {
     private let downloadedLabel: UILabel = {
         let label = InsetLabel(contentInsets: UIEdgeInsets(top: 4, left: 7, bottom: 4, right: 7))
         label.accessibilityIdentifier = "track.downloaded"
-        label.text = "已下载"
+        label.text = L10n.text("track.downloaded")
         label.font = .preferredFont(forTextStyle: .caption2)
         label.adjustsFontForContentSizeCategory = true
         label.textColor = .secondaryLabel
@@ -58,7 +58,7 @@ final class TrackCell: UICollectionViewCell {
     private lazy var moreButton: UIButton = {
         let button = UIButton(type: .system)
         button.accessibilityIdentifier = "track.more"
-        button.accessibilityLabel = "更多操作"
+        button.accessibilityLabel = L10n.text("track.more_actions")
         button.setImage(UIImage(systemName: "ellipsis"), for: .normal)
         button.tintColor = .secondaryLabel
         button.addAction(UIAction { [weak self] _ in

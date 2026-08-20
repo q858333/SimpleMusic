@@ -668,6 +668,225 @@ final class LibraryViewModelTests: XCTestCase {
         XCTAssertEqual(selectedIndex, 1)
     }
 
+    /// 如果资料库首页仍写死中文标题、入口名称或辅助功能提示，此测试应失败。
+    @MainActor
+    func testLibraryHomeUsesLocalizedTitleCategoriesAndNavigationActions() throws {
+        let viewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: []),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        let library = LibraryViewController(viewModel: viewModel)
+        let navigation = UINavigationController(rootViewController: library)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = navigation
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        navigation.view.layoutIfNeeded()
+        let collection = try XCTUnwrap(
+            allSubviews(in: library.view).compactMap { $0 as? UICollectionView }.first
+        )
+
+        XCTAssertEqual(library.title, L10n.text("library.title"))
+        let navigationLabels = library.navigationItem.rightBarButtonItems?
+            .compactMap { $0.customView?.accessibilityLabel } ?? []
+        XCTAssertTrue(navigationLabels.contains(L10n.text("library.download_audio")))
+        XCTAssertTrue(navigationLabels.contains(L10n.text("library.open_settings")))
+
+        let categories: [(LibraryCategory, String)] = [
+            (.songs, "category.songs"),
+            (.albums, "category.albums"),
+            (.artists, "category.artists"),
+            (.downloaded, "category.downloaded")
+        ]
+        for (index, (_, expected)) in categories.enumerated() {
+            let cell = try XCTUnwrap(collection.cellForItem(at: IndexPath(item: index, section: 0)))
+            XCTAssertEqual(cell.accessibilityLabel, L10n.text(expected))
+            XCTAssertTrue(
+                allSubviews(in: cell)
+                    .compactMap { ($0 as? UILabel)?.text }
+                    .contains(L10n.text(expected))
+            )
+        }
+    }
+
+    /// 如果资料库来源错误或空资料库提示没有走资源键，此测试应失败。
+    @MainActor
+    func testLibraryStatusMessagesUseLocalizedResources() async throws {
+        let systemErrorViewModel = LibraryViewModel(
+            library: StubMusicLibrary(error: TestError.unavailable),
+            localStore: StubLocalMusicStore(error: TestError.unavailable)
+        )
+        await systemErrorViewModel.reload()
+        XCTAssertEqual(systemErrorViewModel.systemState, .failed(L10n.text("library.error.system")))
+        XCTAssertEqual(systemErrorViewModel.localState, .failed(L10n.text("library.error.local")))
+
+        let deletionViewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: []),
+            localStore: StubLocalMusicStore(tracks: []),
+            deleteLocalTrack: { _ in throw TestError.unavailable }
+        )
+        await deletionViewModel.deleteDownloadedTrack(
+            makeTrack(id: "delete-error", source: .downloaded(fileName: "delete-error.m4a"))
+        )
+        XCTAssertEqual(
+            deletionViewModel.localState,
+            .failed(L10n.text("library.error.delete_local"))
+        )
+
+        let permissionViewModel = LibraryViewModel(
+            library: StubMusicLibrary(
+                tracks: [],
+                authorizationStatus: .denied
+            ),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        await permissionViewModel.reload()
+        let library = LibraryViewController(viewModel: permissionViewModel)
+        let navigation = UINavigationController(rootViewController: library)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = navigation
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        navigation.view.layoutIfNeeded()
+        let collection = try XCTUnwrap(
+            allSubviews(in: library.view).compactMap { $0 as? UICollectionView }.first
+        )
+        let notice = try XCTUnwrap(collection.cellForItem(at: IndexPath(item: 0, section: 0)))
+        XCTAssertTrue(
+            allSubviews(in: notice)
+                .compactMap { ($0 as? UILabel)?.text }
+                .contains(L10n.text("library.permission_required"))
+        )
+    }
+
+    /// 如果任一资料库列表把标题或操作按钮固定为中文，此测试应失败。
+    @MainActor
+    func testTrackListsUseLocalizedCategoryTitlesAndActions() throws {
+        let categories: [(LibraryCategory, String)] = [
+            (.songs, "category.songs"),
+            (.albums, "category.albums"),
+            (.artists, "category.artists"),
+            (.downloaded, "category.downloaded")
+        ]
+
+        for (category, key) in categories {
+            let list = TrackListViewController(
+                category: category,
+                tracks: [makeTrack(id: key)],
+                onPlay: { _, _ in }
+            )
+            list.loadViewIfNeeded()
+
+            XCTAssertEqual(list.title, L10n.text(key))
+            XCTAssertEqual(
+                (try XCTUnwrap(findView(identifier: "list.playAll", in: list.view) as? UIButton))
+                    .configuration?.title,
+                L10n.text("list.play_all")
+            )
+            XCTAssertEqual(
+                (try XCTUnwrap(findView(identifier: "list.shuffle", in: list.view) as? UIButton))
+                    .configuration?.title,
+                L10n.text("list.shuffle")
+            )
+            XCTAssertEqual(
+                (try XCTUnwrap(findView(identifier: "list.sort", in: list.view) as? UIButton))
+                    .configuration?.title,
+                L10n.text("list.sort")
+            )
+        }
+    }
+
+    /// 如果分组歌曲数量或 VoiceOver 标签绕过 stringsdict/位置参数，此测试应失败。
+    @MainActor
+    func testTrackGroupCellUsesLocalizedPluralCountAndAccessibilityFormat() throws {
+        let album = "Localized Album"
+        let list = TrackListViewController(
+            category: .albums,
+            tracks: [
+                makeTrack(id: "one", album: album),
+                makeTrack(id: "two", album: album)
+            ],
+            onPlay: { _, _ in }
+        )
+        let navigation = UINavigationController(rootViewController: list)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = navigation
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        navigation.view.layoutIfNeeded()
+        let collection = try XCTUnwrap(
+            allSubviews(in: list.view).compactMap { $0 as? UICollectionView }.first
+        )
+        let cell = try XCTUnwrap(collection.cellForItem(at: IndexPath(item: 0, section: 0)))
+        let countText = L10n.plural("tracks.count", count: 2)
+
+        XCTAssertTrue(
+            allSubviews(in: cell).compactMap { ($0 as? UILabel)?.text }.contains(countText)
+        )
+        XCTAssertEqual(
+            cell.accessibilityLabel,
+            L10n.format("track_group.accessibility", album, countText)
+        )
+    }
+
+    /// 如果删除确认弹窗的标题、歌曲名消息或操作仍写死中文，此测试应失败。
+    @MainActor
+    func testLocalTrackDeletionPromptUsesLocalizedAlertContent() throws {
+        let host = UIViewController()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        let track = makeTrack(
+            id: "delete-prompt",
+            title: "A Local Song",
+            source: .downloaded(fileName: "delete-prompt.m4a")
+        )
+
+        UIView.setAnimationsEnabled(false)
+        defer { UIView.setAnimationsEnabled(true) }
+        host.presentLocalTrackDeletionPrompt(for: track, onConfirm: {})
+
+        let alert = try XCTUnwrap(host.presentedViewController as? UIAlertController)
+        XCTAssertEqual(alert.title, L10n.text("deletion.title"))
+        XCTAssertEqual(alert.message, L10n.format("deletion.message", track.title))
+        XCTAssertEqual(alert.actions.map(\.title), [
+            L10n.text("common.cancel"),
+            L10n.text("common.delete")
+        ])
+    }
+
+    /// 如果搜索标题、占位提示、空状态或其 VoiceOver 文案仍固定为中文，此测试应失败。
+    @MainActor
+    func testSearchUsesLocalizedTitlePlaceholderAndEmptyStates() async throws {
+        let emptyViewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: []),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        let emptySearch = SearchViewController(viewModel: emptyViewModel)
+        emptySearch.loadViewIfNeeded()
+        let emptyLabel = try XCTUnwrap(findView(identifier: "search.empty", in: emptySearch.view) as? UILabel)
+
+        XCTAssertEqual(emptySearch.title, L10n.text("search.title"))
+        XCTAssertEqual(emptySearch.searchController.searchBar.placeholder, L10n.text("search.placeholder"))
+        XCTAssertEqual(emptySearch.searchController.searchBar.accessibilityLabel, L10n.text("search.placeholder"))
+        XCTAssertEqual(emptyLabel.text, L10n.text("search.empty_library"))
+
+        let populatedViewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: [makeTrack(id: "searchable")]),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        await populatedViewModel.reload()
+        let populatedSearch = SearchViewController(viewModel: populatedViewModel)
+        populatedSearch.loadViewIfNeeded()
+        populatedSearch.searchController.searchBar.text = "not found"
+        populatedSearch.updateSearchResults(for: populatedSearch.searchController)
+        let noResultsLabel = try XCTUnwrap(
+            findView(identifier: "search.empty", in: populatedSearch.view) as? UILabel
+        )
+        XCTAssertEqual(noResultsLabel.text, L10n.text("search.no_results"))
+    }
+
     /// 如果手机资料库与搜索各自创建 ViewModel，此测试应失败。
     @MainActor
     func testMainTabsShareInjectedLibraryViewModel() throws {
@@ -722,6 +941,8 @@ final class LibraryViewModelTests: XCTestCase {
         XCTAssertTrue(title.adjustsFontForContentSizeCategory)
         XCTAssertTrue(subtitle.adjustsFontForContentSizeCategory)
         XCTAssertFalse(badge.isHidden)
+        XCTAssertEqual((badge as? UILabel)?.text, L10n.text("track.downloaded"))
+        XCTAssertEqual(more.accessibilityLabel, L10n.text("track.more_actions"))
         XCTAssertTrue(more.constraints.contains {
             $0.firstAttribute == .width && $0.relation == .greaterThanOrEqual && $0.constant >= 44
         })
@@ -804,7 +1025,7 @@ final class LibraryViewModelTests: XCTestCase {
         XCTAssertEqual(library.numberOfSections(in: collection), 2)
         library.collectionView(collection, didSelectItemAt: IndexPath(item: 0, section: 0))
         XCTAssertFalse(navigation.topViewController === library)
-        XCTAssertEqual(navigation.topViewController?.title, "歌曲")
+        XCTAssertEqual(navigation.topViewController?.title, L10n.text("category.songs"))
     }
 
     /// Play All、Shuffle 与 Sort 必须作用于当前共享队列，而不是只显示静态按钮。
