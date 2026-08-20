@@ -45,6 +45,17 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(L10n.format("player.queue.position", 2, 4), "Track 2 of 4")
     }
 
+    func testDownloadSuccessMessageUsesFirstPositionalObjectParameterAcrossLanguages() throws {
+        let expected = ["%1$@"]
+
+        for language in ["en", "zh-Hans", "zh-Hant"] {
+            let copy = try XCTUnwrap(
+                stringsDictionary(language: language, name: "Localizable")["download.success_message"]
+            )
+            XCTAssertEqual(formatSpecifiers(in: copy), expected, "language=\(language)")
+        }
+    }
+
     func testTrackCountUsesEnglishPluralAndChineseCountFormat() throws {
         XCTAssertEqual(L10n.plural("tracks.count", count: 1, bundle: try languageBundle("en")), "1 song")
         XCTAssertEqual(L10n.plural("tracks.count", count: 2, bundle: try languageBundle("en")), "2 songs")
@@ -116,6 +127,15 @@ final class LocalizationTests: XCTestCase {
             }
             let typeRange = Range(match.range(at: 2), in: value)!
             return "\(index):\(value[typeRange])"
+        }
+    }
+
+    private func formatSpecifiers(in value: String) -> [String] {
+        let pattern = "%(?:(?:\\d+)\\$)?[@d]"
+        let expression = try! NSRegularExpression(pattern: pattern)
+        let range = NSRange(value.startIndex..., in: value)
+        return expression.matches(in: value, range: range).compactMap { match in
+            Range(match.range, in: value).map { String(value[$0]) }
         }
     }
 }

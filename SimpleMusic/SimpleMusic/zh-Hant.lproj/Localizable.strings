@@ -71,7 +71,7 @@
 "download.failure_title" = "下載失敗";
 "download.reenter" = "重新輸入";
 "download.progress_saving" = "%1$d%% · 正在儲存到本機資料庫";
-"download.success_message" = "%@ 已下載完成，可離線播放。";
+"download.success_message" = "%1$@ 已下載完成，可離線播放。";
 "download.error.invalid_url" = "請輸入有效的音訊檔案直連。";
 "download.error.unsupported_url" = "僅支援直接指向 MP3、M4A 或 WAV 檔案的連結。";
 "download.error.invalid_payload" = "連結未傳回可下載的音訊檔案。";

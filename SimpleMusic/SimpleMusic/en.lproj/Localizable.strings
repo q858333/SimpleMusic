@@ -71,7 +71,7 @@
 "download.failure_title" = "Download Failed";
 "download.reenter" = "Enter Another Link";
 "download.progress_saving" = "%1$d%% · Saving to your local library";
-"download.success_message" = "%@ has been downloaded and is available offline.";
+"download.success_message" = "%1$@ has been downloaded and is available offline.";
 "download.error.invalid_url" = "Enter a valid direct audio file link.";
 "download.error.unsupported_url" = "Only direct MP3, M4A, or WAV file links are supported.";
 "download.error.invalid_payload" = "The link did not return a downloadable audio file.";
