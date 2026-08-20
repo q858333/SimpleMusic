@@ -58,7 +58,7 @@ final class MiniPlayerView: UIView {
     private lazy var openButton: UIButton = {
         let button = UIButton(type: .custom)
         button.accessibilityIdentifier = "mini.open"
-        button.accessibilityLabel = "打开正在播放"
+        button.accessibilityLabel = L10n.text("player.open_now_playing")
         button.addAction(UIAction { [weak self] _ in
             self?.onOpenPlayer()
         }, for: .touchUpInside)
@@ -189,7 +189,9 @@ final class MiniPlayerView: UIView {
         }
 
         let isPlaying = snapshot.status == .playing
-        toggleButton.accessibilityLabel = isPlaying ? "暂停" : "播放"
+        toggleButton.accessibilityLabel = isPlaying
+            ? L10n.text("common.pause")
+            : L10n.text("common.play")
         toggleButton.setImage(
             UIImage(systemName: isPlaying ? "pause.fill" : "play.fill"),
             for: .normal

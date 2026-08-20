@@ -13,7 +13,7 @@ final class NowPlayingPanelController: UIViewController {
     private lazy var maskButton: UIButton = {
         let button = UIButton(type: .custom)
         button.accessibilityIdentifier = "player.mask"
-        button.accessibilityLabel = "关闭正在播放"
+        button.accessibilityLabel = L10n.text("player.close_now_playing")
         button.backgroundColor = UIColor.black.withAlphaComponent(0.22)
         button.addAction(UIAction { [weak self] _ in
             self?.dismissPanel()

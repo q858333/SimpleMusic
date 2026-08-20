@@ -69,7 +69,7 @@ final class PlayerViewController: UIViewController {
     private lazy var closeButton: UIButton = {
         let button = UIButton(type: .system)
         button.accessibilityIdentifier = "player.close"
-        button.accessibilityLabel = "关闭正在播放"
+        button.accessibilityLabel = L10n.text("player.close_now_playing")
         button.setImage(UIImage(systemName: "chevron.down"), for: .normal)
         button.tintColor = .label
         button.addAction(UIAction { [weak self] _ in
@@ -86,7 +86,7 @@ final class PlayerViewController: UIViewController {
     private lazy var progressSlider: UISlider = {
         let slider = UISlider()
         slider.accessibilityIdentifier = "player.progress"
-        slider.accessibilityLabel = "播放进度"
+        slider.accessibilityLabel = L10n.text("player.progress")
         slider.minimumTrackTintColor = Theme.accent
         slider.minimumValue = 0
         slider.maximumValue = 1
@@ -102,20 +102,20 @@ final class PlayerViewController: UIViewController {
 
     private lazy var previousButton = controlButton(
         identifier: "player.previous",
-        label: "上一首",
+        label: L10n.text("player.previous"),
         symbol: "backward.fill",
         action: onPrevious
     )
     private lazy var toggleButton = controlButton(
         identifier: "player.toggle",
-        label: "播放",
+        label: L10n.text("common.play"),
         symbol: "play.fill",
         prominent: true,
         action: onTogglePlay
     )
     private lazy var nextButton = controlButton(
         identifier: "player.next",
-        label: "下一首",
+        label: L10n.text("player.next"),
         symbol: "forward.fill",
         action: onNext
     )
@@ -187,12 +187,22 @@ final class PlayerViewController: UIViewController {
             make.width.equalTo(scrollView.frameLayoutGuide)
         }
 
-        let headerLabel = Self.label(style: .caption1, weight: .semibold, color: .secondaryLabel)
-        headerLabel.text = "正在播放"
+        let headerLabel = Self.label(
+            identifier: "player.nowPlaying",
+            style: .caption1,
+            weight: .semibold,
+            color: .secondaryLabel
+        )
+        headerLabel.text = L10n.text("player.now_playing")
         headerLabel.textAlignment = .center
 
-        let queueTitle = Self.label(style: .headline, weight: .semibold, color: .secondaryLabel)
-        queueTitle.text = "接下来播放"
+        let queueTitle = Self.label(
+            identifier: "player.upNext",
+            style: .headline,
+            weight: .semibold,
+            color: .secondaryLabel
+        )
+        queueTitle.text = L10n.text("player.up_next")
 
         let controls = UIStackView(arrangedSubviews: [previousButton, toggleButton, nextButton])
         controls.axis = .horizontal
@@ -314,7 +324,9 @@ final class PlayerViewController: UIViewController {
         }
 
         let isPlaying = snapshot.status == .playing
-        toggleButton.accessibilityLabel = isPlaying ? "暂停" : "播放"
+        toggleButton.accessibilityLabel = isPlaying
+            ? L10n.text("common.pause")
+            : L10n.text("common.play")
         toggleButton.setImage(
             UIImage(systemName: isPlaying ? "pause.fill" : "play.fill"),
             for: .normal
@@ -338,18 +350,18 @@ final class PlayerViewController: UIViewController {
     private func renderEmptyState() {
         // 空快照结束上一首的本地拖动，迟到 touchUp 不得作用于下一首。
         isSeeking = false
-        titleLabel.text = "尚未播放"
-        artistLabel.text = "选择一首歌曲开始播放"
+        titleLabel.text = L10n.text("player.empty_title")
+        artistLabel.text = L10n.text("player.empty_subtitle")
         albumLabel.text = nil
         artworkView.image = nil
         artworkView.contentMode = .scaleAspectFill
         placeholderArtworkView.isHidden = false
         elapsedLabel.text = "0:00"
         remainingLabel.text = "-0:00"
-        queuePositionLabel.text = "队列为空"
+        queuePositionLabel.text = L10n.text("player.queue_empty")
         progressSlider.maximumValue = 1
         progressSlider.value = 0
-        toggleButton.accessibilityLabel = "播放"
+        toggleButton.accessibilityLabel = L10n.text("common.play")
         toggleButton.setImage(UIImage(systemName: "play.fill"), for: .normal)
         setPlaybackControlsEnabled(false)
     }
@@ -450,9 +462,9 @@ final class PlayerViewController: UIViewController {
     }
 
     private static func queueText(_ snapshot: PlaybackSnapshot) -> String {
-        guard snapshot.queueCount > 0 else { return "队列为空" }
-        guard let index = snapshot.queueIndex else { return "队列已结束" }
-        return "第 \(index + 1) / \(snapshot.queueCount) 首"
+        guard snapshot.queueCount > 0 else { return L10n.text("player.queue_empty") }
+        guard let index = snapshot.queueIndex else { return L10n.text("player.queue_ended") }
+        return L10n.format("player.queue.position", index + 1, snapshot.queueCount)
     }
 }
 

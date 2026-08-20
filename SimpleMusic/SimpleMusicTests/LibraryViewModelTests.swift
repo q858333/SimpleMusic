@@ -539,11 +539,11 @@ final class LibraryViewModelTests: XCTestCase {
         )
         await waitUntil { !sut.isHidden }
         let toggle = try XCTUnwrap(findView(identifier: "mini.toggle", in: sut) as? UIButton)
-        XCTAssertEqual(toggle.accessibilityLabel, "暂停")
+        XCTAssertEqual(toggle.accessibilityLabel, L10n.text("common.pause"))
 
         snapshots.send(PlaybackSnapshot(status: .failed("失败"), track: track))
-        await waitUntil { toggle.accessibilityLabel == "播放" }
-        XCTAssertEqual(toggle.accessibilityLabel, "播放")
+        await waitUntil { toggle.accessibilityLabel == L10n.text("common.play") }
+        XCTAssertEqual(toggle.accessibilityLabel, L10n.text("common.play"))
     }
 
     /// 如果按钮和整行点击没有调用各自的上层动作，此测试应失败。
@@ -559,6 +559,8 @@ final class LibraryViewModelTests: XCTestCase {
         )
         let toggle = try XCTUnwrap(findView(identifier: "mini.toggle", in: sut) as? UIButton)
         let open = try XCTUnwrap(findView(identifier: "mini.open", in: sut) as? UIButton)
+
+        XCTAssertEqual(open.accessibilityLabel, L10n.text("player.open_now_playing"))
 
         toggle.sendActions(for: .touchUpInside)
         open.sendActions(for: .touchUpInside)

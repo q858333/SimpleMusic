@@ -14,12 +14,26 @@ final class PlayerViewControllerTests: XCTestCase {
         await Task.yield()
 
         let title = try XCTUnwrap(findView(identifier: "player.title", in: sut.view) as? UILabel)
+        let subtitle = try XCTUnwrap(findView(identifier: "player.artist", in: sut.view) as? UILabel)
+        let nowPlaying = try XCTUnwrap(findView(identifier: "player.nowPlaying", in: sut.view) as? UILabel)
+        let upNext = try XCTUnwrap(findView(identifier: "player.upNext", in: sut.view) as? UILabel)
+        let queue = try XCTUnwrap(findView(identifier: "player.queue", in: sut.view) as? UILabel)
+        let close = try XCTUnwrap(findView(identifier: "player.close", in: sut.view) as? UIButton)
         let slider = try XCTUnwrap(findView(identifier: "player.progress", in: sut.view) as? UISlider)
         let previous = try XCTUnwrap(findView(identifier: "player.previous", in: sut.view) as? UIButton)
         let toggle = try XCTUnwrap(findView(identifier: "player.toggle", in: sut.view) as? UIButton)
         let next = try XCTUnwrap(findView(identifier: "player.next", in: sut.view) as? UIButton)
 
-        XCTAssertEqual(title.text, "尚未播放")
+        XCTAssertEqual(title.text, L10n.text("player.empty_title"))
+        XCTAssertEqual(subtitle.text, L10n.text("player.empty_subtitle"))
+        XCTAssertEqual(nowPlaying.text, L10n.text("player.now_playing"))
+        XCTAssertEqual(upNext.text, L10n.text("player.up_next"))
+        XCTAssertEqual(queue.text, L10n.text("player.queue_empty"))
+        XCTAssertEqual(close.accessibilityLabel, L10n.text("player.close_now_playing"))
+        XCTAssertEqual(slider.accessibilityLabel, L10n.text("player.progress"))
+        XCTAssertEqual(previous.accessibilityLabel, L10n.text("player.previous"))
+        XCTAssertEqual(toggle.accessibilityLabel, L10n.text("common.play"))
+        XCTAssertEqual(next.accessibilityLabel, L10n.text("player.next"))
         XCTAssertFalse(slider.isEnabled)
         XCTAssertFalse(previous.isEnabled)
         XCTAssertFalse(toggle.isEnabled)
@@ -58,8 +72,8 @@ final class PlayerViewControllerTests: XCTestCase {
         XCTAssertEqual(album.text, track.album)
         XCTAssertEqual(elapsed.text, "1:28")
         XCTAssertEqual(remaining.text, "-2:48")
-        XCTAssertEqual(toggle.accessibilityLabel, "暂停")
-        XCTAssertEqual(queue.text, "第 2 / 4 首")
+        XCTAssertEqual(toggle.accessibilityLabel, L10n.text("common.pause"))
+        XCTAssertEqual(queue.text, L10n.format("player.queue.position", 2, 4))
     }
 
     /// 如果无封面歌曲仍使用偏小的系统符号，或占位图没有居中放大，此测试应失败。
@@ -137,7 +151,7 @@ final class PlayerViewControllerTests: XCTestCase {
         let next = try XCTUnwrap(findView(identifier: "player.next", in: sut.view) as? UIButton)
 
         XCTAssertEqual(title.text, track.title)
-        XCTAssertEqual(queue.text, "队列已结束")
+        XCTAssertEqual(queue.text, L10n.text("player.queue_ended"))
         XCTAssertFalse(slider.isEnabled)
         XCTAssertFalse(previous.isEnabled)
         XCTAssertFalse(toggle.isEnabled)
@@ -232,7 +246,7 @@ final class PlayerViewControllerTests: XCTestCase {
             queueCount: 1
         ))
         let toggle = try XCTUnwrap(findView(identifier: "player.toggle", in: sut.view) as? UIButton)
-        await waitUntil { toggle.accessibilityLabel == "播放" }
+        await waitUntil { toggle.accessibilityLabel == L10n.text("common.play") }
 
         XCTAssertEqual(slider.value, 44, accuracy: 0.01)
         slider.sendActions(for: .touchUpInside)
@@ -336,7 +350,7 @@ final class PlayerViewControllerTests: XCTestCase {
         slider.value = 44
         slider.sendActions(for: .valueChanged)
         snapshots.send(PlaybackSnapshot())
-        await waitUntil { title.text == "尚未播放" }
+        await waitUntil { title.text == L10n.text("player.empty_title") }
         snapshots.send(PlaybackSnapshot(
             status: .playing,
             track: nextTrack,
@@ -449,6 +463,7 @@ final class PlayerViewControllerTests: XCTestCase {
         XCTAssertEqual(surface.frame.maxX, panel.view.bounds.width, accuracy: 0.5)
 
         let mask = try XCTUnwrap(findView(identifier: "player.mask", in: panel.view) as? UIButton)
+        XCTAssertEqual(mask.accessibilityLabel, L10n.text("player.close_now_playing"))
         mask.sendActions(for: .touchUpInside)
         XCTAssertFalse(panel.isPresented)
     }
