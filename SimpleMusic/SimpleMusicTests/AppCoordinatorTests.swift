@@ -407,6 +407,41 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertEqual(Theme.accent, UIColor(red: 250 / 255, green: 45 / 255, blue: 72 / 255, alpha: 1))
     }
 
+    /// 如果启动页退回空白页面、品牌图缺失或不再居中，此测试应失败。
+    @MainActor
+    func testLaunchScreenShowsCenteredDiskToneBrand() throws {
+        let storyboard = UIStoryboard(
+            name: "LaunchScreen",
+            bundle: Bundle(for: AppDelegate.self)
+        )
+        let controller = try XCTUnwrap(storyboard.instantiateInitialViewController())
+        controller.loadViewIfNeeded()
+        controller.view.frame = CGRect(x: 0, y: 0, width: 834, height: 1194)
+        controller.view.layoutIfNeeded()
+
+        let icon = try XCTUnwrap(
+            findView(identifier: "launch.icon", in: controller.view) as? UIImageView
+        )
+        let title = try XCTUnwrap(
+            findView(identifier: "launch.title", in: controller.view) as? UILabel
+        )
+
+        XCTAssertEqual(controller.view.backgroundColor, .white)
+        XCTAssertNotNil(icon.image)
+        XCTAssertEqual(icon.bounds.size, CGSize(width: 80, height: 80))
+        XCTAssertEqual(title.text, "DiskTone")
+        XCTAssertTrue(title.font.fontDescriptor.symbolicTraits.contains(.traitBold))
+        let iconFrame = icon.convert(icon.bounds, to: controller.view)
+        let titleFrame = title.convert(title.bounds, to: controller.view)
+        XCTAssertEqual(iconFrame.midX, controller.view.bounds.midX, accuracy: 0.5)
+        XCTAssertEqual(titleFrame.midX, controller.view.bounds.midX, accuracy: 0.5)
+        XCTAssertEqual(
+            (iconFrame.minY + titleFrame.maxY) / 2,
+            controller.view.bounds.midY,
+            accuracy: 0.5
+        )
+    }
+
     /// 如果正式入口恢复 Main storyboard 或任一设备支持横屏，此测试应失败。
     func testSourceConfigurationIsPortraitOnlyAndStoryboardFree() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)

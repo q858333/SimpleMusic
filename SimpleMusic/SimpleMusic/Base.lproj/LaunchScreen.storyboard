@@ -13,7 +13,33 @@
                     <view key="view" contentMode="scaleToFill" id="Ze5-6b-2t3">
                         <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
-                        <color key="backgroundColor" xcode11CocoaTouchSystemColor="systemBackgroundColor" cocoaTouchSystemColor="whiteColor"/>
+                        <subviews>
+                            <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" alignment="center" spacing="16" translatesAutoresizingMaskIntoConstraints="NO" id="s9C-kH-R8R">
+                                <rect key="frame" x="147.5" y="270" width="80" height="127"/>
+                                <subviews>
+                                    <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" image="music-note-red" translatesAutoresizingMaskIntoConstraints="NO" id="LJb-VM-CfP">
+                                        <rect key="frame" x="0.0" y="0.0" width="80" height="80"/>
+                                        <accessibility key="accessibilityConfiguration" identifier="launch.icon"/>
+                                        <constraints>
+                                            <constraint firstAttribute="width" constant="80" id="FZL-fm-ugK"/>
+                                            <constraint firstAttribute="height" constant="80" id="SHW-8x-rND"/>
+                                        </constraints>
+                                    </imageView>
+                                    <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="DiskTone" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" translatesAutoresizingMaskIntoConstraints="NO" id="d3Q-uW-UwY">
+                                        <rect key="frame" x="0.0" y="96" width="80" height="31"/>
+                                        <accessibility key="accessibilityConfiguration" identifier="launch.title"/>
+                                        <fontDescription key="fontDescription" type="system" weight="bold" pointSize="22"/>
+                                        <color key="textColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                                        <nil key="highlightedColor"/>
+                                    </label>
+                                </subviews>
+                            </stackView>
+                        </subviews>
+                        <color key="backgroundColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                        <constraints>
+                            <constraint firstItem="s9C-kH-R8R" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="QXP-xe-uSr"/>
+                            <constraint firstItem="s9C-kH-R8R" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="xjk-CR-Qxq"/>
+                        </constraints>
                         <viewLayoutGuide key="safeArea" id="6Tk-OE-BBY"/>
                     </view>
                 </viewController>
@@ -22,4 +48,7 @@
             <point key="canvasLocation" x="53" y="375"/>
         </scene>
     </scenes>
+    <resources>
+        <image name="music-note-red" width="40" height="40"/>
+    </resources>
 </document>
