@@ -84,7 +84,7 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "从链接下载音频"
+        title = L10n.text("download.title")
         view.backgroundColor = Theme.background
         buildInterface()
         renderState()
@@ -108,7 +108,7 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
     }
 
     private func buildInterface() {
-        let closeButton = makeButton(title: "取消", identifier: "download.close")
+        let closeButton = makeButton(title: L10n.text("common.cancel"), identifier: "download.close")
         closeButton.addAction(UIAction { [weak self] _ in
             self?.cancelAndDismiss()
         }, for: .touchUpInside)
@@ -120,8 +120,8 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
         configureStack(failureStateView, identifier: "download.state.failure")
 
         urlField.accessibilityIdentifier = "download.url"
-        urlField.accessibilityLabel = "音频文件直链"
-        urlField.placeholder = "粘贴 .mp3、.m4a 或 .wav 直链"
+        urlField.accessibilityLabel = L10n.text("download.url_accessibility")
+        urlField.placeholder = L10n.text("download.url_placeholder")
         urlField.keyboardType = .URL
         urlField.returnKeyType = .go
         urlField.autocapitalizationType = .none
@@ -134,52 +134,52 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
         urlField.snp.makeConstraints { make in make.height.greaterThanOrEqualTo(48) }
 
         let help = makeLabel(
-            "仅支持直接指向音频文件的链接，不解析音乐平台或普通网页链接。",
+            L10n.text("download.direct_only"),
             style: .footnote,
             color: .secondaryLabel
         )
-        let submit = makeButton(title: "下载到资料库", identifier: "download.submit", primary: true)
+        let submit = makeButton(title: L10n.text("download.submit"), identifier: "download.submit", primary: true)
         submit.addAction(UIAction { [weak self] _ in self?.startDownload() }, for: .touchUpInside)
         inputStateView.addArrangedSubview(urlField)
         inputStateView.addArrangedSubview(help)
         inputStateView.addArrangedSubview(submit)
 
-        let downloadingTitle = makeLabel("正在下载", style: .title3)
+        let downloadingTitle = makeLabel(L10n.text("download.downloading"), style: .title3)
         progressView.progressTintColor = Theme.accent
         progressLabel.font = .preferredFont(forTextStyle: .footnote)
         progressLabel.adjustsFontForContentSizeCategory = true
         progressLabel.textColor = .secondaryLabel
-        let cancelDownload = makeButton(title: "取消下载", identifier: "download.cancel")
+        let cancelDownload = makeButton(title: L10n.text("download.cancel"), identifier: "download.cancel")
         cancelDownload.addAction(UIAction { [weak self] _ in self?.cancelAndDismiss() }, for: .touchUpInside)
         downloadingStateView.addArrangedSubview(downloadingTitle)
         downloadingStateView.addArrangedSubview(progressView)
         downloadingStateView.addArrangedSubview(progressLabel)
         downloadingStateView.addArrangedSubview(cancelDownload)
 
-        let successTitle = makeLabel("已添加到资料库", style: .title2)
+        let successTitle = makeLabel(L10n.text("download.success_title"), style: .title2)
         successTitle.textAlignment = .center
         successLabel.font = .preferredFont(forTextStyle: .body)
         successLabel.adjustsFontForContentSizeCategory = true
         successLabel.textAlignment = .center
         successLabel.textColor = .secondaryLabel
         successLabel.numberOfLines = 0
-        let play = makeButton(title: "立即播放", identifier: "download.play", primary: true)
+        let play = makeButton(title: L10n.text("download.play_now"), identifier: "download.play", primary: true)
         play.addAction(UIAction { [weak self] _ in self?.playDownloadedTrack() }, for: .touchUpInside)
-        let done = makeButton(title: "完成", identifier: "download.done")
+        let done = makeButton(title: L10n.text("common.done"), identifier: "download.done")
         done.addAction(UIAction { [weak self] _ in self?.dismiss(animated: true) }, for: .touchUpInside)
         successStateView.addArrangedSubview(successTitle)
         successStateView.addArrangedSubview(successLabel)
         successStateView.addArrangedSubview(play)
         successStateView.addArrangedSubview(done)
 
-        let failureTitle = makeLabel("下载失败", style: .title2)
+        let failureTitle = makeLabel(L10n.text("download.failure_title"), style: .title2)
         failureTitle.textAlignment = .center
         failureLabel.font = .preferredFont(forTextStyle: .body)
         failureLabel.adjustsFontForContentSizeCategory = true
         failureLabel.textAlignment = .center
         failureLabel.textColor = .secondaryLabel
         failureLabel.numberOfLines = 0
-        let retry = makeButton(title: "重新输入", identifier: "download.retry", primary: true)
+        let retry = makeButton(title: L10n.text("download.reenter"), identifier: "download.retry", primary: true)
         retry.addAction(UIAction { [weak self] _ in self?.state = .input }, for: .touchUpInside)
         failureStateView.addArrangedSubview(failureTitle)
         failureStateView.addArrangedSubview(failureLabel)
@@ -243,10 +243,13 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
             visible = downloadingStateView
             let clamped = min(max(progress, 0), 1)
             progressView.progress = Float(clamped)
-            progressLabel.text = "\(Int((clamped * 100).rounded()))% · 正在保存到本地资料库"
+            progressLabel.text = L10n.format(
+                "download.progress_saving",
+                Int((clamped * 100).rounded())
+            )
         case let .success(track):
             visible = successStateView
-            successLabel.text = "\(track.title) 已下载完成，可离线播放。"
+            successLabel.text = L10n.format("download.success_message", track.title)
         case let .failure(message):
             visible = failureStateView
             failureLabel.text = message
@@ -264,7 +267,7 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
         guard let text,
               let url = URL(string: text),
               url.scheme != nil else {
-            state = .failure(message: "请输入有效的音频文件直链。")
+            state = .failure(message: L10n.text("download.error.invalid_url"))
             return
         }
 
@@ -334,11 +337,11 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
         if let downloadError = error as? DownloadError {
             switch downloadError {
             case .unsupportedURL:
-                return "仅支持直接指向 MP3、M4A 或 WAV 文件的链接。"
+                return L10n.text("download.error.unsupported_url")
             case .unsupportedResponse:
-                return "链接未返回可下载的音频文件。"
+                return L10n.text("download.error.invalid_payload")
             }
         }
-        return "下载未完成，请检查链接和网络后重试。"
+        return L10n.text("download.error.generic")
     }
 }

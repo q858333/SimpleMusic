@@ -4,8 +4,67 @@ import UIKit
 import XCTest
 @testable import SimpleMusic
 
+private enum DownloadTestError: Error {
+    case failed
+}
+
 @MainActor
 final class DownloadAndSettingsFlowTests: XCTestCase {
+    func testDownloadSheetUsesLocalizedInputAndTerminalStateCopy() throws {
+        let operation = ControlledDownloadOperation()
+        let harness = makeDownloadHarness(operation: operation)
+        let controller = harness.controller
+        controller.loadViewIfNeeded()
+        let field = try XCTUnwrap(view("download.url", in: controller.view) as? UITextField)
+
+        XCTAssertEqual(controller.title, L10n.text("download.title"))
+        XCTAssertEqual(field.accessibilityLabel, L10n.text("download.url_accessibility"))
+        XCTAssertEqual(field.placeholder, L10n.text("download.url_placeholder"))
+        XCTAssertEqual(buttonTitle("download.close", in: controller), L10n.text("common.cancel"))
+        XCTAssertEqual(buttonTitle("download.submit", in: controller), L10n.text("download.submit"))
+        XCTAssertTrue(labelTexts(in: controller).contains(L10n.text("download.direct_only")))
+
+        try setURL("https://example.com/song.mp3", in: controller)
+        try tap("download.submit", in: controller)
+        waitUntil { operation.callCount == 1 }
+        operation.reportProgress(0.5, at: 0)
+
+        XCTAssertTrue(labelTexts(in: controller).contains(L10n.text("download.downloading")))
+        XCTAssertTrue(labelTexts(in: controller).contains(L10n.format("download.progress_saving", 50)))
+        XCTAssertEqual(buttonTitle("download.cancel", in: controller), L10n.text("download.cancel"))
+
+        let finished = track(id: "finished")
+        operation.succeed(track: finished, at: 0)
+        waitUntil { controller.state == .success(finished) }
+
+        XCTAssertTrue(labelTexts(in: controller).contains(L10n.text("download.success_title")))
+        XCTAssertTrue(labelTexts(in: controller).contains(L10n.format("download.success_message", finished.title)))
+        XCTAssertEqual(buttonTitle("download.play", in: controller), L10n.text("download.play_now"))
+        XCTAssertEqual(buttonTitle("download.done", in: controller), L10n.text("common.done"))
+    }
+
+    func testDownloadSheetMapsEveryUserFacingErrorToLocalizedCopy() throws {
+        try assertDownloadFailure(
+            url: "not a valid audio URL",
+            expected: L10n.text("download.error.invalid_url")
+        )
+        try assertDownloadFailure(
+            url: "https://example.com/song.mp3",
+            error: DownloadError.unsupportedURL,
+            expected: L10n.text("download.error.unsupported_url")
+        )
+        try assertDownloadFailure(
+            url: "https://example.com/song.mp3",
+            error: DownloadError.unsupportedResponse,
+            expected: L10n.text("download.error.invalid_payload")
+        )
+        try assertDownloadFailure(
+            url: "https://example.com/song.mp3",
+            error: DownloadTestError.failed,
+            expected: L10n.text("download.error.generic")
+        )
+    }
+
     func testDownloadStateShowsOnlyItsMatchingView() throws {
         let harness = makeDownloadHarness()
         let controller = harness.controller
@@ -522,6 +581,44 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         field.text = value
     }
 
+    private func assertDownloadFailure(
+        url: String,
+        error: Error? = nil,
+        expected: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let harness = makeDownloadHarness { _, _ in
+            if let error { throw error }
+            return Self.track(id: "unused")
+        }
+        harness.controller.loadViewIfNeeded()
+        try setURL(url, in: harness.controller)
+        try tap("download.submit", in: harness.controller)
+        waitUntil {
+            if case .failure = harness.controller.state { return true }
+            return false
+        }
+
+        XCTAssertTrue(
+            labelTexts(in: harness.controller).contains(expected),
+            "expected failure copy: \(expected)",
+            file: file,
+            line: line
+        )
+        XCTAssertTrue(
+            labelTexts(in: harness.controller).contains(L10n.text("download.failure_title")),
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            buttonTitle("download.retry", in: harness.controller),
+            L10n.text("download.reenter"),
+            file: file,
+            line: line
+        )
+    }
+
     private func tap(_ identifier: String, in controller: UIViewController) throws {
         let button = try XCTUnwrap(view(identifier, in: controller.view) as? UIButton)
         button.sendActions(for: .touchUpInside)
@@ -647,6 +744,16 @@ private func view(_ identifier: String, in root: UIView) -> UIView? {
 
 private func allViews(in root: UIView) -> [UIView] {
     [root] + root.subviews.flatMap(allViews)
+}
+
+private func labelTexts(in controller: UIViewController) -> [String] {
+    allViews(in: controller.view).compactMap { ($0 as? UILabel)?.text }
+}
+
+private func buttonTitle(_ identifier: String, in controller: UIViewController) -> String? {
+    let button = (view(identifier, in: controller.view) as? UIButton)
+        ?? (controller.navigationItem.leftBarButtonItem?.customView as? UIButton)
+    return button?.configuration?.title
 }
 
 private func hasMinimumHeight(_ value: CGFloat, view: UIView) -> Bool {
