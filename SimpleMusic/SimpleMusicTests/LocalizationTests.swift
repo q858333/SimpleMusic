@@ -101,37 +101,68 @@ final class LocalizationTests: XCTestCase {
             .compactMap { $0 as? URL }
             .filter { $0.pathExtension == "swift" }
             .sorted { $0.path < $1.path }
-        let literalExpression = try NSRegularExpression(pattern: #"\"(?:\\.|[^\"\\])*\""#)
-        let allowedCallExpression = try NSRegularExpression(
-            pattern: #"\b(?:NSLog|fatalError|preconditionFailure)\s*\(\s*$"#
-        )
         var failures: [String] = []
 
         for sourceURL in sourceURLs {
             let source = try String(contentsOf: sourceURL, encoding: .utf8)
-            for (offset, line) in source.components(separatedBy: .newlines).enumerated() {
-                let lineRange = NSRange(line.startIndex..., in: line)
-                for match in literalExpression.matches(in: line, range: lineRange) {
-                    guard let literalRange = Range(match.range, in: line) else { continue }
-                    let literal = String(line[literalRange])
-                    guard containsHanCharacter(literal) else { continue }
-
-                    let prefix = String(line[..<literalRange.lowerBound])
-                    let prefixRange = NSRange(prefix.startIndex..., in: prefix)
-                    guard allowedCallExpression.firstMatch(in: prefix, range: prefixRange) == nil else { continue }
-
-                    let relativePath = sourceURL.path.replacingOccurrences(
-                        of: projectRoot.path + "/",
-                        with: ""
-                    )
-                    failures.append("\(relativePath):\(offset + 1) \(literal)")
-                }
-            }
+            let relativePath = sourceURL.path.replacingOccurrences(
+                of: projectRoot.path + "/",
+                with: ""
+            )
+            failures.append(contentsOf: try unlocalizedHanStringLiterals(in: source, relativePath: relativePath))
         }
 
         XCTAssertTrue(
             failures.isEmpty,
             "Unlocalized production Swift Han string literals:\n\(failures.joined(separator: "\n"))"
+        )
+    }
+
+    func testScannerFindsHanAcrossSwiftStringLiteralFormsAndInterpolation() throws {
+        let source = ####"""
+        let single = "单行"
+        let multiline = """
+        普通多行
+        """
+        let rawOne = #"""
+        原始一层
+        """#
+        let rawTwo = ##"""
+        原始二层
+        """##
+        let interpolated = "prefix \(value) 插值片段"
+        let rawInterpolated = #"prefix \#(value) 原始插值片段"#
+        NSLog("\(userFacing("嵌套用户文案"))")
+        """####
+
+        XCTAssertEqual(
+            try unlocalizedHanStringLiterals(in: source, relativePath: "Fixtures.swift"),
+            [
+                "Fixtures.swift:1 \"单行\"",
+                "Fixtures.swift:2 \"\"\"\n普通多行\n\"\"\"",
+                "Fixtures.swift:5 #\"\"\"\n原始一层\n\"\"\"#",
+                "Fixtures.swift:8 ##\"\"\"\n原始二层\n\"\"\"##",
+                "Fixtures.swift:11 \"prefix \\(value) 插值片段\"",
+                "Fixtures.swift:12 #\"prefix \\#(value) 原始插值片段\"#",
+                "Fixtures.swift:13 \"嵌套用户文案\"",
+            ]
+        )
+    }
+
+    func testScannerAllowsOnlyDirectDiagnosticCallLiterals() throws {
+        let source = ###"""
+        NSLog("诊断")
+        fatalError(#"致命诊断"#)
+        preconditionFailure("""
+        前置条件诊断
+        """)
+        // NSLog("注释不是字符串")
+        let visible = NSLog(makeMessage("用户文案"))
+        """###
+
+        XCTAssertEqual(
+            try unlocalizedHanStringLiterals(in: source, relativePath: "Diagnostics.swift"),
+            ["Diagnostics.swift:7 \"用户文案\""]
         )
     }
 
@@ -203,6 +234,219 @@ final class LocalizationTests: XCTestCase {
             default:
                 return false
             }
+        }
+    }
+
+    private func unlocalizedHanStringLiterals(in source: String, relativePath: String) throws -> [String] {
+        var scanner = SwiftHanStringScanner(
+            source: source,
+            relativePath: relativePath,
+            containsHanCharacter: containsHanCharacter
+        )
+        return scanner.scan()
+    }
+
+    private struct SwiftHanStringScanner {
+        private enum Token: Equatable {
+            case identifier(String)
+            case leftParenthesis
+            case dot
+            case other
+        }
+
+        private let characters: [Character]
+        private let relativePath: String
+        private let containsHanCharacter: (String) -> Bool
+        private var index = 0
+        private var line = 1
+        private var failures: [String] = []
+
+        init(
+            source: String,
+            relativePath: String,
+            containsHanCharacter: @escaping (String) -> Bool
+        ) {
+            characters = Array(source)
+            self.relativePath = relativePath
+            self.containsHanCharacter = containsHanCharacter
+        }
+
+        mutating func scan() -> [String] {
+            scanCode(untilInterpolationEnd: false)
+            return failures
+        }
+
+        private mutating func scanCode(untilInterpolationEnd: Bool) {
+            var recentTokens: [Token] = []
+            var nestedParentheses = 0
+
+            while index < characters.count {
+                if matches("//") {
+                    skipLineComment()
+                } else if matches("/*") {
+                    skipBlockComment()
+                } else if let opening = stringOpening() {
+                    let isAllowed = isDirectDiagnosticArgument(recentTokens)
+                    scanString(hashCount: opening.hashCount, isMultiline: opening.isMultiline, isAllowed: isAllowed)
+                    append(.other, to: &recentTokens)
+                } else if isIdentifierStart(characters[index]) {
+                    append(.identifier(scanIdentifier()), to: &recentTokens)
+                } else {
+                    let character = characters[index]
+                    advance()
+                    switch character {
+                    case "(":
+                        nestedParentheses += 1
+                        append(.leftParenthesis, to: &recentTokens)
+                    case ")" where untilInterpolationEnd && nestedParentheses == 0:
+                        return
+                    case ")":
+                        nestedParentheses -= 1
+                        append(.other, to: &recentTokens)
+                    case ".":
+                        append(.dot, to: &recentTokens)
+                    default:
+                        if !character.isWhitespace {
+                            append(.other, to: &recentTokens)
+                        }
+                    }
+                }
+            }
+        }
+
+        private mutating func scanString(hashCount: Int, isMultiline: Bool, isAllowed: Bool) {
+            let startIndex = index
+            let startLine = line
+            let quoteCount = isMultiline ? 3 : 1
+            index += hashCount + quoteCount
+            var hasHanLiteralSegment = false
+
+            while index < characters.count {
+                if matchesStringClose(hashCount: hashCount, quoteCount: quoteCount) {
+                    index += quoteCount + hashCount
+                    break
+                }
+
+                if matchesInterpolationStart(hashCount: hashCount) {
+                    index += hashCount + 2
+                    scanCode(untilInterpolationEnd: true)
+                    continue
+                }
+
+                if characters[index] == "\\" {
+                    if hashCount == 0 {
+                        advance()
+                        if index < characters.count { advance() }
+                        continue
+                    }
+                    if matchesRawEscapePrefix(hashCount: hashCount) {
+                        index += hashCount + 1
+                        if index < characters.count { advance() }
+                        continue
+                    }
+                }
+
+                if containsHanCharacter(String(characters[index])) {
+                    hasHanLiteralSegment = true
+                }
+                advance()
+            }
+
+            if hasHanLiteralSegment && !isAllowed {
+                failures.append("\(relativePath):\(startLine) \(String(characters[startIndex..<index]))")
+            }
+        }
+
+        private func stringOpening() -> (hashCount: Int, isMultiline: Bool)? {
+            var cursor = index
+            while cursor < characters.count, characters[cursor] == "#" {
+                cursor += 1
+            }
+            guard cursor < characters.count, characters[cursor] == "\"" else { return nil }
+            let hashCount = cursor - index
+            let isMultiline = cursor + 2 < characters.count
+                && characters[cursor + 1] == "\""
+                && characters[cursor + 2] == "\""
+            return (hashCount, isMultiline)
+        }
+
+        private func matchesStringClose(hashCount: Int, quoteCount: Int) -> Bool {
+            matches(String(repeating: "\"", count: quoteCount) + String(repeating: "#", count: hashCount))
+        }
+
+        private func matchesInterpolationStart(hashCount: Int) -> Bool {
+            matches("\\" + String(repeating: "#", count: hashCount) + "(")
+        }
+
+        private func matchesRawEscapePrefix(hashCount: Int) -> Bool {
+            matches("\\" + String(repeating: "#", count: hashCount))
+        }
+
+        private mutating func skipLineComment() {
+            while index < characters.count, characters[index] != "\n" {
+                index += 1
+            }
+        }
+
+        private mutating func skipBlockComment() {
+            var depth = 0
+            while index < characters.count {
+                if matches("/*") {
+                    depth += 1
+                    index += 2
+                } else if matches("*/") {
+                    depth -= 1
+                    index += 2
+                    if depth == 0 { return }
+                } else {
+                    advance()
+                }
+            }
+        }
+
+        private mutating func scanIdentifier() -> String {
+            let start = index
+            while index < characters.count, isIdentifierContinuation(characters[index]) {
+                index += 1
+            }
+            return String(characters[start..<index])
+        }
+
+        private func isDirectDiagnosticArgument(_ tokens: [Token]) -> Bool {
+            guard tokens.count >= 2,
+                  tokens[tokens.count - 1] == .leftParenthesis,
+                  case let .identifier(name) = tokens[tokens.count - 2],
+                  ["NSLog", "fatalError", "preconditionFailure"].contains(name)
+            else { return false }
+            return tokens.count < 3 || tokens[tokens.count - 3] != .dot
+        }
+
+        private func isIdentifierStart(_ character: Character) -> Bool {
+            character == "_" || character.isLetter
+        }
+
+        private func isIdentifierContinuation(_ character: Character) -> Bool {
+            isIdentifierStart(character) || character.isNumber
+        }
+
+        private mutating func append(_ token: Token, to tokens: inout [Token]) {
+            tokens.append(token)
+            if tokens.count > 3 {
+                tokens.removeFirst(tokens.count - 3)
+            }
+        }
+
+        private func matches(_ text: String) -> Bool {
+            let expected = Array(text)
+            guard index + expected.count <= characters.count else { return false }
+            return Array(characters[index..<(index + expected.count)]) == expected
+        }
+
+        private mutating func advance() {
+            if characters[index] == "\n" {
+                line += 1
+            }
+            index += 1
         }
     }
 }
