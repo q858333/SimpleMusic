@@ -10,7 +10,9 @@ final class AppEnvironment {
     let musicLibraryService = MusicLibraryService()
     private var libraryChangeObserver: MusicLibraryChangeObserver?
     private var localMusicCatalog: LocalMusicCatalog?
-    private lazy var downloadStorageResolution = DownloadStorageFactory().resolve()
+    private let injectedDownloadStorageResolution: DownloadStorageResolution?
+    private lazy var downloadStorageResolution = injectedDownloadStorageResolution
+        ?? DownloadStorageFactory().resolve()
 
     lazy var localMusicStore: LocalMusicStore = {
         if let appDelegate = UIApplication.shared.delegate as? AppDelegate {
@@ -82,7 +84,8 @@ final class AppEnvironment {
         )
     )
 
-    private init() {
+    init(downloadStorageResolution: DownloadStorageResolution? = nil) {
+        injectedDownloadStorageResolution = downloadStorageResolution
         do {
             try nowPlayingService.start()
         } catch {

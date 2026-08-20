@@ -93,8 +93,36 @@ final class AppCoordinatorTests: XCTestCase {
             .compactMap { ($0 as? UILabel)?.text }
             .joined(separator: " ")
 
-        XCTAssertTrue(copy.contains(L10n.text("storage.download.unavailable_short")))
+        XCTAssertEqual(copy, L10n.text("storage.download.unavailable"))
         XCTAssertEqual(controller.title, L10n.text("download.unavailable.title"))
+    }
+
+    @MainActor
+    func testEnvironmentUsesShortDownloadWarningWhenStorageWarningIsNil() async {
+        let environment = AppEnvironment(
+            downloadStorageResolution: DownloadStorageResolution(store: nil, warning: nil)
+        )
+
+        await environment.libraryViewModel.reload()
+
+        XCTAssertEqual(
+            environment.libraryViewModel.localState,
+            .failed(L10n.text("storage.download.unavailable_short"))
+        )
+    }
+
+    @MainActor
+    func testDependenciesUseShortDownloadWarningWhenStorageWarningIsNil() throws {
+        let environment = AppEnvironment(
+            downloadStorageResolution: DownloadStorageResolution(store: nil, warning: nil)
+        )
+        let controller = AppRootDependencies(environment: environment).makeDownloadViewController()
+        controller.loadViewIfNeeded()
+        let copy = allViews(in: controller.view)
+            .compactMap { ($0 as? UILabel)?.text }
+            .joined(separator: " ")
+
+        XCTAssertEqual(copy, L10n.text("storage.download.unavailable_short"))
     }
     /// 如果设备类型映射交换或 iPad 错走手机根界面，此测试应失败。
     @MainActor
