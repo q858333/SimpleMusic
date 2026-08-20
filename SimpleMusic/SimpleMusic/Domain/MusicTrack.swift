@@ -9,8 +9,8 @@ enum MusicSource: Hashable, Codable {
 
 /// 播放队列、下载列表和详情页共用的歌曲值类型。
 struct MusicTrack: Identifiable, Hashable, Codable {
-    static let unknownArtist = "未知艺人"
-    static let unknownAlbum = "未知专辑"
+    static let unknownArtist = L10n.text("track.unknown_artist")
+    static let unknownAlbum = L10n.text("track.unknown_album")
 
     let id: String
     let title: String

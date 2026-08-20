@@ -8,7 +8,7 @@ final class DownloadUnavailableViewController: UIViewController {
     init(message: String) {
         self.message = message
         super.init(nibName: nil, bundle: nil)
-        title = "下载不可用"
+        title = L10n.text("download.unavailable.title")
     }
 
     @available(*, unavailable)

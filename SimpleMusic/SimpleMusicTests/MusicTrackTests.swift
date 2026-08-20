@@ -3,7 +3,8 @@ import XCTest
 
 final class MusicTrackTests: XCTestCase {
     func testUnknownArtistCopyRequiresMusicTrackType() {
-        XCTAssertEqual(MusicTrack.unknownArtist, "未知艺人")
+        XCTAssertEqual(MusicTrack.unknownArtist, L10n.text("track.unknown_artist"))
+        XCTAssertEqual(MusicTrack.unknownAlbum, L10n.text("track.unknown_album"))
     }
 
     func testDownloadedTrackKeepsStableIdentity() {

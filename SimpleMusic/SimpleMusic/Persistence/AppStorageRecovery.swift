@@ -55,8 +55,11 @@ struct PersistentStoreFactory {
                 .compactMap { $0 }
                 .map(String.init(describing:))
                 .joined(separator: "；")
-            let warning = "本地持久化暂不可用，已进入内存模式；原始资料未删除，请重启应用重试。"
-                + (detail.isEmpty ? "" : "（\(detail)）")
+            let baseWarning = L10n.text("storage.persistence.unavailable")
+            // 保留系统错误详情，便于用户在不丢失资料的降级状态下诊断问题。
+            let warning = detail.isEmpty
+                ? baseWarning
+                : L10n.format("storage.persistence.unavailable_with_detail", baseWarning, detail)
             return PersistentStoreResolution(container: memory, warning: warning)
         }
         return PersistentStoreResolution(container: persistent, warning: nil)
@@ -93,7 +96,7 @@ struct DownloadStorageFactory {
         } catch {
             return DownloadStorageResolution(
                 store: nil,
-                warning: "下载存储暂不可用，请检查设备空间并重启应用后重试。"
+                warning: L10n.text("storage.download.unavailable")
             )
         }
     }

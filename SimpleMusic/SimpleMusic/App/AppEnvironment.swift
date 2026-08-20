@@ -47,7 +47,7 @@ final class AppEnvironment {
             }
         } else {
             localSource = UnavailableLocalMusicSource(
-                message: downloadStorageWarning ?? "下载存储暂不可用"
+                message: downloadStorageWarning ?? L10n.text("storage.download.unavailable_short")
             )
             deleteLocalTrack = nil
         }

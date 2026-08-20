@@ -7,6 +7,7 @@ import XCTest
 
 private enum TestStoreError: Error {
     case unavailable
+    case failed
 }
 
 final class AppCoordinatorTests: XCTestCase {
@@ -26,14 +27,16 @@ final class AppCoordinatorTests: XCTestCase {
             makeMemoryContainer: { memory },
             load: { container, completion in
                 loadedContainers.append(container)
-                completion(container === persistent ? TestStoreError.unavailable : nil)
+                completion(container === persistent ? TestStoreError.failed : nil)
             }
         )
 
         let result = factory.resolve()
 
         XCTAssertTrue(result.container === memory)
-        XCTAssertNotNil(result.warning)
+        let warning = try XCTUnwrap(result.warning)
+        XCTAssertTrue(warning.contains(L10n.text("storage.persistence.unavailable")))
+        XCTAssertTrue(warning.contains("failed"))
         XCTAssertEqual(loadedContainers.count, 2)
         XCTAssertEqual(try Data(contentsOf: originalStore), Data("user-store".utf8))
     }
@@ -83,15 +86,15 @@ final class AppCoordinatorTests: XCTestCase {
 
         XCTAssertNil(resolution.store)
         let warning = try XCTUnwrap(resolution.warning)
+        XCTAssertEqual(warning, L10n.text("storage.download.unavailable"))
         let controller = DownloadUnavailableViewController(message: warning)
         controller.loadViewIfNeeded()
         let copy = allViews(in: controller.view)
             .compactMap { ($0 as? UILabel)?.text }
             .joined(separator: " ")
 
-        XCTAssertTrue(copy.contains("下载存储暂不可用"))
-        XCTAssertTrue(copy.contains("重试"))
-        XCTAssertEqual(controller.title, "下载不可用")
+        XCTAssertTrue(copy.contains(L10n.text("storage.download.unavailable_short")))
+        XCTAssertEqual(controller.title, L10n.text("download.unavailable.title"))
     }
     /// 如果设备类型映射交换或 iPad 错走手机根界面，此测试应失败。
     @MainActor

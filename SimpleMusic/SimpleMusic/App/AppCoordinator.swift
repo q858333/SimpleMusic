@@ -61,7 +61,7 @@ struct AppRootDependencies {
         makeDownloadViewController = {
             guard let downloadManager = environment.downloadManager else {
                 return DownloadUnavailableViewController(
-                    message: environment.downloadStorageWarning ?? "下载存储暂不可用"
+                    message: environment.downloadStorageWarning ?? L10n.text("storage.download.unavailable_short")
                 )
             }
             return DownloadSheetViewController(
