@@ -41,8 +41,16 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
-    func testFormatUsesMainBundleForEnglishFallback() {
-        XCTAssertEqual(L10n.format("player.queue.position", 2, 4), "Track 2 of 4")
+    func testFormatUsesMainBundleLocalization() throws {
+        let expectedByLanguage = [
+            "en": "Track 2 of 4",
+            "zh-Hans": "第 2 / 4 首",
+            "zh-Hant": "第 2 / 4 首",
+        ]
+        XCTAssertEqual(
+            L10n.format("player.queue.position", 2, 4),
+            try XCTUnwrap(expectedByLanguage[activeLanguage])
+        )
     }
 
     func testDownloadSuccessMessageUsesFirstPositionalObjectParameterAcrossLanguages() throws {
@@ -56,11 +64,15 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
-    func testTrackCountUsesEnglishPluralAndChineseCountFormat() throws {
-        XCTAssertEqual(L10n.plural("tracks.count", count: 1, bundle: try languageBundle("en")), "1 song")
-        XCTAssertEqual(L10n.plural("tracks.count", count: 2, bundle: try languageBundle("en")), "2 songs")
-        XCTAssertEqual(L10n.plural("tracks.count", count: 2, bundle: try languageBundle("zh-Hans")), "2 首")
-        XCTAssertEqual(L10n.plural("tracks.count", count: 2, bundle: try languageBundle("zh-Hant")), "2 首")
+    func testTrackCountUsesActiveLanguagePluralFormat() throws {
+        let expectedByLanguage = [
+            "en": ["1 song", "2 songs"],
+            "zh-Hans": ["1 首", "2 首"],
+            "zh-Hant": ["1 首", "2 首"],
+        ]
+        let expected = try XCTUnwrap(expectedByLanguage[activeLanguage])
+        XCTAssertEqual(L10n.plural("tracks.count", count: 1), expected[0])
+        XCTAssertEqual(L10n.plural("tracks.count", count: 2), expected[1])
     }
 
     func testLocalizableStringParametersMatchAcrossLanguages() throws {
@@ -83,10 +95,54 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
+    func testProductionSwiftHasNoUnlocalizedHanStringLiterals() throws {
+        let sourceRoot = projectRoot.appendingPathComponent("SimpleMusic", isDirectory: true)
+        let sourceURLs = try XCTUnwrap(FileManager.default.enumerator(at: sourceRoot, includingPropertiesForKeys: nil))
+            .compactMap { $0 as? URL }
+            .filter { $0.pathExtension == "swift" }
+            .sorted { $0.path < $1.path }
+        let literalExpression = try NSRegularExpression(pattern: #"\"(?:\\.|[^\"\\])*\""#)
+        let allowedCallExpression = try NSRegularExpression(
+            pattern: #"\b(?:NSLog|fatalError|preconditionFailure)\s*\(\s*$"#
+        )
+        var failures: [String] = []
+
+        for sourceURL in sourceURLs {
+            let source = try String(contentsOf: sourceURL, encoding: .utf8)
+            for (offset, line) in source.components(separatedBy: .newlines).enumerated() {
+                let lineRange = NSRange(line.startIndex..., in: line)
+                for match in literalExpression.matches(in: line, range: lineRange) {
+                    guard let literalRange = Range(match.range, in: line) else { continue }
+                    let literal = String(line[literalRange])
+                    guard containsHanCharacter(literal) else { continue }
+
+                    let prefix = String(line[..<literalRange.lowerBound])
+                    let prefixRange = NSRange(prefix.startIndex..., in: prefix)
+                    guard allowedCallExpression.firstMatch(in: prefix, range: prefixRange) == nil else { continue }
+
+                    let relativePath = sourceURL.path.replacingOccurrences(
+                        of: projectRoot.path + "/",
+                        with: ""
+                    )
+                    failures.append("\(relativePath):\(offset + 1) \(literal)")
+                }
+            }
+        }
+
+        XCTAssertTrue(
+            failures.isEmpty,
+            "Unlocalized production Swift Han string literals:\n\(failures.joined(separator: "\n"))"
+        )
+    }
+
     private var projectRoot: URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
+    }
+
+    private var activeLanguage: String {
+        Bundle.main.preferredLocalizations.first ?? "en"
     }
 
     private func languageBundle(_ language: String) throws -> Bundle {
@@ -136,6 +192,17 @@ final class LocalizationTests: XCTestCase {
         let range = NSRange(value.startIndex..., in: value)
         return expression.matches(in: value, range: range).compactMap { match in
             Range(match.range, in: value).map { String(value[$0]) }
+        }
+    }
+
+    private func containsHanCharacter(_ value: String) -> Bool {
+        value.unicodeScalars.contains { scalar in
+            switch scalar.value {
+            case 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF, 0x20000...0x2FA1F:
+                return true
+            default:
+                return false
+            }
         }
     }
 }
