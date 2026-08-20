@@ -223,6 +223,50 @@ final class AppCoordinatorTests: XCTestCase {
         }
     }
 
+    /// 如果协调器立即跳过 App 内启动页，或一秒调度完成后没有恢复原权限分流，此测试应失败。
+    @MainActor
+    func testStartKeepsLaunchVisibleUntilScheduledTransitionThenRoutes() {
+        for status in [
+            MPMediaLibraryAuthorizationStatus.notDetermined,
+            .authorized
+        ] {
+            let window = UIWindow(frame: .zero)
+            let launch = UIViewController()
+            let main = UIViewController()
+            var scheduledTransition: (@MainActor () -> Void)?
+            var mainCount = 0
+            let coordinator = AppCoordinator(
+                window: window,
+                authorizationStatus: { status },
+                requestAuthorization: { status },
+                rootKind: .phone,
+                makeMainViewController: { _ in
+                    mainCount += 1
+                    return main
+                },
+                makeLaunchViewController: { launch },
+                scheduleLaunchTransition: { scheduledTransition = $0 }
+            )
+
+            coordinator.start()
+
+            XCTAssertTrue(window.rootViewController === launch, "status=\(status.rawValue)")
+            XCTAssertEqual(mainCount, 0, "status=\(status.rawValue)")
+            guard let scheduledTransition else {
+                XCTFail("启动页必须安排一次后续路由")
+                continue
+            }
+
+            scheduledTransition()
+
+            if status == .notDetermined {
+                XCTAssertTrue(window.rootViewController is PermissionViewController)
+            } else {
+                XCTAssertTrue(window.rootViewController === main)
+            }
+        }
+    }
+
     /// 如果非首次授权状态仍展示授权页，或首次状态跳过授权页，此测试应失败。
     @MainActor
     func testInitialRouteShowsPermissionOnlyForNotDeterminedStatus() {
@@ -308,7 +352,8 @@ final class AppCoordinatorTests: XCTestCase {
             makeMainViewController: { _ in
                 mainCount += 1
                 return main
-            }
+            },
+            scheduleLaunchTransition: { $0() }
         )
         coordinator.start()
         let permission = try XCTUnwrap(window.rootViewController as? PermissionViewController)
@@ -339,7 +384,8 @@ final class AppCoordinatorTests: XCTestCase {
             makeMainViewController: { _ in
                 mainCount += 1
                 return main
-            }
+            },
+            scheduleLaunchTransition: { $0() }
         )
         coordinator.start()
         let permission = try XCTUnwrap(window.rootViewController as? PermissionViewController)
@@ -545,7 +591,8 @@ final class AppCoordinatorTests: XCTestCase {
             authorizationStatus: { status },
             requestAuthorization: { status },
             rootKind: .phone,
-            makeMainViewController: { _ in makeMain?() ?? UIViewController() }
+            makeMainViewController: { _ in makeMain?() ?? UIViewController() },
+            scheduleLaunchTransition: { $0() }
         )
     }
 
