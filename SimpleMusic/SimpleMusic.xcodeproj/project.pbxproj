@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A3C000000000000000000001 /* LocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3C000000000000000000002 /* LocalizationTests.swift */; };
 		A1B2C3D4E5F60718293A4B5C /* MusicTrackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5B /* MusicTrackTests.swift */; };
 		A1B2C3D4E5F60718293A4B6B /* SettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B6A /* SettingsStoreTests.swift */; };
 		A1B2C3D4E5F60718293A4B7B /* AudioDownloadValidatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B7A /* AudioDownloadValidatorTests.swift */; };
@@ -40,6 +41,7 @@
 		6A34C52A1ABF5C26C9601CDD /* Pods_SimpleMusic.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_SimpleMusic.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		82FEF5096D84D9077E96AF8F /* Pods-SimpleMusic.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SimpleMusic.release.xcconfig"; path = "Target Support Files/Pods-SimpleMusic/Pods-SimpleMusic.release.xcconfig"; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5B /* MusicTrackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicTrackTests.swift; sourceTree = "<group>"; };
+		A3C000000000000000000002 /* LocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationTests.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5D /* SimpleMusicTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SimpleMusicTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1B2C3D4E5F60718293A4B6A /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B7A /* AudioDownloadValidatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDownloadValidatorTests.swift; sourceTree = "<group>"; };
@@ -128,6 +130,7 @@
 		A1B2C3D4E5F60718293A4B5A /* SimpleMusicTests */ = {
 			isa = PBXGroup;
 			children = (
+				A3C000000000000000000002 /* LocalizationTests.swift */,
 				A1B2C3D4E5F60718293A4B5B /* MusicTrackTests.swift */,
 				A1B2C3D4E5F60718293A4B6A /* SettingsStoreTests.swift */,
 				A1B2C3D4E5F60718293A4B7A /* AudioDownloadValidatorTests.swift */,
@@ -221,6 +224,8 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				zh-Hans,
+				zh-Hant,
 				Base,
 			);
 			mainGroup = 23BA7275302F095900023EB5;
@@ -307,6 +312,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A3C000000000000000000001 /* LocalizationTests.swift in Sources */,
 				A1B2C3D4E5F60718293A4B5C /* MusicTrackTests.swift in Sources */,
 				A1B2C3D4E5F60718293A4B6B /* SettingsStoreTests.swift in Sources */,
 				A1B2C3D4E5F60718293A4B7B /* AudioDownloadValidatorTests.swift in Sources */,
