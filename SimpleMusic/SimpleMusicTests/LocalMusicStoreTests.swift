@@ -64,6 +64,16 @@ final class LocalMusicStoreTests: XCTestCase {
         XCTAssertTrue(try store.fetchTracks().isEmpty)
     }
 
+    func testContainsDownloadedFileNameReturnsTrueOnlyForIndexedName() async throws {
+        let store = try LocalMusicStore.inMemory()
+        _ = try store.insert(metadata(id: "indexed", fileName: "indexed.m4a"))
+
+        let containsIndexed = try await store.contains(fileName: "indexed.m4a")
+        let containsMissing = try await store.contains(fileName: "missing.m4a")
+        XCTAssertTrue(containsIndexed)
+        XCTAssertFalse(containsMissing)
+    }
+
     func testCatalogKeepsPlayableRecordAndFile() async throws {
         let fixture = try makeCatalogFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }

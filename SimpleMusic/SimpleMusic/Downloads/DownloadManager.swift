@@ -167,6 +167,7 @@ private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelega
 final class DownloadManager {
     typealias ClientFactory = (URLSessionConfiguration) -> any AudioDownloadClient
     typealias MetadataReader = (URL, String) async throws -> DownloadedTrackMetadata
+    typealias ReservationObserver = @MainActor @Sendable (String) throws -> Void
 
     private let fileStore: DownloadFileStore
     private let musicStore: LocalMusicStore
@@ -210,19 +211,25 @@ final class DownloadManager {
 
     func download(
         from url: URL,
-        progress: @escaping @MainActor @Sendable (Double) -> Void
+        progress: @escaping @MainActor @Sendable (Double) -> Void,
+        onReservation: @escaping ReservationObserver = { _ in }
     ) async throws -> MusicTrack {
         try validator.validate(url: url)
         return try await permitPool.withPermit(onQueued: { [queueObserver] in
             queueObserver(url)
         }) { [self] in
-            try await performDownload(from: url, progress: progress)
+            try await performDownload(
+                from: url,
+                progress: progress,
+                onReservation: onReservation
+            )
         }
     }
 
     private func performDownload(
         from url: URL,
-        progress: @escaping @MainActor @Sendable (Double) -> Void
+        progress: @escaping @MainActor @Sendable (Double) -> Void,
+        onReservation: @escaping ReservationObserver
     ) async throws -> MusicTrack {
         let configuration = URLSessionConfiguration.default
         configuration.allowsCellularAccess = settingsStore.allowsCellularDownloads
@@ -235,6 +242,7 @@ final class DownloadManager {
             try validator.validate(response: payload.response, sourceURL: url)
             let newReservation = try fileStore.reserveDestination(suggestedName: url.lastPathComponent)
             reservation = newReservation
+            try onReservation(newReservation.destinationURL.lastPathComponent)
 
             try fileStore.commit(temporaryFileURL: payload.temporaryFileURL, reservation: newReservation)
             committed = true

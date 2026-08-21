@@ -89,6 +89,13 @@ final class LocalMusicStore: @unchecked Sendable {
         return records.map(Self.makeTrack)
     }
 
+    func contains(fileName: String) async throws -> Bool {
+        try await fetchTracksAsync().contains { track in
+            guard case let .downloaded(indexedName) = track.source else { return false }
+            return indexedName == fileName
+        }
+    }
+
     func insert(_ metadata: DownloadedTrackMetadata) throws -> MusicTrack {
         try context.performAndWait {
             // 直接使用当前 context 的模型，避免测试/降级容器并存时 Core Data 按全局 subclass 歧义取错 entity。

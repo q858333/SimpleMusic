@@ -294,6 +294,158 @@ final class DownloadQueueTests: XCTestCase {
         XCTAssertEqual(try store.load(), [])
     }
 
+    func testRecoveryKeepsIndexedFileAndCleansOnlyUnindexedControlledFile() async throws {
+        let base = try makeTemporaryDirectory()
+        let downloadRoot = base.appendingPathComponent("Downloads", isDirectory: true)
+        let fileStore = try DownloadFileStore(rootURL: downloadRoot)
+        let musicStore = try LocalMusicStore.inMemory()
+        let indexed = try musicStore.insert(DownloadedTrackMetadata(
+            id: "indexed",
+            fileName: "indexed.m4a",
+            title: "Indexed",
+            artist: "Artist",
+            album: "Album",
+            duration: 1
+        ))
+        let indexedFileURL = downloadRoot.appendingPathComponent("indexed.m4a")
+        let orphanFileURL = downloadRoot.appendingPathComponent("orphan.m4a")
+        try Data("indexed".utf8).write(to: indexedFileURL)
+        try Data("orphan".utf8).write(to: orphanFileURL)
+        let service = DownloadRecoveryService(fileStore: fileStore, musicStore: musicStore)
+
+        let indexedDisposition = try await service.reconcile(fileName: "indexed.m4a")
+        let orphanDisposition = try await service.reconcile(fileName: "orphan.m4a")
+        XCTAssertEqual(indexedDisposition, .indexed)
+        XCTAssertEqual(orphanDisposition, .cleaned)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: indexedFileURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: orphanFileURL.path))
+        XCTAssertEqual(indexed.id, try XCTUnwrap(try musicStore.fetchTracks().first).id)
+    }
+
+    func testRecoveryRejectsTraversalAndDoesNotDeleteExternalFile() async throws {
+        let base = try makeTemporaryDirectory()
+        let downloadRoot = base.appendingPathComponent("Downloads", isDirectory: true)
+        let outside = base.appendingPathComponent("outside.m4a")
+        try Data("outside".utf8).write(to: outside)
+        let service = DownloadRecoveryService(
+            fileStore: try DownloadFileStore(rootURL: downloadRoot),
+            musicStore: try LocalMusicStore.inMemory()
+        )
+
+        do {
+            _ = try await service.reconcile(fileName: "../outside.m4a")
+            XCTFail("目录穿越必须被拒绝")
+        } catch DownloadFileStoreError.invalidFileName {
+            // 预期错误。
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outside.path))
+    }
+
+    func testTemporaryCleanupRemovesOnlyOwnedTransferFiles() throws {
+        let temporaryDirectory = try makeTemporaryDirectory()
+        let downloadRoot = temporaryDirectory.appendingPathComponent("Downloads", isDirectory: true)
+        let owned = temporaryDirectory.appendingPathComponent("SimpleMusicDownload-owned")
+        let unrelated = temporaryDirectory.appendingPathComponent("other-app.tmp")
+        let similarlyNamedDirectory = temporaryDirectory.appendingPathComponent(
+            "SimpleMusicDownload-directory",
+            isDirectory: true
+        )
+        try Data("partial".utf8).write(to: owned)
+        try Data("keep".utf8).write(to: unrelated)
+        try FileManager.default.createDirectory(at: similarlyNamedDirectory, withIntermediateDirectories: true)
+        let service = DownloadRecoveryService(
+            fileStore: try DownloadFileStore(rootURL: downloadRoot),
+            musicStore: try LocalMusicStore.inMemory(),
+            temporaryDirectory: temporaryDirectory
+        )
+
+        try service.cleanupRetainedTemporaryFiles()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: owned.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: unrelated.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: similarlyNamedDirectory.path))
+    }
+
+    func testLaunchMarksUnfinishedInterruptedWithoutStartingNetwork() throws {
+        let queuedJob = persistedJob(state: .queued)
+        let downloadingJob = persistedJob(
+            state: .downloading,
+            progress: 0.65,
+            reservedFileName: "downloading.m4a"
+        )
+        let failedJob = persistedJob(state: .failure, failureReason: .generic)
+        let store = SpyQueueStore(initialJobs: [queuedJob, downloadingJob, failedJob])
+        let operation = ControlledQueueDownloadOperation()
+        let queue = makeQueue(operation: operation, store: store)
+
+        XCTAssertEqual(job(queuedJob.id, in: queue).state, .interrupted)
+        XCTAssertEqual(job(downloadingJob.id, in: queue).state, .interrupted)
+        XCTAssertEqual(job(downloadingJob.id, in: queue).progress, 0)
+        XCTAssertEqual(job(failedJob.id, in: queue).state, .failure)
+        XCTAssertEqual(operation.startedURLs, [])
+    }
+
+    func testRecoveryRemovesIndexedRecordButKeepsInterruptedCleanedJob() {
+        let indexedJob = persistedJob(
+            state: .downloading,
+            reservedFileName: "indexed.m4a"
+        )
+        let orphanJob = persistedJob(
+            state: .downloading,
+            reservedFileName: "orphan.m4a"
+        )
+        let store = SpyQueueStore(initialJobs: [indexedJob, orphanJob])
+        let recovery = ControlledRecovery()
+        recovery.results["indexed.m4a"] = .success(.indexed)
+        recovery.results["orphan.m4a"] = .success(.cleaned)
+        let queue = makeQueue(
+            operation: ControlledQueueDownloadOperation(),
+            store: store,
+            recovery: recovery.perform
+        )
+
+        waitUntil { recovery.fileNames.count == 2 }
+        XCTAssertNil(queue.jobs.first { $0.reservedFileName == "indexed.m4a" })
+        XCTAssertEqual(job(orphanJob.id, in: queue).state, .interrupted)
+        XCTAssertNil(job(orphanJob.id, in: queue).reservedFileName)
+    }
+
+    func testRecoveryErrorKeepsInterruptedRecordAndRetryReconcilesBeforeNetwork() {
+        let interruptedJob = persistedJob(
+            state: .downloading,
+            progress: 0.4,
+            reservedFileName: "retry.m4a"
+        )
+        let store = SpyQueueStore(initialJobs: [interruptedJob])
+        let recovery = ControlledRecovery()
+        recovery.results["retry.m4a"] = .failure(QueueRecoveryTestError.ioFailure)
+        let operation = ControlledQueueDownloadOperation()
+        let queue = makeQueue(
+            operation: operation,
+            store: store,
+            recovery: recovery.perform
+        )
+
+        waitUntil { recovery.fileNames.count == 1 }
+        XCTAssertEqual(job(interruptedJob.id, in: queue).state, .interrupted)
+        XCTAssertEqual(job(interruptedJob.id, in: queue).failureReason, .recovery)
+        XCTAssertEqual(job(interruptedJob.id, in: queue).reservedFileName, "retry.m4a")
+        XCTAssertEqual(operation.startedURLs, [])
+
+        recovery.results["retry.m4a"] = .success(.cleaned)
+        queue.retry(id: interruptedJob.id)
+        XCTAssertEqual(operation.startedURLs, [])
+        waitUntil { recovery.fileNames.count == 2 }
+        waitUntil { operation.startedURLs == [interruptedJob.sourceURL] }
+        XCTAssertNil(job(interruptedJob.id, in: queue).reservedFileName)
+
+        guard operation.startedURLs == [interruptedJob.sourceURL] else {
+            return XCTFail("恢复清理成功后应启动一次新下载")
+        }
+        operation.succeed(url: interruptedJob.sourceURL, track: track(id: "retried"))
+        waitUntil { job(interruptedJob.id, in: queue).state == .success }
+    }
+
     private func makeJob(state: DownloadJob.State) -> DownloadJob {
         DownloadJob(
             id: UUID(),
@@ -308,6 +460,25 @@ final class DownloadQueueTests: XCTestCase {
         )
     }
 
+    private func persistedJob(
+        state: DownloadJob.State,
+        progress: Double = 0,
+        failureReason: DownloadJob.FailureReason? = nil,
+        reservedFileName: String? = nil
+    ) -> DownloadJob {
+        DownloadJob(
+            id: UUID(),
+            sourceURL: URL(string: "https://example.com/\(UUID().uuidString).m4a")!,
+            displayName: "persisted.m4a",
+            state: state,
+            progress: progress,
+            createdAt: Date(timeIntervalSince1970: 1),
+            attempt: 1,
+            failureReason: failureReason,
+            reservedFileName: reservedFileName
+        )
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("DownloadQueueTests-\(UUID().uuidString)", isDirectory: true)
@@ -318,8 +489,9 @@ final class DownloadQueueTests: XCTestCase {
 
     private func makeQueue(
         operation: ControlledQueueDownloadOperation,
-        store: RecordingQueueStore? = nil,
+        store: (any DownloadQueuePersisting)? = nil,
         settings: SettingsStore? = nil,
+        recovery: @escaping DownloadQueue.RecoveryOperation = { _ in .cleaned },
         onPlay: @escaping @MainActor (MusicTrack) -> Void = { _ in },
         maximumActiveCount: Int = 3,
         now: @escaping @MainActor () -> Date = Date.init
@@ -328,7 +500,7 @@ final class DownloadQueueTests: XCTestCase {
             store: store ?? RecordingQueueStore(),
             operation: operation.perform,
             settingsStore: settings ?? makeSettings(autoPlay: false),
-            recovery: { _ in .cleaned },
+            recovery: recovery,
             onReload: {},
             onPlay: onPlay,
             maximumActiveCount: maximumActiveCount,
@@ -390,6 +562,38 @@ private final class RecordingQueueStore: DownloadQueuePersisting {
         self.jobs = jobs
         savedJobs.append(jobs)
     }
+}
+
+@MainActor
+private final class SpyQueueStore: DownloadQueuePersisting {
+    var loadedJobs: [DownloadJob]
+    private(set) var saves = [[DownloadJob]]()
+
+    init(initialJobs: [DownloadJob]) {
+        loadedJobs = initialJobs
+    }
+
+    func load() throws -> [DownloadJob] { loadedJobs }
+
+    func save(_ jobs: [DownloadJob]) throws {
+        loadedJobs = jobs
+        saves.append(jobs)
+    }
+}
+
+@MainActor
+private final class ControlledRecovery {
+    var results = [String: Result<DownloadQueue.RecoveryDisposition, Error>]()
+    private(set) var fileNames = [String]()
+
+    func perform(_ fileName: String) async throws -> DownloadQueue.RecoveryDisposition {
+        fileNames.append(fileName)
+        return try XCTUnwrap(results[fileName]).get()
+    }
+}
+
+private enum QueueRecoveryTestError: Error {
+    case ioFailure
 }
 
 @MainActor

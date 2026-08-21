@@ -548,6 +548,44 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: temporaryFile.path))
     }
 
+    func testReservationObserverRunsBeforeCommitAndReceivesControlledLeafName() async throws {
+        var events = [String]()
+        let harness = try makeDownloadHarness(
+            fileName: "ordered.m4a",
+            onCommit: { events.append("commit") }
+        )
+
+        _ = try await harness.manager.download(
+            from: audioURL("ordered.m4a"),
+            progress: { _ in },
+            onReservation: { fileName in events.append("reserve:\(fileName)") }
+        )
+
+        XCTAssertEqual(Array(events.prefix(2)), ["reserve:ordered.m4a", "commit"])
+    }
+
+    func testReservationPersistenceFailureDiscardsReservationAndDoesNotInsertIndex() async throws {
+        let harness = try makeDownloadHarness(fileName: "fail.m4a")
+
+        do {
+            _ = try await harness.manager.download(
+                from: audioURL("fail.m4a"),
+                progress: { _ in },
+                onReservation: { _ in throw QueueStoreTestError.writeFailed }
+            )
+            XCTFail("reservation 账本写入失败必须中止下载事务")
+        } catch QueueStoreTestError.writeFailed {
+            // 预期错误。
+        }
+
+        XCTAssertEqual(try harness.musicStore.fetchTracks(), [])
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(atPath: harness.downloadRoot.path),
+            []
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: harness.temporaryFile.path))
+    }
+
     private func makeHarness() throws -> DownloadHarness {
         let suiteName = "DownloadManagerConcurrencyTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -575,8 +613,63 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
         return harness
     }
 
+    private func makeDownloadHarness(
+        fileName: String,
+        onCommit: @escaping @MainActor () -> Void = {}
+    ) throws -> (
+        manager: DownloadManager,
+        musicStore: LocalMusicStore,
+        downloadRoot: URL,
+        temporaryFile: URL
+    ) {
+        let downloadRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DownloadManagerReservationTests-\(UUID().uuidString)")
+        let temporaryFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DownloadManagerReservationTests-\(UUID().uuidString)")
+        try Data("audio".utf8).write(to: temporaryFile)
+        let sourceURL = audioURL(fileName)
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: sourceURL,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "audio/mp4"]
+        ))
+        let musicStore = try LocalMusicStore.inMemory()
+        let manager = DownloadManager(
+            fileStore: try DownloadFileStore(rootURL: downloadRoot),
+            musicStore: musicStore,
+            settingsStore: SettingsStore(defaults: .standard),
+            clientFactory: { _ in
+                FixedPayloadDownloadClient(payload: AudioDownloadPayload(
+                    temporaryFileURL: temporaryFile,
+                    response: response
+                ))
+            },
+            metadataReader: { _, storedFileName in
+                onCommit()
+                return DownloadedTrackMetadata(
+                    id: UUID().uuidString,
+                    fileName: storedFileName,
+                    title: storedFileName,
+                    artist: "Artist",
+                    album: "Album",
+                    duration: 1
+                )
+            }
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: downloadRoot)
+            try? FileManager.default.removeItem(at: temporaryFile)
+        }
+        return (manager, musicStore, downloadRoot, temporaryFile)
+    }
+
     private func audioURL(index: Int) -> URL {
         URL(string: "https://example.com/song-\(index).mp3")!
+    }
+
+    private func audioURL(_ fileName: String) -> URL {
+        URL(string: "https://example.com/\(fileName)")!
     }
 
     private func makeWaveData() -> Data {
@@ -714,6 +807,10 @@ private enum ControlledDownloadError: Error {
 
 private enum ControlledCleanupError: Error {
     case failed
+}
+
+private enum QueueStoreTestError: Error {
+    case writeFailed
 }
 
 private struct TestTimeoutError: LocalizedError {

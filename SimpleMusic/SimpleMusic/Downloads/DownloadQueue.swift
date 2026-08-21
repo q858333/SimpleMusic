@@ -35,6 +35,8 @@ final class DownloadQueue {
     private var consumedPlayIDs = Set<UUID>()
     private var persistedProgressBuckets = [UUID: Int]()
     private var pendingRemovalAttempts = [UUID: UInt64]()
+    private var recoveryTokens = [UUID: UInt64]()
+    private var launchRecoveryTask: Task<Void, Never>?
 
     init(
         store: any DownloadQueuePersisting,
@@ -58,13 +60,49 @@ final class DownloadQueue {
         self.now = now
         self.log = log
 
+        var normalizedJobs: [DownloadJob]
+        var didNormalize = false
         do {
-            jobs = Self.sortedForDisplay(try store.load())
+            normalizedJobs = try store.load()
         } catch {
             log("Download queue ledger could not be loaded: \(error)")
-            jobs = []
+            normalizedJobs = []
         }
+        for index in normalizedJobs.indices
+        where normalizedJobs[index].state == .queued || normalizedJobs[index].state == .downloading {
+            normalizedJobs[index].state = .interrupted
+            normalizedJobs[index].progress = 0
+            didNormalize = true
+        }
+        jobs = Self.sortedForDisplay(normalizedJobs)
         subject = CurrentValueSubject(jobs)
+
+        if didNormalize {
+            do {
+                try store.save(jobs.filter { $0.state != .success })
+            } catch {
+                log("Download queue ledger could not be saved: \(error)")
+            }
+        }
+
+        let reservations = jobs.compactMap { job in
+            job.reservedFileName.map { (job.id, $0) }
+        }
+        for (id, _) in reservations {
+            recoveryTokens[id] = 1
+        }
+        launchRecoveryTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            // 启动恢复按账本顺序串行执行，先确认索引，再决定是否清理文件。
+            for (id, fileName) in reservations {
+                await self.reconcileReservation(
+                    id: id,
+                    fileName: fileName,
+                    token: 1,
+                    retryAutoPlay: nil
+                )
+            }
+        }
     }
 
     func enqueue(_ sourceURL: URL) throws -> UUID {
@@ -122,15 +160,19 @@ final class DownloadQueue {
                 && !jobs.contains {
                     $0.id != id && ($0.state == .queued || $0.state == .downloading)
                 }
-            jobs[index].state = .queued
-            jobs[index].progress = 0
-            jobs[index].failureReason = nil
-            jobs[index].reservedFileName = nil
-            pendingRemovalAttempts.removeValue(forKey: id)
-            persistedProgressBuckets.removeValue(forKey: id)
-            attemptAutoPlay[id] = autoPlayEligible
-            persistAndPublish()
-            scheduleIfNeeded()
+            if let fileName = jobs[index].reservedFileName {
+                let token = nextRecoveryToken(for: id)
+                Task { @MainActor [weak self] in
+                    await self?.reconcileReservation(
+                        id: id,
+                        fileName: fileName,
+                        token: token,
+                        retryAutoPlay: autoPlayEligible
+                    )
+                }
+            } else {
+                queueRetry(id: id, autoPlayEligible: autoPlayEligible)
+            }
         case .queued, .downloading, .success:
             return
         }
@@ -287,6 +329,65 @@ final class DownloadQueue {
         consumedPlayIDs.remove(id)
         persistedProgressBuckets.removeValue(forKey: id)
         pendingRemovalAttempts.removeValue(forKey: id)
+        recoveryTokens.removeValue(forKey: id)
+        persistAndPublish()
+        scheduleIfNeeded()
+    }
+
+    private func nextRecoveryToken(for id: UUID) -> UInt64 {
+        let token = (recoveryTokens[id] ?? 0) &+ 1
+        recoveryTokens[id] = token
+        return token
+    }
+
+    private func reconcileReservation(
+        id: UUID,
+        fileName: String,
+        token: UInt64,
+        retryAutoPlay: Bool?
+    ) async {
+        do {
+            let disposition = try await recovery(fileName)
+            guard recoveryTokens[id] == token,
+                  let index = jobs.firstIndex(where: { $0.id == id }),
+                  jobs[index].reservedFileName == fileName else { return }
+            switch disposition {
+            case .indexed:
+                removeJob(id: id)
+            case .cleaned:
+                jobs[index].state = .interrupted
+                jobs[index].progress = 0
+                jobs[index].failureReason = nil
+                jobs[index].reservedFileName = nil
+                recoveryTokens.removeValue(forKey: id)
+                if let retryAutoPlay {
+                    queueRetry(id: id, autoPlayEligible: retryAutoPlay)
+                } else {
+                    persistAndPublish()
+                }
+            }
+        } catch {
+            guard recoveryTokens[id] == token,
+                  let index = jobs.firstIndex(where: { $0.id == id }),
+                  jobs[index].reservedFileName == fileName else { return }
+            jobs[index].state = .interrupted
+            jobs[index].progress = 0
+            jobs[index].failureReason = .recovery
+            attemptAutoPlay.removeValue(forKey: id)
+            persistedProgressBuckets.removeValue(forKey: id)
+            persistAndPublish()
+        }
+    }
+
+    private func queueRetry(id: UUID, autoPlayEligible: Bool) {
+        guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
+        jobs[index].state = .queued
+        jobs[index].progress = 0
+        jobs[index].failureReason = nil
+        jobs[index].reservedFileName = nil
+        pendingRemovalAttempts.removeValue(forKey: id)
+        persistedProgressBuckets.removeValue(forKey: id)
+        attemptAutoPlay[id] = autoPlayEligible
         persistAndPublish()
         scheduleIfNeeded()
     }

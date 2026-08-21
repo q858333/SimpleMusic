@@ -34,6 +34,44 @@ final class AppEnvironment {
         )
     }()
 
+    lazy var downloadQueue: DownloadQueue? = {
+        guard let downloadManager, let downloadFileStore else { return nil }
+        let store: DownloadQueueStore
+        do {
+            store = try .applicationSupport()
+        } catch {
+            NSLog("下载队列账本不可用，改用内存状态：%@", String(describing: error))
+            store = DownloadQueueStore(fileURL: nil)
+        }
+        let recovery = DownloadRecoveryService(
+            fileStore: downloadFileStore,
+            musicStore: localMusicStore
+        )
+        do {
+            try recovery.cleanupRetainedTemporaryFiles()
+        } catch {
+            NSLog("下载临时文件清理失败：%@", String(describing: error))
+        }
+        return DownloadQueue(
+            store: store,
+            operation: { url, progress, onReservation in
+                try await downloadManager.download(
+                    from: url,
+                    progress: progress,
+                    onReservation: onReservation
+                )
+            },
+            settingsStore: settingsStore,
+            recovery: recovery.reconcile(fileName:),
+            onReload: { [weak libraryViewModel] in
+                Task { await libraryViewModel?.requestReload() }
+            },
+            onPlay: { [playbackCoordinator] track in
+                try? playbackCoordinator.play(queue: [track], startAt: 0)
+            }
+        )
+    }()
+
     lazy var libraryViewModel: LibraryViewModel = {
         let localSource: any LocalMusicLoading
         let deleteLocalTrack: (@MainActor @Sendable (MusicTrack) async throws -> Void)?
