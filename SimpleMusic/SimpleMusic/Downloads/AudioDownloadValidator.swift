@@ -1,3 +1,4 @@
+import AudioToolbox
 import Foundation
 
 /// 下载边界拒绝的 URL 或响应类型。
@@ -8,8 +9,9 @@ enum DownloadError: Error {
 
 /// 下载入口的媒体类型白名单，隔离网页链接和未验证的网络响应。
 struct AudioDownloadValidator {
-    static let extensions = Set(["mp3", "m4a", "wav"])
-    static let mimeTypes = Set(["audio/mpeg", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/x-wav"])
+    /// 由当前系统的 Audio File Services 提供可读音频类型，避免手写列表遗漏格式。
+    static let extensions = systemAudioStrings(for: kAudioFileGlobalInfo_AllExtensions)
+    static let mimeTypes = systemAudioStrings(for: kAudioFileGlobalInfo_AllMIMETypes)
 
     func validate(url: URL) throws {
         guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
@@ -28,5 +30,24 @@ struct AudioDownloadValidator {
               Self.mimeTypes.contains(mime) else {
             throw DownloadError.unsupportedResponse
         }
+    }
+
+    private static func systemAudioStrings(for property: AudioFilePropertyID) -> Set<String> {
+        var dataSize = UInt32(MemoryLayout<Unmanaged<CFArray>?>.size)
+        var values: Unmanaged<CFArray>?
+        let status = withUnsafeMutablePointer(to: &values) { pointer in
+            AudioFileGetGlobalInfo(
+                property,
+                0,
+                nil,
+                &dataSize,
+                UnsafeMutableRawPointer(pointer)
+            )
+        }
+        guard status == noErr,
+              let strings = values?.takeRetainedValue() as? [String] else {
+            return []
+        }
+        return Set(strings.map { $0.lowercased() })
     }
 }
