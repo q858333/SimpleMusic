@@ -4,260 +4,160 @@ import UIKit
 import XCTest
 @testable import SimpleMusic
 
-private enum DownloadTestError: Error {
-    case failed
-}
-
 @MainActor
 final class DownloadAndSettingsFlowTests: XCTestCase {
-    func testDownloadSheetUsesLocalizedInputAndTerminalStateCopy() throws {
-        let operation = ControlledDownloadOperation()
-        let harness = makeDownloadHarness(operation: operation)
-        let controller = harness.controller
-        controller.loadViewIfNeeded()
-        let field = try XCTUnwrap(view("download.url", in: controller.view) as? UITextField)
+    func testClosingAndReleasingSheetDoesNotCancelActiveQueueJob() throws {
+        let operation = ControlledQueueDownloadOperation()
+        let queue = makeQueue(operation: operation)
+        weak var weakController: DownloadSheetViewController?
 
-        XCTAssertEqual(controller.title, L10n.text("download.title"))
-        XCTAssertEqual(field.accessibilityLabel, L10n.text("download.url_accessibility"))
-        XCTAssertEqual(field.placeholder, L10n.text("download.url_placeholder"))
-        XCTAssertEqual(buttonTitle("download.close", in: controller), L10n.text("common.cancel"))
-        XCTAssertEqual(buttonTitle("download.submit", in: controller), L10n.text("download.submit"))
-        XCTAssertTrue(labelTexts(in: controller).contains(L10n.text("download.direct_only")))
+        try autoreleasepool {
+            var controller: DownloadSheetViewController? = DownloadSheetViewController(downloadQueue: queue)
+            weakController = controller
+            controller?.loadViewIfNeeded()
+            try submit("https://example.com/a.m4a", in: try XCTUnwrap(controller))
+            waitUntil { operation.startedURLs.count == 1 }
 
-        try setURL("https://example.com/song.mp3", in: controller)
-        try tap("download.submit", in: controller)
-        waitUntil { operation.callCount == 1 }
-        operation.reportProgress(0.5, at: 0)
-
-        XCTAssertTrue(labelTexts(in: controller).contains(L10n.text("download.downloading")))
-        XCTAssertTrue(labelTexts(in: controller).contains(L10n.format("download.progress_saving", 50)))
-        XCTAssertEqual(buttonTitle("download.cancel", in: controller), L10n.text("download.cancel"))
-
-        let finished = track(id: "finished")
-        operation.succeed(track: finished, at: 0)
-        waitUntil { controller.state == .success(finished) }
-
-        XCTAssertTrue(labelTexts(in: controller).contains(L10n.text("download.success_title")))
-        XCTAssertTrue(labelTexts(in: controller).contains(L10n.format("download.success_message", finished.title)))
-        XCTAssertEqual(buttonTitle("download.play", in: controller), L10n.text("download.play_now"))
-        XCTAssertEqual(buttonTitle("download.done", in: controller), L10n.text("common.done"))
-    }
-
-    func testDownloadSheetMapsEveryUserFacingErrorToLocalizedCopy() throws {
-        try assertDownloadFailure(
-            url: "not a valid audio URL",
-            expected: L10n.text("download.error.invalid_url")
-        )
-        try assertDownloadFailure(
-            url: "https://example.com/song.mp3",
-            error: DownloadError.unsupportedURL,
-            expected: L10n.text("download.error.unsupported_url")
-        )
-        try assertDownloadFailure(
-            url: "https://example.com/song.mp3",
-            error: DownloadError.unsupportedResponse,
-            expected: L10n.text("download.error.invalid_payload")
-        )
-        try assertDownloadFailure(
-            url: "https://example.com/song.mp3",
-            error: DownloadTestError.failed,
-            expected: L10n.text("download.error.generic")
-        )
-    }
-
-    func testDownloadStateShowsOnlyItsMatchingView() throws {
-        let harness = makeDownloadHarness()
-        let controller = harness.controller
-        controller.loadViewIfNeeded()
-
-        assertVisibleState("input", in: controller)
-
-        controller.state = .downloading(progress: 0.42)
-        assertVisibleState("downloading", in: controller)
-
-        controller.state = .success(track(id: "finished"))
-        assertVisibleState("success", in: controller)
-
-        controller.state = .failure(message: "无法下载")
-        assertVisibleState("failure", in: controller)
-    }
-
-    func testDownloadInputUsesURLKeyboardReturnKeyAndMinimumTouchTargets() throws {
-        let harness = makeDownloadHarness()
-        let controller = harness.controller
-        controller.loadViewIfNeeded()
-        let field = try XCTUnwrap(view("download.url", in: controller.view) as? UITextField)
-        let buttons = allViews(in: controller.view).compactMap { $0 as? UIButton }
-
-        XCTAssertEqual(field.keyboardType, .URL)
-        XCTAssertEqual(field.returnKeyType, .go)
-        XCTAssertTrue(controller.textFieldShouldReturn(field))
-        XCTAssertFalse(buttons.isEmpty)
-        XCTAssertTrue(buttons.allSatisfy { hasMinimumHeight(44, view: $0) })
-    }
-
-    func testSubmittingTwiceStartsOnlyOneDownloadAndProgressUpdatesState() throws {
-        let operation = ControlledDownloadOperation()
-        let harness = makeDownloadHarness(operation: operation)
-        harness.controller.loadViewIfNeeded()
-        try setURL("https://example.com/song.mp3", in: harness.controller)
-
-        try tap("download.submit", in: harness.controller)
-        try tap("download.submit", in: harness.controller)
-        waitUntil { operation.callCount == 1 }
-        operation.reportProgress(0.65, at: 0)
-
-        XCTAssertEqual(operation.callCount, 1)
-        XCTAssertEqual(harness.controller.state, .downloading(progress: 0.65))
-        operation.succeed(track: Self.track(id: "finished"), at: 0)
-        waitUntil { harness.controller.state == .success(Self.track(id: "finished")) }
-    }
-
-    func testManagerOwnsURLValidationBoundary() throws {
-        var receivedURL: URL?
-        let harness = makeDownloadHarness { url, _ in
-            receivedURL = url
-            throw DownloadError.unsupportedURL
-        }
-        harness.controller.loadViewIfNeeded()
-        try setURL("https://example.com/not-a-file", in: harness.controller)
-
-        try tap("download.submit", in: harness.controller)
-        waitUntil {
-            if case .failure = harness.controller.state { return true }
-            return false
+            controller?.presentationControllerDidDismiss(UIPresentationController(
+                presentedViewController: try XCTUnwrap(controller),
+                presenting: nil
+            ))
+            controller = nil
         }
 
-        XCTAssertEqual(receivedURL?.absoluteString, "https://example.com/not-a-file")
+        XCTAssertNil(weakController)
+        XCTAssertEqual(operation.cancellationCount, 0)
+        XCTAssertEqual(queue.jobs.first?.state, .downloading)
     }
 
-    func testMalformedURLResignsFirstResponderBeforeShowingFailure() throws {
-        let harness = makeDownloadHarness()
-        let navigation = UINavigationController(rootViewController: harness.controller)
-        let windowScene = try XCTUnwrap(
-            UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
-        )
-        let window = UIWindow(windowScene: windowScene)
-        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-        window.rootViewController = navigation
-        window.makeKeyAndVisible()
-        defer { window.isHidden = true }
+    func testReopenedSheetShowsSameJobsAndLatestProgress() throws {
+        let harness = makeQueueSheetHarness()
+        let first = harness.controller
+        first.loadViewIfNeeded()
+        let sourceURL = url("a.m4a")
+        try submit(sourceURL.absoluteString, in: first)
+        let id = try XCTUnwrap(harness.queue.jobs.first?.id)
+        waitUntil { harness.operation.startedURLs.count == 1 }
+        harness.operation.report(url: sourceURL, progress: 0.37)
+
+        let reopened = DownloadSheetViewController(downloadQueue: harness.queue)
+        reopened.loadViewIfNeeded()
+        layout(reopened)
+
+        XCTAssertEqual(progressValue("download.job.\(id).progress", in: reopened), 0.37, accuracy: 0.001)
+        XCTAssertTrue(labelTexts(in: reopened).contains(L10n.format("download.queue.progress", 37)))
+    }
+
+    func testSubmittingFourURLsRendersFourRowsWithFourthWaiting() throws {
+        let harness = makeQueueSheetHarness(maximumActiveCount: 3)
+        harness.controller.loadViewIfNeeded()
+
+        for index in 1...4 {
+            try submit("https://example.com/\(index).m4a", in: harness.controller)
+        }
+        waitUntil { harness.operation.startedURLs.count == 3 }
+        layout(harness.controller)
+
+        XCTAssertEqual(harness.queue.jobs.count, 4)
+        XCTAssertEqual(harness.queue.jobs.filter { $0.state == .downloading }.count, 3)
+        let waiting = try XCTUnwrap(harness.queue.jobs.first { $0.state == .queued })
+        XCTAssertEqual(label("download.job.\(waiting.id).status", in: harness.controller)?.text, L10n.text("download.queue.waiting"))
+    }
+
+    func testRowActionsOnlyAffectMatchingJobID() throws {
+        let harness = makeQueueSheetHarness(maximumActiveCount: 1)
+        let first = try harness.queue.enqueue(url("one.m4a"))
+        let second = try harness.queue.enqueue(url("two.m4a"))
+        harness.controller.loadViewIfNeeded()
+        layout(harness.controller)
+
+        try tap("download.job.\(second).cancel", in: harness.controller)
+        XCTAssertEqual(job(second, in: harness.queue).state, .cancelled)
+        XCTAssertEqual(job(first, in: harness.queue).state, .downloading)
+
+        try tap("download.job.\(second).retry", in: harness.controller)
+        XCTAssertEqual(job(second, in: harness.queue).state, .queued)
+    }
+
+    func testSuccessfulRowPlayOnlyRunsOnceAndRemoveOnlyDeletesMatchingRecord() throws {
+        let harness = makeQueueSheetHarness(maximumActiveCount: 1)
+        let firstURL = url("one.m4a")
+        let first = try harness.queue.enqueue(firstURL)
+        let second = try harness.queue.enqueue(url("two.m4a"))
+        waitUntil { harness.operation.startedURLs == [firstURL] }
+        harness.operation.succeed(url: firstURL, track: track(id: "one"))
+        waitUntil { self.job(first, in: harness.queue).state == .success }
+        harness.controller.loadViewIfNeeded()
+        layout(harness.controller)
+
+        try tap("download.job.\(first).play", in: harness.controller)
+        try tap("download.job.\(first).play", in: harness.controller)
+        XCTAssertEqual(harness.playedTracks().map(\.id), ["one"])
+
+        try tap("download.job.\(first).remove", in: harness.controller)
+        XCTAssertNil(harness.queue.jobs.first { $0.id == first })
+        XCTAssertNotNil(harness.queue.jobs.first { $0.id == second })
+    }
+
+    func testInvalidURLShowsInputErrorWithoutAddingJob() throws {
+        let harness = makeQueueSheetHarness()
+        harness.controller.loadViewIfNeeded()
+
+        try submit("not a valid audio URL", in: harness.controller)
+
+        XCTAssertTrue(harness.queue.jobs.isEmpty)
+        XCTAssertEqual(label("download.input.error", in: harness.controller)?.text, L10n.text("download.error.invalid_url"))
+    }
+
+    func testFailedRowUsesLocalizedReasonAndCanRetryOrRemove() throws {
+        let harness = makeQueueSheetHarness(maximumActiveCount: 1)
+        let sourceURL = url("failure.m4a")
+        let id = try harness.queue.enqueue(sourceURL)
+        waitUntil { harness.operation.startedURLs == [sourceURL] }
+        harness.operation.fail(url: sourceURL, error: DownloadError.unsupportedResponse)
+        waitUntil { self.job(id, in: harness.queue).state == .failure }
+        harness.controller.loadViewIfNeeded()
+        layout(harness.controller)
+
+        XCTAssertEqual(label("download.job.\(id).status", in: harness.controller)?.text, L10n.text("download.error.invalid_payload"))
+        try tap("download.job.\(id).retry", in: harness.controller)
+        XCTAssertEqual(job(id, in: harness.queue).state, .downloading)
+        harness.queue.cancel(id: id)
+        waitUntil { self.job(id, in: harness.queue).state == .cancelled }
+        layout(harness.controller)
+        try tap("download.job.\(id).remove", in: harness.controller)
+        XCTAssertTrue(harness.queue.jobs.isEmpty)
+    }
+
+    func testDownloadingRowExposesLocalizedProgressAndMinimumActionTarget() throws {
+        let harness = makeQueueSheetHarness()
+        let sourceURL = url("voiceover.m4a")
+        let id = try harness.queue.enqueue(sourceURL)
+        waitUntil { harness.operation.startedURLs == [sourceURL] }
+        harness.operation.report(url: sourceURL, progress: 0.62)
+        harness.controller.loadViewIfNeeded()
+        layout(harness.controller)
+
+        let progress = try XCTUnwrap(view("download.job.\(id).progress", in: harness.controller.view))
+        let cancel = try XCTUnwrap(view("download.job.\(id).cancel", in: harness.controller.view) as? UIButton)
+        XCTAssertEqual(progress.accessibilityValue, L10n.format("download.queue.accessibility.progress", 62))
+        XCTAssertTrue(cancel.titleLabel?.adjustsFontForContentSizeCategory == true)
+        XCTAssertTrue(hasMinimumHeight(44, view: cancel))
+    }
+
+    func testDownloadInputUsesLocalizedCopyAndMinimumTouchTargets() throws {
+        let harness = makeQueueSheetHarness()
         harness.controller.loadViewIfNeeded()
         let field = try XCTUnwrap(view("download.url", in: harness.controller.view) as? UITextField)
-        field.text = "not a valid audio URL"
-        _ = field.becomeFirstResponder()
-        waitUntil { field.isFirstResponder }
 
-        try tap("download.submit", in: harness.controller)
-
-        XCTAssertFalse(field.isFirstResponder)
-        if case .failure = harness.controller.state {
-            return
-        }
-        XCTFail("非法 URL 应进入失败态")
-    }
-
-    func testCancelThenNewSubmitIgnoresOldProgressAndCompletion() throws {
-        let operation = ControlledDownloadOperation()
-        let harness = makeDownloadHarness(operation: operation)
-        harness.controller.loadViewIfNeeded()
-        try setURL("https://example.com/old.mp3", in: harness.controller)
-        try tap("download.submit", in: harness.controller)
-        waitUntil { operation.callCount == 1 }
-
-        try tap("download.cancel", in: harness.controller)
-        XCTAssertEqual(harness.controller.state, .input)
-        waitUntil { operation.cancellationCount == 1 }
-
-        try setURL("https://example.com/new.mp3", in: harness.controller)
-        try tap("download.submit", in: harness.controller)
-        waitUntil { operation.callCount == 2 }
-        operation.reportProgress(0.9, at: 0)
-        operation.succeed(track: track(id: "old"), at: 0)
-        waitUntil { operation.completionCount == 1 }
-
-        XCTAssertEqual(harness.controller.state, .downloading(progress: 0))
-        XCTAssertEqual(harness.reloadCount(), 0)
-        XCTAssertTrue(harness.playedTracks().isEmpty)
-
-        operation.succeed(track: track(id: "new"), at: 1)
-        waitUntil { harness.controller.state == .success(Self.track(id: "new")) }
-        XCTAssertEqual(harness.reloadCount(), 1)
-    }
-
-    func testSuccessfulDownloadIgnoresLateProgress() throws {
-        let operation = ControlledDownloadOperation()
-        let harness = makeDownloadHarness(operation: operation)
-        harness.controller.loadViewIfNeeded()
-        try setURL("https://example.com/finished.mp3", in: harness.controller)
-
-        try tap("download.submit", in: harness.controller)
-        waitUntil { operation.callCount == 1 }
-        operation.succeed(track: track(id: "finished"), at: 0)
-        waitUntil { harness.controller.state == .success(Self.track(id: "finished")) }
-
-        operation.reportProgress(0.8, at: 0)
-
-        XCTAssertEqual(harness.controller.state, .success(Self.track(id: "finished")))
-    }
-
-    func testFailedDownloadIgnoresLateProgress() throws {
-        let operation = ControlledDownloadOperation()
-        let harness = makeDownloadHarness(operation: operation)
-        harness.controller.loadViewIfNeeded()
-        try setURL("https://example.com/failed.mp3", in: harness.controller)
-
-        try tap("download.submit", in: harness.controller)
-        waitUntil { operation.callCount == 1 }
-        operation.fail(with: DownloadError.unsupportedResponse, at: 0)
-        waitUntil {
-            if case .failure = harness.controller.state { return true }
-            return false
-        }
-        let terminalState = harness.controller.state
-
-        operation.reportProgress(0.8, at: 0)
-
-        XCTAssertEqual(harness.controller.state, terminalState)
-    }
-
-    func testSuccessfulDownloadStaysUntilImmediatePlayWhenAutoPlayIsOff() throws {
-        let harness = makeDownloadHarness { _, _ in Self.track(id: "manual") }
-        harness.controller.loadViewIfNeeded()
-        try setURL("https://example.com/manual.m4a", in: harness.controller)
-
-        try tap("download.submit", in: harness.controller)
-        waitUntil { harness.controller.state == .success(Self.track(id: "manual")) }
-
-        XCTAssertEqual(harness.reloadCount(), 1)
-        XCTAssertTrue(harness.playedTracks().isEmpty)
-        try tap("download.play", in: harness.controller)
-        XCTAssertEqual(harness.playedTracks().map(\.id), ["manual"])
-    }
-
-    func testImmediatePlayConsumesSuccessOnlyOnce() throws {
-        let harness = makeDownloadHarness { _, _ in Self.track(id: "single-play") }
-        harness.controller.loadViewIfNeeded()
-        try setURL("https://example.com/single-play.m4a", in: harness.controller)
-        try tap("download.submit", in: harness.controller)
-        waitUntil { harness.controller.state == .success(Self.track(id: "single-play")) }
-
-        try tap("download.play", in: harness.controller)
-        try tap("download.play", in: harness.controller)
-
-        XCTAssertEqual(harness.playedTracks().map(\.id), ["single-play"])
-    }
-
-    func testSuccessfulDownloadAutoPlaysWhenSettingIsOn() throws {
-        let harness = makeDownloadHarness(autoPlay: true) { _, _ in Self.track(id: "automatic") }
-        harness.controller.loadViewIfNeeded()
-        try setURL("https://example.com/automatic.wav", in: harness.controller)
-
-        try tap("download.submit", in: harness.controller)
-        waitUntil { harness.playedTracks().count == 1 }
-
-        XCTAssertEqual(harness.reloadCount(), 1)
-        XCTAssertEqual(harness.playedTracks().map(\.id), ["automatic"])
+        XCTAssertEqual(harness.controller.title, L10n.text("download.title"))
+        XCTAssertEqual(field.accessibilityLabel, L10n.text("download.url_accessibility"))
+        XCTAssertEqual(buttonTitle("download.submit", in: harness.controller), L10n.text("download.queue.add"))
+        XCTAssertEqual(field.keyboardType, .URL)
+        XCTAssertEqual(field.returnKeyType, .go)
+        XCTAssertTrue(allViews(in: harness.controller.view).compactMap { $0 as? UIButton }.allSatisfy {
+            hasMinimumHeight(44, view: $0)
+        })
     }
 
     func testSettingsSwitchesReadAndWriteSettingsStore() throws {
@@ -533,42 +433,40 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         XCTAssertEqual(settingsFactoryCount, 1)
     }
 
-    private func makeDownloadHarness(
-        autoPlay: Bool = false,
-        operation: ControlledDownloadOperation? = nil,
-        download: DownloadSheetViewController.DownloadOperation? = nil
-    ) -> DownloadHarness {
-        let defaults = UserDefaults(suiteName: UUID().uuidString)!
-        let store = SettingsStore(defaults: defaults)
-        store.autoPlayAfterDownload = autoPlay
-        var reloadCount = 0
+    private func makeQueueSheetHarness(maximumActiveCount: Int = 3) -> QueueSheetHarness {
+        let operation = ControlledQueueDownloadOperation()
         var playedTracks = [SimpleMusic.MusicTrack]()
-        let resolvedDownload: DownloadSheetViewController.DownloadOperation
-        if let download {
-            resolvedDownload = download
-        } else if let operation {
-            resolvedDownload = { url, progress in try await operation.perform(url: url, progress: progress) }
-        } else {
-            resolvedDownload = { _, _ in Self.track(id: "default") }
-        }
-        let controller = DownloadSheetViewController(
-            download: resolvedDownload,
-            settingsStore: store,
-            onReload: { reloadCount += 1 },
+        let queue = makeQueue(
+            operation: operation,
+            maximumActiveCount: maximumActiveCount,
             onPlay: { playedTracks.append($0) }
         )
-        return DownloadHarness(
-            controller: controller,
-            reloadCount: { reloadCount },
+        return QueueSheetHarness(
+            controller: DownloadSheetViewController(downloadQueue: queue),
+            queue: queue,
+            operation: operation,
             playedTracks: { playedTracks }
         )
     }
 
-    private func makeDownloadHarness(
-        autoPlay: Bool = false,
-        download: @escaping DownloadSheetViewController.DownloadOperation
-    ) -> DownloadHarness {
-        makeDownloadHarness(autoPlay: autoPlay, operation: nil, download: download)
+    private func makeQueue(
+        operation: ControlledQueueDownloadOperation,
+        maximumActiveCount: Int = 3,
+        onPlay: @escaping @MainActor (SimpleMusic.MusicTrack) -> Void = { _ in }
+    ) -> DownloadQueue {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let settings = SettingsStore(defaults: defaults)
+        settings.autoPlayAfterDownload = false
+        let queue = DownloadQueue(
+            store: DownloadQueueStore(fileURL: nil),
+            operation: operation.perform,
+            settingsStore: settings,
+            recovery: { _ in .cleaned },
+            onReload: {},
+            onPlay: onPlay,
+            maximumActiveCount: maximumActiveCount
+        )
+        return queue
     }
 
     private func makeSettingsController(
@@ -607,59 +505,10 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         return weakController
     }
 
-    private func assertVisibleState(
-        _ expected: String,
-        in controller: DownloadSheetViewController,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        for name in ["input", "downloading", "success", "failure"] {
-            let stateView = view("download.state.\(name)", in: controller.view)
-            XCTAssertEqual(stateView?.isHidden, name != expected, "state=\(name)", file: file, line: line)
-        }
-    }
-
-    private func setURL(_ value: String, in controller: DownloadSheetViewController) throws {
+    private func submit(_ value: String, in controller: DownloadSheetViewController) throws {
         let field = try XCTUnwrap(view("download.url", in: controller.view) as? UITextField)
         field.text = value
-    }
-
-    private func assertDownloadFailure(
-        url: String,
-        error: Error? = nil,
-        expected: String,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) throws {
-        let harness = makeDownloadHarness { _, _ in
-            if let error { throw error }
-            return Self.track(id: "unused")
-        }
-        harness.controller.loadViewIfNeeded()
-        try setURL(url, in: harness.controller)
-        try tap("download.submit", in: harness.controller)
-        waitUntil {
-            if case .failure = harness.controller.state { return true }
-            return false
-        }
-
-        XCTAssertTrue(
-            labelTexts(in: harness.controller).contains(expected),
-            "expected failure copy: \(expected)",
-            file: file,
-            line: line
-        )
-        XCTAssertTrue(
-            labelTexts(in: harness.controller).contains(L10n.text("download.failure_title")),
-            file: file,
-            line: line
-        )
-        XCTAssertEqual(
-            buttonTitle("download.retry", in: harness.controller),
-            L10n.text("download.reenter"),
-            file: file,
-            line: line
-        )
+        try tap("download.submit", in: controller)
     }
 
     private func tap(_ identifier: String, in controller: UIViewController) throws {
@@ -676,6 +525,24 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
             _ = RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.01))
         }
         XCTAssertTrue(predicate(), "异步状态未在 \(timeout) 秒内完成")
+    }
+
+    private func layout(_ controller: UIViewController) {
+        controller.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        controller.view.setNeedsLayout()
+        controller.view.layoutIfNeeded()
+    }
+
+    private func url(_ name: String) -> URL {
+        URL(string: "https://example.com/\(name)")!
+    }
+
+    private func job(_ id: UUID, in queue: DownloadQueue) -> DownloadJob {
+        guard let job = queue.jobs.first(where: { $0.id == id }) else {
+            XCTFail("Missing job \(id)")
+            fatalError()
+        }
+        return job
     }
 
     private static func track(id: String) -> SimpleMusic.MusicTrack {
@@ -731,49 +598,71 @@ private final class SuspendedAuthorizationRequest {
 }
 
 @MainActor
-private final class ControlledDownloadOperation {
-    typealias Progress = @MainActor @Sendable (Double) -> Void
+private final class ControlledQueueDownloadOperation {
+    private final class Invocation {
+        let url: URL
+        let progress: @MainActor @Sendable (Double) -> Void
+        var continuation: CheckedContinuation<SimpleMusic.MusicTrack, Error>?
 
-    private var continuations = [CheckedContinuation<SimpleMusic.MusicTrack, Error>]()
-    private var progressHandlers = [Progress]()
-    private(set) var callCount = 0
-    private(set) var completionCount = 0
+        init(
+            url: URL,
+            progress: @escaping @MainActor @Sendable (Double) -> Void,
+            continuation: CheckedContinuation<SimpleMusic.MusicTrack, Error>
+        ) {
+            self.url = url
+            self.progress = progress
+            self.continuation = continuation
+        }
+    }
+
+    private var invocations = [Invocation]()
     private(set) var cancellationCount = 0
+    var startedURLs: [URL] { invocations.map(\.url) }
 
-    func perform(url: URL, progress: @escaping Progress) async throws -> SimpleMusic.MusicTrack {
-        callCount += 1
-        let index = callCount - 1
-        progressHandlers.append(progress)
+    func perform(
+        url: URL,
+        progress: @escaping @MainActor @Sendable (Double) -> Void,
+        reservation: @escaping @MainActor @Sendable (String) throws -> Void
+    ) async throws -> SimpleMusic.MusicTrack {
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                continuations.append(continuation)
+                invocations.append(Invocation(url: url, progress: progress, continuation: continuation))
             }
         } onCancel: {
             Task { @MainActor [weak self] in
-                guard let self, index < continuations.count else { return }
+                guard let self,
+                      let invocation = invocations.first(where: { $0.url == url }),
+                      let continuation = invocation.continuation else { return }
                 cancellationCount += 1
+                invocation.continuation = nil
+                continuation.resume(throwing: CancellationError())
             }
         }
     }
 
-    func reportProgress(_ value: Double, at index: Int) {
-        progressHandlers[index](value)
+    func report(url: URL, progress: Double) {
+        invocations.first(where: { $0.url == url })?.progress(progress)
     }
 
-    func succeed(track: SimpleMusic.MusicTrack, at index: Int) {
-        completionCount += 1
-        continuations[index].resume(returning: track)
+    func succeed(url: URL, track: SimpleMusic.MusicTrack) {
+        guard let invocation = invocations.first(where: { $0.url == url }),
+              let continuation = invocation.continuation else { return }
+        invocation.continuation = nil
+        continuation.resume(returning: track)
     }
 
-    func fail(with error: Error, at index: Int) {
-        completionCount += 1
-        continuations[index].resume(throwing: error)
+    func fail(url: URL, error: Error) {
+        guard let invocation = invocations.first(where: { $0.url == url }),
+              let continuation = invocation.continuation else { return }
+        invocation.continuation = nil
+        continuation.resume(throwing: error)
     }
 }
 
-private struct DownloadHarness {
+private struct QueueSheetHarness {
     let controller: DownloadSheetViewController
-    let reloadCount: () -> Int
+    let queue: DownloadQueue
+    let operation: ControlledQueueDownloadOperation
     let playedTracks: () -> [SimpleMusic.MusicTrack]
 }
 
@@ -797,6 +686,14 @@ private func buttonTitle(_ identifier: String, in controller: UIViewController) 
     let button = (view(identifier, in: controller.view) as? UIButton)
         ?? (controller.navigationItem.leftBarButtonItem?.customView as? UIButton)
     return button?.configuration?.title
+}
+
+private func label(_ identifier: String, in controller: UIViewController) -> UILabel? {
+    view(identifier, in: controller.view) as? UILabel
+}
+
+private func progressValue(_ identifier: String, in controller: UIViewController) -> Double {
+    Double((view(identifier, in: controller.view) as? UIProgressView)?.progress ?? -1)
 }
 
 private func hasMinimumHeight(_ value: CGFloat, view: UIView) -> Bool {

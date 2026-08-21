@@ -140,6 +140,28 @@ final class AppCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(copy, L10n.text("storage.download.unavailable_short"))
     }
+
+    /// 如果下载工厂重新创建队列，关闭再打开页面会丢失任务和进度。
+    @MainActor
+    func testPhoneAndPadDownloadFactoriesUseEnvironmentSharedQueue() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SimpleMusic-AppCoordinatorTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let fileStore = try DownloadFileStore(rootURL: rootURL)
+        let environment = AppEnvironment(
+            downloadStorageResolution: DownloadStorageResolution(store: fileStore, warning: nil)
+        )
+        let dependencies = AppRootDependencies(environment: environment)
+
+        let first = try XCTUnwrap(dependencies.makeDownloadViewController() as? DownloadSheetViewController)
+        let second = try XCTUnwrap(dependencies.makeDownloadViewController() as? DownloadSheetViewController)
+        let sharedQueue = try XCTUnwrap(environment.downloadQueue)
+
+        XCTAssertTrue(first.downloadQueue === sharedQueue)
+        XCTAssertTrue(second.downloadQueue === sharedQueue)
+        XCTAssertTrue(first.downloadQueue === second.downloadQueue)
+    }
+
     /// 如果设备类型映射交换或 iPad 错走手机根界面，此测试应失败。
     @MainActor
     func testRootKindMatchesPhoneAndPadIdioms() {

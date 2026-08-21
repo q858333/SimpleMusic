@@ -64,6 +64,46 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
+    func testDownloadQueueProgressUsesLocalizedIntegerFormatAcrossLanguages() throws {
+        let expectedByLanguage = [
+            "en": "37% downloaded",
+            "zh-Hans": "已下载 37%",
+            "zh-Hant": "已下載 37%",
+        ]
+
+        for language in ["en", "zh-Hans", "zh-Hant"] {
+            XCTAssertEqual(
+                L10n.formatted(
+                    "download.queue.progress",
+                    bundle: try languageBundle(language),
+                    arguments: [37]
+                ),
+                expectedByLanguage[language],
+                "language=\(language)"
+            )
+        }
+    }
+
+    func testDownloadQueueLocalizationsExposeCompleteSharedKeySet() throws {
+        let requiredKeys: Set<String> = [
+            "download.queue.add",
+            "download.queue.empty",
+            "download.queue.waiting",
+            "download.queue.interrupted",
+            "download.queue.cancelled",
+            "download.queue.retry",
+            "download.queue.remove",
+            "download.queue.progress",
+            "download.queue.accessibility.progress",
+            "download.queue.error.recovery",
+        ]
+
+        for language in ["en", "zh-Hans", "zh-Hant"] {
+            let values = try stringsDictionary(language: language, name: "Localizable")
+            XCTAssertTrue(requiredKeys.isSubset(of: Set(values.keys)), "language=\(language)")
+        }
+    }
+
     func testDeletionMessageUsesFirstPositionalObjectParameterAcrossLanguages() throws {
         let expected = ["%1$@"]
 

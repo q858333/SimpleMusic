@@ -77,6 +77,16 @@
 "download.error.unsupported_url" = "Only direct MP3, M4A, or WAV file links are supported.";
 "download.error.invalid_payload" = "The link did not return a downloadable audio file.";
 "download.error.generic" = "The download could not be completed. Check the link and your network, then try again.";
+"download.queue.add" = "Add Download";
+"download.queue.empty" = "No downloads yet.";
+"download.queue.waiting" = "Waiting";
+"download.queue.interrupted" = "Interrupted. Retry to start again.";
+"download.queue.cancelled" = "Cancelled";
+"download.queue.retry" = "Retry";
+"download.queue.remove" = "Remove";
+"download.queue.progress" = "%1$d%% downloaded";
+"download.queue.accessibility.progress" = "Download progress: %1$d%%";
+"download.queue.error.recovery" = "The saved download could not be recovered. Remove it or retry.";
 "settings.title" = "Settings";
 "settings.permission_title" = "Music Library Access";
 "settings.cellular_title" = "Allow Cellular Downloads";

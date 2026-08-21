@@ -77,6 +77,16 @@
 "download.error.unsupported_url" = "仅支持直接指向 MP3、M4A 或 WAV 文件的链接。";
 "download.error.invalid_payload" = "链接未返回可下载的音频文件。";
 "download.error.generic" = "下载未完成，请检查链接和网络后重试。";
+"download.queue.add" = "添加下载";
+"download.queue.empty" = "暂无下载任务。";
+"download.queue.waiting" = "等待中";
+"download.queue.interrupted" = "已中断，重试后将重新下载。";
+"download.queue.cancelled" = "已取消";
+"download.queue.retry" = "重试";
+"download.queue.remove" = "移除";
+"download.queue.progress" = "已下载 %1$d%%";
+"download.queue.accessibility.progress" = "下载进度 %1$d%%";
+"download.queue.error.recovery" = "无法恢复已保存的下载，请移除或重试。";
 "settings.title" = "设置";
 "settings.permission_title" = "音乐资料库权限";
 "settings.cellular_title" = "允许蜂窝网络下载";

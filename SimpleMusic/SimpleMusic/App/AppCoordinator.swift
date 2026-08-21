@@ -59,17 +59,13 @@ struct AppRootDependencies {
             playbackCoordinator.seek(to: seconds)
         }
         makeDownloadViewController = {
-            guard let downloadManager = environment.downloadManager else {
+            guard let downloadQueue = environment.downloadQueue else {
                 return DownloadUnavailableViewController(
                     message: environment.downloadStorageWarning ?? L10n.text("storage.download.unavailable_short")
                 )
             }
-            return DownloadSheetViewController(
-                downloadManager: downloadManager,
-                settingsStore: environment.settingsStore,
-                libraryViewModel: viewModel,
-                onPlay: { track in play([track], 0) }
-            )
+            // 手机弹层与 iPad 路由都复用环境中的应用级队列。
+            return DownloadSheetViewController(downloadQueue: downloadQueue)
         }
         makeSettingsViewController = {
             SettingsViewController(
