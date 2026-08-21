@@ -1,21 +1,18 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="1" systemVersion="11A491" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithCloudKit="false" userDefinedModelVersionIdentifier="">
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="24512" systemVersion="25C56" minimumToolsVersion="Automatic" sourceLanguage="Swift" userDefinedModelVersionIdentifier="">
     <entity name="DownloadedTrackEntity" representedClassName="DownloadedTrackEntity" syncable="YES">
-        <attribute name="album" optional="NO" attributeType="String"/>
-        <attribute name="artist" optional="NO" attributeType="String"/>
-        <attribute name="createdAt" optional="NO" attributeType="Date" usesScalarValueType="NO"/>
-        <attribute name="duration" optional="NO" attributeType="Double" defaultValueString="0" usesScalarValueType="YES"/>
-        <attribute name="fileName" optional="NO" attributeType="String"/>
-        <attribute name="id" optional="NO" attributeType="String"/>
+        <attribute name="album" attributeType="String"/>
+        <attribute name="artist" attributeType="String"/>
+        <attribute name="createdAt" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="duration" attributeType="Double" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="fileName" attributeType="String"/>
+        <attribute name="id" attributeType="String"/>
         <attribute name="lastPlayedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
-        <attribute name="title" optional="NO" attributeType="String"/>
+        <attribute name="title" attributeType="String"/>
         <uniquenessConstraints>
             <uniquenessConstraint>
                 <constraint value="id"/>
             </uniquenessConstraint>
         </uniquenessConstraints>
     </entity>
-    <elements>
-        <element name="DownloadedTrackEntity" positionX="-63" positionY="-18" width="128" height="164"/>
-    </elements>
 </model>
