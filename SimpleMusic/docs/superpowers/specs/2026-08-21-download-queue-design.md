@@ -132,11 +132,12 @@ final class DownloadQueue {
 
 1. 读取任务账本；账本不存在时使用空队列。
 2. JSON 损坏时保留文件并记录诊断，使用空内存队列，不让应用崩溃。
-3. 对上次的 `queued` 或 `downloading` 任务做恢复核对。
-4. 若 `reservedFileName` 已存在于本地音乐索引，说明歌曲事务已完成：保留歌曲，从任务账本移除，不误删已入库文件。
-5. 若没有对应索引，只通过 `DownloadFileStore` 的受控文件名 API 清理该任务的 reservation/文件；绝不跟随符号链接，也不删除下载根目录之外的路径。
-6. 将未完成记录改为 `interrupted`，进度重置为 `0`，等待用户手动重试。
-7. `failure`、`cancelled` 和 `interrupted` 记录保留；成功记录不跨进程保留，成功歌曲由资料库承载。
+3. 只清理由传输层创建且名称以 `SimpleMusicDownload-` 开头的应用临时文件；其他临时文件和目录不处理。
+4. 对上次的 `queued` 或 `downloading` 任务做恢复核对。
+5. 若 `reservedFileName` 已存在于本地音乐索引，说明歌曲事务已完成：保留歌曲，从任务账本移除，不误删已入库文件。
+6. 若没有对应索引，只通过 `DownloadFileStore` 的受控文件名 API 清理该任务的 reservation/文件；绝不跟随符号链接，也不删除下载根目录之外的路径。
+7. 将未完成记录改为 `interrupted`，进度重置为 `0`，等待用户手动重试。
+8. `failure`、`cancelled` 和 `interrupted` 记录保留；成功记录不跨进程保留，成功歌曲由资料库承载。
 
 上述恢复避免把“任务记录持久化”误解为断点续传：重试始终创建新的网络请求并从 0 开始。
 
@@ -240,6 +241,7 @@ final class DownloadQueue {
 - 上次 `queued/downloading` 在启动时变为 `interrupted`，不会自行发起请求。
 - 已有索引的 reserved 文件被视为已完成且不删除。
 - 无索引的受控 reserved 文件被清理，任务变为 `interrupted`。
+- 启动时只删除 `SimpleMusicDownload-` 前缀的遗留传输临时文件，保留同目录其他文件和目录。
 - traversal、符号链接和未知 I/O 错误不越过 `DownloadFileStore` 安全边界，也不误删用户数据。
 - 损坏账本不崩溃、不删除歌曲，并留下诊断。
 
