@@ -208,6 +208,52 @@ final class DownloadQueueTests: XCTestCase {
         XCTAssertTrue(playedTracks.isEmpty)
     }
 
+    func testQueuedSecondDoesNotAutoPlayAfterSingleSlotBecomesFree() throws {
+        let operation = ControlledQueueDownloadOperation()
+        var playedTracks = [MusicTrack]()
+        let queue = makeQueue(
+            operation: operation,
+            settings: makeSettings(autoPlay: true),
+            onPlay: { playedTracks.append($0) },
+            maximumActiveCount: 1
+        )
+        let firstURL = URL(string: "https://example.com/one.m4a")!
+        let secondURL = URL(string: "https://example.com/two.m4a")!
+        _ = try queue.enqueue(firstURL)
+        _ = try queue.enqueue(secondURL)
+        waitUntil { operation.startedURLs == [firstURL] }
+
+        operation.succeed(url: firstURL, track: track(id: "one"))
+        waitUntil { operation.startedURLs == [firstURL, secondURL] }
+        operation.succeed(url: secondURL, track: track(id: "two"))
+        waitUntil { queue.jobs.filter { $0.state == .success }.count == 2 }
+
+        XCTAssertEqual(playedTracks.map(\.id), ["one"])
+    }
+
+    func testQueueStartsSameTimestampJobsInSubmissionOrderWithSingleSlot() throws {
+        let operation = ControlledQueueDownloadOperation()
+        let timestamp = Date(timeIntervalSince1970: 42)
+        let queue = makeQueue(
+            operation: operation,
+            maximumActiveCount: 1,
+            now: { timestamp }
+        )
+        let urls = (1...4).map { URL(string: "https://example.com/\($0).m4a")! }
+        let ids = try urls.map { try queue.enqueue($0) }
+        XCTAssertEqual(queue.jobs.map(\.id), ids.reversed())
+        waitUntil { operation.startedURLs.count == 1 }
+
+        for (index, url) in urls.enumerated() {
+            XCTAssertEqual(operation.startedURLs[index], url)
+            operation.succeed(url: url, track: track(id: "\(index)"))
+            if index < urls.count - 1 {
+                waitUntil { operation.startedURLs.count == index + 2 }
+            }
+        }
+        waitUntil { queue.jobs.allSatisfy { $0.state == .success } }
+    }
+
     func testQueueStoreRoundTripsRecoverableJobFields() throws {
         let fileURL = try makeTemporaryDirectory()
             .appendingPathComponent("download-queue.json")
@@ -274,7 +320,9 @@ final class DownloadQueueTests: XCTestCase {
         operation: ControlledQueueDownloadOperation,
         store: RecordingQueueStore? = nil,
         settings: SettingsStore? = nil,
-        onPlay: @escaping @MainActor (MusicTrack) -> Void = { _ in }
+        onPlay: @escaping @MainActor (MusicTrack) -> Void = { _ in },
+        maximumActiveCount: Int = 3,
+        now: @escaping @MainActor () -> Date = Date.init
     ) -> DownloadQueue {
         DownloadQueue(
             store: store ?? RecordingQueueStore(),
@@ -282,7 +330,9 @@ final class DownloadQueueTests: XCTestCase {
             settingsStore: settings ?? makeSettings(autoPlay: false),
             recovery: { _ in .cleaned },
             onReload: {},
-            onPlay: onPlay
+            onPlay: onPlay,
+            maximumActiveCount: maximumActiveCount,
+            now: now
         )
     }
 

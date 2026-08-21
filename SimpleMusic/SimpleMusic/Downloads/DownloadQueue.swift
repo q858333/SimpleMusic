@@ -59,7 +59,7 @@ final class DownloadQueue {
         self.log = log
 
         do {
-            jobs = try store.load().sorted { $0.createdAt > $1.createdAt }
+            jobs = Self.sortedForDisplay(try store.load())
         } catch {
             log("Download queue ledger could not be loaded: \(error)")
             jobs = []
@@ -71,6 +71,8 @@ final class DownloadQueue {
         try AudioDownloadValidator().validate(url: sourceURL)
 
         let id = UUID()
+        let autoPlayEligible = settingsStore.autoPlayAfterDownload
+            && !jobs.contains { $0.state == .queued || $0.state == .downloading }
         let job = DownloadJob(
             id: id,
             sourceURL: sourceURL,
@@ -82,12 +84,14 @@ final class DownloadQueue {
             failureReason: nil,
             reservedFileName: nil
         )
-        jobs.append(job)
+        jobs.insert(job, at: 0)
+        attemptAutoPlay[id] = autoPlayEligible
         sortJobs()
         do {
             try saveLedger()
         } catch {
             jobs.removeAll { $0.id == id }
+            attemptAutoPlay.removeValue(forKey: id)
             throw error
         }
         publish()
@@ -114,12 +118,17 @@ final class DownloadQueue {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
         switch jobs[index].state {
         case .failure, .cancelled, .interrupted:
+            let autoPlayEligible = settingsStore.autoPlayAfterDownload
+                && !jobs.contains {
+                    $0.id != id && ($0.state == .queued || $0.state == .downloading)
+                }
             jobs[index].state = .queued
             jobs[index].progress = 0
             jobs[index].failureReason = nil
             jobs[index].reservedFileName = nil
             pendingRemovalAttempts.removeValue(forKey: id)
             persistedProgressBuckets.removeValue(forKey: id)
+            attemptAutoPlay[id] = autoPlayEligible
             persistAndPublish()
             scheduleIfNeeded()
         case .queued, .downloading, .success:
@@ -147,10 +156,15 @@ final class DownloadQueue {
 
     private func scheduleIfNeeded() {
         while activeTasks.count < maximumActiveCount,
-              let job = jobs
-                .filter({ $0.state == .queued })
-                .min(by: { $0.createdAt < $1.createdAt }) {
-            start(jobID: job.id)
+              let job = jobs.enumerated()
+                .filter({ $0.element.state == .queued })
+                .min(by: { lhs, rhs in
+                    if lhs.element.createdAt == rhs.element.createdAt {
+                        return lhs.offset > rhs.offset
+                    }
+                    return lhs.element.createdAt < rhs.element.createdAt
+                }) {
+            start(jobID: job.element.id)
         }
     }
 
@@ -164,7 +178,6 @@ final class DownloadQueue {
         jobs[index].reservedFileName = nil
         let sourceURL = jobs[index].sourceURL
         let attempt = jobs[index].attempt
-        attemptAutoPlay[jobID] = settingsStore.autoPlayAfterDownload && activeTasks.isEmpty
         persistedProgressBuckets[jobID] = 0
         persistAndPublish()
 
@@ -301,7 +314,17 @@ final class DownloadQueue {
     }
 
     private func sortJobs() {
-        jobs.sort { $0.createdAt > $1.createdAt }
+        jobs = Self.sortedForDisplay(jobs)
+    }
+
+    private static func sortedForDisplay(_ jobs: [DownloadJob]) -> [DownloadJob] {
+        // 同时间戳时保留 JSON newest-first 顺序；调度器据此反向取最早提交项。
+        jobs.enumerated().sorted { lhs, rhs in
+            if lhs.element.createdAt == rhs.element.createdAt {
+                return lhs.offset < rhs.offset
+            }
+            return lhs.element.createdAt > rhs.element.createdAt
+        }.map(\.element)
     }
 
     private static func failureReason(for error: Error) -> DownloadJob.FailureReason {
