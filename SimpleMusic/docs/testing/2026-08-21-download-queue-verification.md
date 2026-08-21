@@ -106,8 +106,8 @@ xcodebuild -workspace SimpleMusic.xcworkspace -scheme SimpleMusic \
   -destination 'generic/platform=iOS' build CODE_SIGNING_ALLOWED=NO
 ```
 
-- generic iOS Simulator：exit code 0；`** BUILD SUCCEEDED **`；日志 `/tmp/download-queue-simulator-build.log`
-- generic iOS device：exit code 0；`** BUILD SUCCEEDED **`；日志 `/tmp/download-queue-device-build.log`
+- generic iOS Simulator：在 HEAD `6b6df97` 重跑，exit code 0；`** BUILD SUCCEEDED **`；日志 `/tmp/download-queue-final-fix-simulator-build.log`（2026-08-21 18:17:21 +0800）
+- generic iOS device：在 HEAD `6b6df97` 串行重跑，exit code 0；`** BUILD SUCCEEDED **`；日志 `/tmp/download-queue-final-fix-device-build.log`（2026-08-21 18:17:34 +0800）
 - 本次下载队列、下载页面和应用接线 Swift 文件没有编译 warning；没有方向 validation 或资源缺失错误。
 - 非本次改动 warning：IQKeyboardManager Pod 的弃用/隐式捕获警告、播放器既有 `showsRouteButton` 弃用警告、LaunchScreen 既有非 Dynamic Type 字体警告。
 - 环境型 warning：当前 Metal toolchain Swift 搜索路径不存在；AppIntents 元数据因工程不依赖 AppIntents 而跳过。
