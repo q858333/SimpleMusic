@@ -170,6 +170,7 @@ final class DownloadQueue {
 
     func retry(id: UUID) {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
+        guard pendingRemovalAttempts[id] == nil else { return }
         switch jobs[index].state {
         case .failure, .cancelled, .interrupted:
             guard pendingRecoveryActions[id] == nil else { return }
@@ -192,16 +193,17 @@ final class DownloadQueue {
 
     func remove(id: UUID) {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
-        if jobs[index].state == .downloading, activeTasks[id] != nil {
+        if let task = activeTasks[id] {
+            guard pendingRemovalAttempts[id] == nil,
+                  jobs[index].state == .downloading else { return }
             pendingRemovalAttempts[id] = jobs[index].attempt
             jobs[index].attempt &+= 1
             jobs[index].state = .cancelled
             attemptAutoPlay.removeValue(forKey: id)
             schedulingOrder.removeValue(forKey: id)
             persistedProgressBuckets.removeValue(forKey: id)
-            let task = activeTasks[id]
             persistAndPublish()
-            task?.cancel()
+            task.cancel()
             return
         }
         if recoveryTasks[id] != nil || jobs[index].reservedFileName != nil {

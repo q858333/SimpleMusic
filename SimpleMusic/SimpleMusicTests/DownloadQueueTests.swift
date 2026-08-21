@@ -148,6 +148,87 @@ final class DownloadQueueTests: XCTestCase {
         waitUntil { queue.jobs.allSatisfy { $0.state == .success } }
     }
 
+    func testRepeatedRemoveOfActiveReservedJobWaitsForSameTerminal() throws {
+        let operation = ControlledQueueDownloadOperation(automaticallyCompletesCancellation: false)
+        let recovery = GatedRecovery()
+        let queue = makeQueue(
+            operation: operation,
+            recovery: recovery.perform,
+            maximumActiveCount: 1
+        )
+        let activeURL = URL(string: "https://example.com/repeated-remove.m4a")!
+        let queuedURL = URL(string: "https://example.com/after-remove.m4a")!
+        let activeID = try queue.enqueue(activeURL)
+        _ = try queue.enqueue(queuedURL)
+        waitUntil { operation.startedURLs == [activeURL] }
+        try operation.reserve(url: activeURL, fileName: "repeated-remove.m4a")
+
+        queue.remove(id: activeID)
+        waitUntil { operation.cancellationCount == 1 }
+        queue.remove(id: activeID)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.03))
+
+        XCTAssertEqual(operation.cancellationCount, 1)
+        XCTAssertEqual(recovery.invocationCount, 0)
+        XCTAssertNotNil(queue.jobs.first { $0.id == activeID })
+        XCTAssertEqual(operation.startedURLs, [activeURL])
+
+        operation.completeCancellation(url: activeURL)
+        waitUntil {
+            queue.jobs.first { $0.id == activeID } == nil
+                && operation.attemptCount(url: queuedURL) == 1
+        }
+
+        XCTAssertEqual(recovery.invocationCount, 0)
+        XCTAssertEqual(operation.startedURLs, [activeURL, queuedURL])
+        recovery.releaseAll(with: .success(.cleaned))
+        operation.succeed(url: queuedURL, track: track(id: "after-remove"))
+        waitUntil { queue.jobs.allSatisfy { $0.state == .success } }
+    }
+
+    func testRetryAfterRemovingActiveReservedJobIsIgnoredUntilTerminal() throws {
+        let operation = ControlledQueueDownloadOperation(automaticallyCompletesCancellation: false)
+        let recovery = GatedRecovery()
+        var playedIDs = [String]()
+        let queue = makeQueue(
+            operation: operation,
+            settings: makeSettings(autoPlay: true),
+            recovery: recovery.perform,
+            onPlay: { playedIDs.append($0.id) },
+            maximumActiveCount: 1
+        )
+        let activeURL = URL(string: "https://example.com/removed-before-retry.m4a")!
+        let queuedURL = URL(string: "https://example.com/queued-after-retry.m4a")!
+        let activeID = try queue.enqueue(activeURL)
+        _ = try queue.enqueue(queuedURL)
+        waitUntil { operation.startedURLs == [activeURL] }
+        try operation.reserve(url: activeURL, fileName: "removed-before-retry.m4a")
+
+        queue.remove(id: activeID)
+        queue.retry(id: activeID)
+        queue.retry(id: activeID)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.03))
+
+        XCTAssertEqual(operation.cancellationCount, 1)
+        XCTAssertEqual(recovery.invocationCount, 0)
+        XCTAssertEqual(operation.attemptCount(url: activeURL), 1)
+        XCTAssertEqual(operation.startedURLs, [activeURL])
+        XCTAssertNotNil(queue.jobs.first { $0.id == activeID })
+
+        operation.completeCancellation(url: activeURL)
+        waitUntil {
+            queue.jobs.first { $0.id == activeID } == nil
+                && operation.attemptCount(url: queuedURL) == 1
+        }
+
+        XCTAssertEqual(recovery.invocationCount, 0)
+        XCTAssertEqual(operation.startedURLs, [activeURL, queuedURL])
+        recovery.releaseAll(with: .success(.cleaned))
+        operation.succeed(url: queuedURL, track: track(id: "queued-after-retry"))
+        waitUntil { queue.jobs.allSatisfy { $0.state == .success } }
+        XCTAssertEqual(playedIDs, [])
+    }
+
     func testRemovingActiveJobAfterSuccessSignalStillRemovesAfterTerminalCallback() throws {
         let operation = ControlledQueueDownloadOperation()
         let queue = makeQueue(operation: operation)
