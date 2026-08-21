@@ -1,3 +1,4 @@
+import CoreData
 import Foundation
 import XCTest
 @testable import SimpleMusic
@@ -548,6 +549,59 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: temporaryFile.path))
     }
 
+    /// 如果下载编排只保存文件元数据而丢掉用户提交的原始 URL，此测试应失败。
+    func testSuccessfulURLDownloadPersistsOriginalSourceURL() async throws {
+        let downloadRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DownloadSourceURLTests-\(UUID().uuidString)")
+        let temporaryFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DownloadSourceURLTests-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: downloadRoot)
+            try? FileManager.default.removeItem(at: temporaryFile)
+        }
+        try Data("audio".utf8).write(to: temporaryFile)
+        let sourceURL = try XCTUnwrap(URL(string: "https://example.com/music/test.m4a?token=original"))
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: sourceURL,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "audio/mp4"]
+        ))
+        let container = try makeInMemoryContainer()
+        let manager = DownloadManager(
+            fileStore: try DownloadFileStore(rootURL: downloadRoot),
+            musicStore: LocalMusicStore(container: container),
+            settingsStore: SettingsStore(defaults: .standard),
+            clientFactory: { _ in
+                FixedPayloadDownloadClient(payload: AudioDownloadPayload(
+                    temporaryFileURL: temporaryFile,
+                    response: response
+                ))
+            },
+            metadataReader: { _, storedFileName in
+                DownloadedTrackMetadata(
+                    id: "source-url",
+                    fileName: storedFileName,
+                    title: "Source URL",
+                    artist: "Artist",
+                    album: "Album",
+                    duration: 1
+                )
+            }
+        )
+
+        _ = try await manager.download(from: sourceURL, progress: { _ in })
+
+        guard container.managedObjectModel.entitiesByName["DownloadedTrackEntity"]?
+            .attributesByName["sourceURL"] != nil else {
+            XCTFail("下载索引模型必须包含 sourceURL 字段")
+            return
+        }
+        let request = NSFetchRequest<NSManagedObject>(entityName: "DownloadedTrackEntity")
+        let entity = try XCTUnwrap(container.viewContext.fetch(request).first)
+        XCTAssertEqual(entity.value(forKey: "sourceURL") as? String, sourceURL.absoluteString)
+    }
+
     func testReservationObserverSeesEmptyReservationBeforeCommit() async throws {
         var events = [String]()
         let harness = try makeDownloadHarness(
@@ -672,6 +726,19 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
 
     private func audioURL(index: Int) -> URL {
         URL(string: "https://example.com/song-\(index).mp3")!
+    }
+
+    private func makeInMemoryContainer() throws -> NSPersistentContainer {
+        let container = NSPersistentContainer(name: "SimpleMusic")
+        let description = NSPersistentStoreDescription()
+        description.type = NSInMemoryStoreType
+        description.shouldAddStoreAsynchronously = false
+        container.persistentStoreDescriptions = [description]
+
+        var loadingError: Error?
+        container.loadPersistentStores { _, error in loadingError = error }
+        if let loadingError { throw loadingError }
+        return container
     }
 
     private func audioURL(_ fileName: String) -> URL {

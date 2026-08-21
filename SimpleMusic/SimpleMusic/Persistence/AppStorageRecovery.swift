@@ -30,6 +30,8 @@ struct PersistentStoreFactory {
         load: @escaping Loader = { container, completion in
             container.persistentStoreDescriptions.forEach {
                 $0.shouldAddStoreAsynchronously = false
+                $0.shouldMigrateStoreAutomatically = true
+                $0.shouldInferMappingModelAutomatically = true
             }
             container.loadPersistentStores { _, error in completion(error) }
         }

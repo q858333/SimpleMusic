@@ -10,6 +10,7 @@ struct DownloadedTrackMetadata {
     let duration: TimeInterval
     let createdAt: Date
     let lastPlayedAt: Date?
+    let sourceURL: URL?
 
     init(
         id: String,
@@ -19,7 +20,8 @@ struct DownloadedTrackMetadata {
         album: String,
         duration: TimeInterval,
         createdAt: Date = Date(),
-        lastPlayedAt: Date? = nil
+        lastPlayedAt: Date? = nil,
+        sourceURL: URL? = nil
     ) {
         self.id = id
         self.fileName = fileName
@@ -29,6 +31,22 @@ struct DownloadedTrackMetadata {
         self.duration = duration
         self.createdAt = createdAt
         self.lastPlayedAt = lastPlayedAt
+        self.sourceURL = sourceURL
+    }
+
+    /// 媒体元数据来自落盘文件，来源地址由下载编排在提交索引前补充。
+    func recording(sourceURL: URL) -> DownloadedTrackMetadata {
+        DownloadedTrackMetadata(
+            id: id,
+            fileName: fileName,
+            title: title,
+            artist: artist,
+            album: album,
+            duration: duration,
+            createdAt: createdAt,
+            lastPlayedAt: lastPlayedAt,
+            sourceURL: sourceURL
+        )
     }
 }
 
@@ -112,6 +130,7 @@ final class LocalMusicStore: @unchecked Sendable {
             entity.duration = metadata.duration
             entity.createdAt = metadata.createdAt
             entity.lastPlayedAt = metadata.lastPlayedAt
+            entity.sourceURL = metadata.sourceURL?.absoluteString
 
             do {
                 try context.save()

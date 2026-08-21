@@ -64,6 +64,60 @@ final class LocalMusicStoreTests: XCTestCase {
         XCTAssertTrue(try store.fetchTracks().isEmpty)
     }
 
+    /// 如果新模型不能从已发布的旧模型轻量迁移，此测试会丢失旧下载索引或加载失败。
+    func testLightweightMigrationKeepsLegacyTrackWithoutSourceURL() throws {
+        let modelBundle = Bundle(for: DownloadedTrackEntity.self)
+        let modelDirectory = try XCTUnwrap(
+            modelBundle.url(forResource: "SimpleMusic", withExtension: "momd")
+        )
+        let legacyModelURL = modelDirectory.appendingPathComponent("SimpleMusic.mom")
+        let legacyModel = try XCTUnwrap(NSManagedObjectModel(contentsOf: legacyModelURL))
+        XCTAssertNil(
+            legacyModel.entitiesByName["DownloadedTrackEntity"]?.attributesByName["sourceURL"]
+        )
+
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LocalMusicMigrationTests-\(UUID().uuidString)", isDirectory: true)
+        let storeURL = directory.appendingPathComponent("SimpleMusic.sqlite")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let legacyContainer = NSPersistentContainer(name: "SimpleMusic", managedObjectModel: legacyModel)
+        let legacyDescription = NSPersistentStoreDescription(url: storeURL)
+        legacyDescription.shouldAddStoreAsynchronously = false
+        legacyContainer.persistentStoreDescriptions = [legacyDescription]
+        try loadPersistentStores(in: legacyContainer)
+
+        let legacyEntity = NSEntityDescription.insertNewObject(
+            forEntityName: "DownloadedTrackEntity",
+            into: legacyContainer.viewContext
+        )
+        legacyEntity.setValue("legacy", forKey: "id")
+        legacyEntity.setValue("legacy.m4a", forKey: "fileName")
+        legacyEntity.setValue("Legacy", forKey: "title")
+        legacyEntity.setValue("Artist", forKey: "artist")
+        legacyEntity.setValue("Album", forKey: "album")
+        legacyEntity.setValue(12.0, forKey: "duration")
+        legacyEntity.setValue(Date(timeIntervalSince1970: 1), forKey: "createdAt")
+        try legacyContainer.viewContext.save()
+        try legacyContainer.persistentStoreCoordinator.remove(
+            try XCTUnwrap(legacyContainer.persistentStoreCoordinator.persistentStores.first)
+        )
+
+        let migratedContainer = NSPersistentContainer(name: "SimpleMusic")
+        let migratedDescription = NSPersistentStoreDescription(url: storeURL)
+        migratedDescription.shouldAddStoreAsynchronously = false
+        migratedDescription.shouldMigrateStoreAutomatically = true
+        migratedDescription.shouldInferMappingModelAutomatically = true
+        migratedContainer.persistentStoreDescriptions = [migratedDescription]
+        try loadPersistentStores(in: migratedContainer)
+
+        let request = NSFetchRequest<NSManagedObject>(entityName: "DownloadedTrackEntity")
+        let migratedEntity = try XCTUnwrap(migratedContainer.viewContext.fetch(request).first)
+        XCTAssertEqual(migratedEntity.value(forKey: "id") as? String, "legacy")
+        XCTAssertNil(migratedEntity.value(forKey: "sourceURL"))
+    }
+
     func testContainsDownloadedFileNameReturnsTrueOnlyForIndexedName() async throws {
         let store = try LocalMusicStore.inMemory()
         _ = try store.insert(metadata(id: "indexed", fileName: "indexed.m4a"))
@@ -314,6 +368,12 @@ final class LocalMusicStoreTests: XCTestCase {
         container.loadPersistentStores { _, error in loadingError = error }
         if let loadingError { throw loadingError }
         return container
+    }
+
+    private func loadPersistentStores(in container: NSPersistentContainer) throws {
+        var loadingError: Error?
+        container.loadPersistentStores { _, error in loadingError = error }
+        if let loadingError { throw loadingError }
     }
 
     private func makeCatalogFixture() throws -> (

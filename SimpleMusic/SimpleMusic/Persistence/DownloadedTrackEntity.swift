@@ -11,4 +11,5 @@ final class DownloadedTrackEntity: NSManagedObject {
     @NSManaged var duration: Double
     @NSManaged var createdAt: Date
     @NSManaged var lastPlayedAt: Date?
+    @NSManaged var sourceURL: String?
 }

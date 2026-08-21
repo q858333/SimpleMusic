@@ -252,7 +252,7 @@ final class DownloadManager {
             )
             // 元数据读取是最后一个挂起点；写索引前必须重新响应取消。
             try Task.checkCancellation()
-            return try musicStore.insert(metadata)
+            return try musicStore.insert(metadata.recording(sourceURL: url))
         } catch {
             // 文件与 Reservation 构成同一回滚单元；收集全部清理错误后保留原始阶段错误。
             let rollbackError = rollback(
