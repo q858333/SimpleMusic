@@ -2,13 +2,15 @@
 
 日期：2026-08-21
 
-验证输入范围：`e27a196..e968742`
+验证输入范围：`e27a196..80730f8`
 
 工作分支：`codex/download-queue`
 
 ## 结论
 
 应用内下载队列的聚焦测试、全量 XCTest、generic iOS Simulator 构建和 generic iOS device 构建均通过。静态审计确认下载页面不持有或取消传输任务，生产环境只创建一个应用级 `DownloadQueue`，队列主动限制最多 3 个活动任务，`DownloadManager` 仍保留 3 permit 安全网；恢复流程先查询索引，再把受控叶子文件名交给 `DownloadFileStore` 清理。
+
+最终审查修复后，active cancel 会继续占有任务槽位直到底层 operation 完成 terminal/rollback；期间 retry/remove 只记录意图，不启动 recovery 或新 attempt。损坏 ledger load 后本进程退化为内存队列并禁止覆盖原始损坏字节。
 
 本报告只证明模拟器自动化与无签名 generic 构建覆盖的行为。真机弱网、真实大文件传输、系统后台冻结时机仍属于发布前设备集成检查。
 
@@ -74,9 +76,25 @@ xcodebuild -workspace SimpleMusic.xcworkspace -scheme SimpleMusic \
 ```
 
 - exit code：0；`** TEST SUCCEEDED **`
-- `xcresulttool` 机器汇总：276 total，276 passed，0 failed，0 skipped，0 expected failures
-- xcresult：`/Users/db/Library/Developer/Xcode/DerivedData/SimpleMusic-ftixrzkordvhdifswddbiugcjmzw/Logs/Test/Test-SimpleMusic-2026.08.21_17-34-50-+0800.xcresult`
-- 日志：`/tmp/download-queue-full-final.log`
+- `xcresulttool` 最终机器汇总：280 total，280 passed，0 failed，0 skipped，0 expected failures
+- 最终 xcresult：`/Users/db/Library/Developer/Xcode/DerivedData/SimpleMusic-ftixrzkordvhdifswddbiugcjmzw/Logs/Test/Test-SimpleMusic-2026.08.21_18-06-02-+0800.xcresult`
+- 原 Task 5 日志：`/tmp/download-queue-full-final.log`；最终修复波直接读取 xcresult，未另存文本日志
+
+## 最终审查修复复验
+
+```bash
+xcodebuild -workspace SimpleMusic.xcworkspace -scheme SimpleMusic \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -only-testing:SimpleMusicTests/DownloadQueueTests \
+  -only-testing:SimpleMusicTests/DownloadManagerConcurrencyTests \
+  -only-testing:SimpleMusicTests/LocalMusicStoreTests \
+  -only-testing:SimpleMusicTests/AppCoordinatorTests \
+  test CODE_SIGNING_ALLOWED=NO -collect-test-diagnostics never
+```
+
+- Task 3 四类机器汇总：91 total，91 passed，0 failed，0 skipped，0 expected failures
+- cancel 生命周期、损坏账本与 reservation commit 边界的 5 个核心方法：5/5 passed
+- `DownloadQueueTests + DownloadManagerConcurrencyTests`：52/52 passed（34 + 18）
 
 ## 构建验证与警告分类
 
@@ -108,7 +126,9 @@ xcodebuild -workspace SimpleMusic.xcworkspace -scheme SimpleMusic \
 | 进程终止后的未完成记录恢复为 interrupted，且不自动发起网络请求 | `DownloadQueueTests.testLaunchMarksUnfinishedInterruptedWithoutStartingNetwork`；`DownloadQueueTests.testRecoveryErrorKeepsInterruptedRecordAndRetryReconcilesBeforeNetwork` |
 | 索引优先的 reservation 恢复 | `DownloadQueueTests.testRecoveryKeepsIndexedFileAndCleansOnlyUnindexedControlledFile`；`DownloadQueueTests.testRecoveryRemovesIndexedRecordButKeepsInterruptedCleanedJob`；`LocalMusicStoreTests.testContainsDownloadedFileNameReturnsTrueOnlyForIndexedName` |
 | traversal、符号链接、临时文件与类型替换安全清理 | `DownloadQueueTests.testRecoveryRejectsTraversalAndDoesNotDeleteExternalFile`；`DownloadQueueTests.testTemporaryCleanupRemovesOnlyOwnedTransferFiles`；`DownloadQueueTests.testTemporaryCleanupUnlinksOwnedSymlinkWithoutDeletingExternalTarget`；`DownloadQueueTests.testTemporaryCleanupRejectsDirectoryThatReplacesClassifiedFile`；`DownloadFileStoreTests.testFileURLRejectsEmptySeparatorsAndTraversal` |
-| reservation 在提交前持久化，失败不写索引 | `DownloadManagerConcurrencyTests.testReservationObserverRunsBeforeCommitAndReceivesControlledLeafName`；`DownloadManagerConcurrencyTests.testReservationPersistenceFailureDiscardsReservationAndDoesNotInsertIndex` |
+| active cancel 在 terminal 前保留槽位，retry/remove 串行到 recovery 后执行 | `DownloadQueueTests.testCancellingActiveReservedJobKeepsSlotUntilAttemptTerminates`；`DownloadQueueTests.testRetryDuringActiveCancellationWaitsForTerminalAndKeepsFIFOOrder`；`DownloadQueueTests.testRemoveDuringActiveCancellationWaitsForSameTerminal` |
+| 损坏 ledger 后继续内存运行且不覆盖原始字节 | `DownloadQueueTests.testQueueWithCorruptLedgerRunsInMemoryWithoutReplacingOriginalBytes` |
+| reservation 在真实 commit 前持久化，失败不写索引 | `DownloadManagerConcurrencyTests.testReservationObserverSeesEmptyReservationBeforeCommit`；`DownloadManagerConcurrencyTests.testReservationPersistenceFailureDiscardsReservationAndDoesNotInsertIndex` |
 | iPhone/iPad 共用应用级队列 | `AppCoordinatorTests.testPhoneAndPadDownloadFactoriesUseEnvironmentSharedQueue` |
 | 三语言 key、参数、本地化进度及无硬编码汉字 | `LocalizationTests.testDownloadQueueLocalizationsExposeCompleteSharedKeySet`；`LocalizationTests.testDownloadQueueProgressUsesLocalizedIntegerFormatAcrossLanguages`；`LocalizationTests.testLocalizableStringKeysMatchAcrossLanguages`；`LocalizationTests.testProductionSwiftHasNoUnlocalizedHanStringLiterals` |
 
@@ -126,4 +146,4 @@ xcodebuild -workspace SimpleMusic.xcworkspace -scheme SimpleMusic \
 - 当前传输使用普通 `URLSessionConfiguration.default`。下载页面关闭后，任务由应用级队列继续持有；应用进入后台后只在 iOS 允许的执行时间内继续，系统后台执行时间结束后传输可能暂停或冻结。
 - 用户强制结束 App、系统终止进程或设备重启后不续传。下次启动只把未完成任务恢复为 `interrupted`，进度归零；用户手动重试会从 0 发起新请求。
 - XCTest 使用受控 operation、临时文件和模拟器，不等价于真实网络与真机生命周期验证。发布前仍需在真机验证弱网切换、蜂窝/Wi-Fi 策略、真实大文件的进度与清理、前后台切换以及系统冻结/恢复时机。
-- ledger 保留一项非阻塞审查注记：`DownloadManagerConcurrencyTests` 的 `onCommit` 测试 seam 名称实际对应元数据阶段。当前测试验证 reservation observer 位于该阶段之前，但最终审查仍需判断是否补强到真实 commit 邻接顺序。
+- 原 deferred seam 注记已解决：测试将回调按实际阶段命名为 `onMetadataRead`，并在 reservation observer 内直接断言 destination 仍是 0-byte placeholder；若 observer 被移到真实 commit 后，该断言会失败。
