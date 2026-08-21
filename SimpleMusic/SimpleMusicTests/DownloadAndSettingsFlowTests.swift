@@ -388,6 +388,26 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         XCTAssertTrue(navigation.topViewController is AboutViewController)
     }
 
+    func testPrivacyCardOpensPolicyInInternalWebView() throws {
+        let about = AboutViewController()
+        let navigation = UINavigationController(rootViewController: about)
+        navigation.loadViewIfNeeded()
+        about.loadViewIfNeeded()
+
+        let privacyCard = try XCTUnwrap(
+            view("about.privacy", in: about.view) as? UIControl
+        )
+        privacyCard.sendActions(for: .touchUpInside)
+
+        let privacy = try XCTUnwrap(
+            navigation.topViewController as? PrivacyWebViewController
+        )
+        XCTAssertEqual(
+            privacy.url.absoluteString,
+            "https://disktoneweb.dengcheez.workers.dev/privacy"
+        )
+    }
+
     func testAboutContentScrollsWithoutAmbiguityAtAccessibilityXXXLOnSmallScreen() throws {
         let host = UIViewController()
         host.view.frame = CGRect(x: 0, y: 0, width: 320, height: 360)

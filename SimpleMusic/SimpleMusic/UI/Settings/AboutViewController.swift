@@ -1,8 +1,13 @@
 import SnapKit
 import UIKit
+import WebKit
 
 @MainActor
 final class AboutViewController: UIViewController {
+    private static let privacyPolicyURL = URL(
+        string: "https://disktoneweb.dengcheez.workers.dev/privacy"
+    )!
+
     override func viewDidLoad() {
         super.viewDidLoad()
         title = L10n.text("about.page_title")
@@ -42,10 +47,12 @@ final class AboutViewController: UIViewController {
             title: L10n.text("about.formats_title"),
             detail: L10n.text("about.formats_detail")
         )
-        let privacy = card(
+        let privacy = interactiveCard(
             title: L10n.text("about.privacy_title"),
-            detail: L10n.text("about.privacy_detail")
+            detail: L10n.text("about.privacy_detail"),
+            action: #selector(openPrivacyPolicy)
         )
+        privacy.accessibilityIdentifier = "about.privacy"
         let content = UIStackView(arrangedSubviews: [hero, format, privacy])
         content.axis = .vertical
         content.spacing = 24
@@ -80,6 +87,27 @@ final class AboutViewController: UIViewController {
         return stack
     }
 
+    private func interactiveCard(title: String, detail: String, action: Selector) -> UIControl {
+        let control = UIControl()
+        let content = card(title: title, detail: detail)
+        content.isUserInteractionEnabled = false
+        control.addSubview(content)
+        content.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        control.addTarget(self, action: action, for: .touchUpInside)
+        control.isAccessibilityElement = true
+        control.accessibilityLabel = title
+        control.accessibilityTraits = .button
+        return control
+    }
+
+    @objc private func openPrivacyPolicy() {
+        // 隐私协议固定在应用内打开，避免把用户跳转到外部浏览器。
+        let controller = PrivacyWebViewController(url: Self.privacyPolicyURL)
+        navigationController?.pushViewController(controller, animated: true)
+    }
+
     private func makeLabel(_ text: String, style: UIFont.TextStyle, color: UIColor) -> UILabel {
         let label = UILabel()
         label.text = text
@@ -88,5 +116,32 @@ final class AboutViewController: UIViewController {
         label.textColor = color
         label.numberOfLines = 0
         return label
+    }
+}
+
+@MainActor
+final class PrivacyWebViewController: UIViewController {
+    let url: URL
+    private let webView = WKWebView()
+
+    init(url: URL) {
+        self.url = url
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func loadView() {
+        view = webView
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = L10n.text("about.privacy_title")
+        webView.allowsBackForwardNavigationGestures = true
+        webView.load(URLRequest(url: url))
     }
 }
