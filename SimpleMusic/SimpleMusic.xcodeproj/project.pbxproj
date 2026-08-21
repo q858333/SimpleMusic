@@ -23,6 +23,7 @@
 		E90000000000000000000001 /* LibraryViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90000000000000000000002 /* LibraryViewModelTests.swift */; };
 		F10000000000000000000001 /* PlayerViewControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* PlayerViewControllerTests.swift */; };
 		F20000000000000000000001 /* DownloadAndSettingsFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000002 /* DownloadAndSettingsFlowTests.swift */; };
+		D21000000000000000000001 /* DownloadQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D21000000000000000000002 /* DownloadQueueTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -56,6 +57,7 @@
 		E90000000000000000000002 /* LibraryViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryViewModelTests.swift; sourceTree = "<group>"; };
 		F10000000000000000000002 /* PlayerViewControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerViewControllerTests.swift; sourceTree = "<group>"; };
 		F20000000000000000000002 /* DownloadAndSettingsFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadAndSettingsFlowTests.swift; sourceTree = "<group>"; };
+		D21000000000000000000002 /* DownloadQueueTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadQueueTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -145,6 +147,7 @@
 				E90000000000000000000002 /* LibraryViewModelTests.swift */,
 				F10000000000000000000002 /* PlayerViewControllerTests.swift */,
 				F20000000000000000000002 /* DownloadAndSettingsFlowTests.swift */,
+				D21000000000000000000002 /* DownloadQueueTests.swift */,
 			);
 			path = SimpleMusicTests;
 			sourceTree = "<group>";
@@ -327,6 +330,7 @@
 				E90000000000000000000001 /* LibraryViewModelTests.swift in Sources */,
 				F10000000000000000000001 /* PlayerViewControllerTests.swift in Sources */,
 				F20000000000000000000001 /* DownloadAndSettingsFlowTests.swift in Sources */,
+				D21000000000000000000001 /* DownloadQueueTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
