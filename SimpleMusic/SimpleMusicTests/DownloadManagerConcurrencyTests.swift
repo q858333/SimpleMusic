@@ -4,6 +4,50 @@ import XCTest
 
 @MainActor
 final class DownloadManagerConcurrencyTests: XCTestCase {
+    /// 如果真实 URLSession 下载没有把分段写入进度传给调用方，此测试应失败。
+    func testURLSessionClientReportsDownloadProgress() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ChunkedAudioURLProtocol.self]
+        let client = URLSessionAudioDownloadClient(configuration: configuration)
+        var progressValues = [Double]()
+
+        let payload = try await client.download(
+            from: try XCTUnwrap(URL(string: "https://example.com/chunked.m4a")),
+            progress: { progressValues.append($0) }
+        )
+        defer { try? FileManager.default.removeItem(at: payload.temporaryFileURL) }
+
+        XCTAssertFalse(progressValues.isEmpty)
+        XCTAssertTrue(progressValues.allSatisfy { (0...1).contains($0) })
+        XCTAssertTrue(progressValues.contains { $0 > 0 && $0 < 1 })
+        XCTAssertEqual(try Data(contentsOf: payload.temporaryFileURL).count, 1_048_576)
+    }
+
+    /// 如果切换为显式下载任务后不再响应 Swift Task 取消，此测试应失败。
+    func testURLSessionClientCancellationFinishesWithCancellationError() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [SuspendedAudioURLProtocol.self]
+        let client = URLSessionAudioDownloadClient(configuration: configuration)
+        let task = ObservedTask<AudioDownloadPayload>(description: "真实下载客户端取消") {
+            try await client.download(
+                from: URL(string: "https://example.com/suspended.m4a")!,
+                progress: { _ in }
+            )
+        }
+        await Task.yield()
+        task.task.cancel()
+
+        let result = try await taskResults(
+            [task],
+            operation: "真实下载客户端取消",
+            cleanup: {}
+        )[0]
+        guard case let .failure(error) = result else {
+            return XCTFail("被取消的真实下载任务不应成功")
+        }
+        XCTAssertTrue(error is CancellationError)
+    }
+
     func testTimeoutDoesNotReturnWhileAuxiliaryOperationIsStillRunning() async throws {
         let gate = ManualTaskGate()
         let task = ObservedTask<Void>(description: "受控任务结束") {
@@ -554,6 +598,67 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
         data.append(Data(repeating: 0, count: Int(dataSize)))
         return data
     }
+}
+
+private final class ChunkedAudioURLProtocol: URLProtocol {
+    private let lock = NSLock()
+    private var isStopped = false
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let chunks = (0..<4).map { _ in Data(repeating: 0x5A, count: 256 * 1_024) }
+        let contentLength = chunks.reduce(0) { $0 + $1.count }
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: [
+                "Content-Type": "audio/x-m4a",
+                "Content-Length": "\(contentLength)"
+            ]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+
+        for chunk in chunks {
+            lock.lock()
+            let shouldStop = isStopped
+            lock.unlock()
+            guard !shouldStop else { return }
+            client?.urlProtocol(self, didLoad: chunk)
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {
+        lock.lock()
+        isStopped = true
+        lock.unlock()
+    }
+}
+
+private final class SuspendedAudioURLProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: [
+                "Content-Type": "audio/x-m4a",
+                "Content-Length": "1048576"
+            ]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+    }
+
+    override func stopLoading() {}
 }
 
 @MainActor

@@ -17,19 +17,18 @@ nonisolated protocol AudioDownloadClient: Sendable {
 
 /// URLSession 的真实实现通过 task delegate 把下载进度切回主 actor。
 nonisolated final class URLSessionAudioDownloadClient: AudioDownloadClient, @unchecked Sendable {
-    private let session: URLSession
+    private let configuration: URLSessionConfiguration
 
     init(configuration: URLSessionConfiguration) {
-        session = URLSession(configuration: configuration)
+        self.configuration = configuration
     }
 
     func download(
         from url: URL,
         progress: @escaping @MainActor @Sendable (Double) -> Void
     ) async throws -> AudioDownloadPayload {
-        let delegate = DownloadProgressDelegate(progress: progress)
-        let (temporaryURL, response) = try await session.download(from: url, delegate: delegate)
-        return AudioDownloadPayload(temporaryFileURL: temporaryURL, response: response)
+        let transfer = DownloadProgressDelegate(configuration: configuration, progress: progress)
+        return try await transfer.download(from: url)
     }
 }
 
@@ -40,17 +39,65 @@ struct DownloadRollbackError: Error {
 }
 
 private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    private let configuration: URLSessionConfiguration
     private let progress: @MainActor @Sendable (Double) -> Void
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<AudioDownloadPayload, Error>?
+    private var task: URLSessionDownloadTask?
+    private var retainedTemporaryURL: URL?
+    private var fileMoveError: Error?
+    private var cancellationRequested = false
 
-    init(progress: @escaping @MainActor @Sendable (Double) -> Void) {
+    init(
+        configuration: URLSessionConfiguration,
+        progress: @escaping @MainActor @Sendable (Double) -> Void
+    ) {
+        self.configuration = configuration
         self.progress = progress
+    }
+
+    func download(from url: URL) async throws -> AudioDownloadPayload {
+        let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
+                let task = session.downloadTask(with: url)
+                lock.lock()
+                guard !cancellationRequested else {
+                    lock.unlock()
+                    session.invalidateAndCancel()
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                self.task = task
+                self.continuation = continuation
+                lock.unlock()
+                task.resume()
+            }
+        } onCancel: { [weak self] in
+            self?.cancel()
+        }
     }
 
     nonisolated func urlSession(
         _ session: URLSession,
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
-    ) {}
+    ) {
+        let retainedURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SimpleMusicDownload-\(UUID().uuidString)", isDirectory: false)
+        do {
+            // 系统回调返回后会清理 location，先移到应用持有的临时路径再恢复 async 调用方。
+            try FileManager.default.moveItem(at: location, to: retainedURL)
+            lock.lock()
+            retainedTemporaryURL = retainedURL
+            lock.unlock()
+        } catch {
+            lock.lock()
+            fileMoveError = error
+            lock.unlock()
+        }
+    }
 
     nonisolated func urlSession(
         _ session: URLSession,
@@ -64,6 +111,54 @@ private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelega
         Task { @MainActor [progress] in
             progress(value)
         }
+    }
+
+    nonisolated func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        lock.lock()
+        guard let continuation else {
+            lock.unlock()
+            return
+        }
+        self.continuation = nil
+        self.task = nil
+        let retainedTemporaryURL = self.retainedTemporaryURL
+        let fileMoveError = self.fileMoveError
+        let cancellationRequested = self.cancellationRequested
+        lock.unlock()
+
+        session.finishTasksAndInvalidate()
+        if cancellationRequested || (error as? URLError)?.code == .cancelled {
+            if let retainedTemporaryURL {
+                try? FileManager.default.removeItem(at: retainedTemporaryURL)
+            }
+            continuation.resume(throwing: CancellationError())
+        } else if let error {
+            if let retainedTemporaryURL {
+                try? FileManager.default.removeItem(at: retainedTemporaryURL)
+            }
+            continuation.resume(throwing: error)
+        } else if let fileMoveError {
+            continuation.resume(throwing: fileMoveError)
+        } else if let retainedTemporaryURL, let response = task.response {
+            continuation.resume(returning: AudioDownloadPayload(
+                temporaryFileURL: retainedTemporaryURL,
+                response: response
+            ))
+        } else {
+            continuation.resume(throwing: URLError(.cannotCreateFile))
+        }
+    }
+
+    private func cancel() {
+        lock.lock()
+        cancellationRequested = true
+        let task = self.task
+        lock.unlock()
+        task?.cancel()
     }
 }
 
