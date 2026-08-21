@@ -75,6 +75,135 @@ final class DownloadQueueTests: XCTestCase {
         waitUntil { job(id, in: queue).state == .success }
     }
 
+    func testCancellingActiveReservedJobKeepsSlotUntilAttemptTerminates() throws {
+        let operation = ControlledQueueDownloadOperation(automaticallyCompletesCancellation: false)
+        let recovery = GatedRecovery()
+        defer { recovery.releaseAll(with: .success(.cleaned)) }
+        let queue = makeQueue(
+            operation: operation,
+            recovery: recovery.perform,
+            maximumActiveCount: 1
+        )
+        let activeURL = URL(string: "https://example.com/cancel-active.m4a")!
+        let queuedURL = URL(string: "https://example.com/after-cancel.m4a")!
+        let activeID = try queue.enqueue(activeURL)
+        let queuedID = try queue.enqueue(queuedURL)
+        waitUntil { operation.startedURLs == [activeURL] }
+        try operation.reserve(url: activeURL, fileName: "cancel-active.m4a")
+
+        queue.cancel(id: activeID)
+        waitUntil { operation.cancellationCount == 1 }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.03))
+
+        XCTAssertEqual(job(activeID, in: queue).state, .cancelled)
+        XCTAssertEqual(job(queuedID, in: queue).state, .queued)
+        XCTAssertEqual(operation.startedURLs, [activeURL])
+        XCTAssertEqual(recovery.invocationCount, 0)
+
+        operation.completeCancellation(url: activeURL)
+        waitUntil { operation.startedURLs == [activeURL, queuedURL] }
+
+        XCTAssertEqual(operation.attemptCount(url: queuedURL), 1)
+        XCTAssertEqual(recovery.invocationCount, 0)
+        operation.succeed(url: queuedURL, track: track(id: "after-cancel"))
+        waitUntil { job(queuedID, in: queue).state == .success }
+    }
+
+    func testRetryDuringActiveCancellationWaitsForTerminalAndKeepsFIFOOrder() throws {
+        let operation = ControlledQueueDownloadOperation(automaticallyCompletesCancellation: false)
+        let recovery = GatedRecovery()
+        defer { recovery.releaseAll(with: .success(.cleaned)) }
+        var playedIDs = [String]()
+        let queue = makeQueue(
+            operation: operation,
+            settings: makeSettings(autoPlay: true),
+            recovery: recovery.perform,
+            onPlay: { playedIDs.append($0.id) },
+            maximumActiveCount: 1
+        )
+        let activeURL = URL(string: "https://example.com/cancel-retry.m4a")!
+        let queuedURL = URL(string: "https://example.com/after-retry.m4a")!
+        let activeID = try queue.enqueue(activeURL)
+        waitUntil { operation.startedURLs == [activeURL] }
+        try operation.reserve(url: activeURL, fileName: "cancel-retry.m4a")
+
+        queue.cancel(id: activeID)
+        waitUntil { operation.cancellationCount == 1 }
+        queue.retry(id: activeID)
+        queue.retry(id: activeID)
+        let queuedID = try queue.enqueue(queuedURL)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.03))
+
+        XCTAssertEqual(operation.attemptCount(url: activeURL), 1)
+        XCTAssertEqual(operation.attemptCount(url: queuedURL), 0)
+        XCTAssertEqual(operation.startedURLs, [activeURL])
+        XCTAssertEqual(recovery.invocationCount, 0)
+
+        operation.completeCancellation(url: activeURL)
+        waitUntil { recovery.invocationCount == 1 }
+        XCTAssertEqual(operation.startedURLs, [activeURL])
+        recovery.releaseAll(with: .success(.cleaned))
+        waitUntil { operation.startedURLs == [activeURL, activeURL] }
+
+        XCTAssertEqual(job(activeID, in: queue).state, .downloading)
+        XCTAssertNil(job(activeID, in: queue).reservedFileName)
+        XCTAssertEqual(recovery.totalInvocationCount, 1)
+        XCTAssertEqual(operation.attemptCount(url: activeURL), 2)
+
+        operation.succeed(url: activeURL, attempt: 1, track: track(id: "retried"))
+        waitUntil { operation.startedURLs == [activeURL, activeURL, queuedURL] }
+        operation.succeed(url: queuedURL, track: track(id: "after-retry"))
+        waitUntil {
+            job(activeID, in: queue).state == .success
+                && job(queuedID, in: queue).state == .success
+        }
+        XCTAssertEqual(playedIDs, ["retried"])
+    }
+
+    func testRemoveDuringActiveCancellationWaitsForSameTerminal() throws {
+        let operation = ControlledQueueDownloadOperation(automaticallyCompletesCancellation: false)
+        let recovery = GatedRecovery()
+        defer { recovery.releaseAll(with: .success(.cleaned)) }
+        let queue = makeQueue(
+            operation: operation,
+            recovery: recovery.perform,
+            maximumActiveCount: 1
+        )
+        let activeURL = URL(string: "https://example.com/cancel-remove.m4a")!
+        let queuedURL = URL(string: "https://example.com/after-cancel-remove.m4a")!
+        let activeID = try queue.enqueue(activeURL)
+        let queuedID = try queue.enqueue(queuedURL)
+        waitUntil { operation.startedURLs == [activeURL] }
+        try operation.reserve(url: activeURL, fileName: "cancel-remove.m4a")
+
+        queue.cancel(id: activeID)
+        waitUntil { operation.cancellationCount == 1 }
+        queue.remove(id: activeID)
+        queue.remove(id: activeID)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.03))
+
+        XCTAssertNotNil(queue.jobs.first { $0.id == activeID })
+        XCTAssertEqual(job(queuedID, in: queue).state, .queued)
+        XCTAssertEqual(operation.startedURLs, [activeURL])
+        XCTAssertEqual(operation.cancellationCount, 1)
+        XCTAssertEqual(recovery.invocationCount, 0)
+
+        operation.completeCancellation(url: activeURL)
+        waitUntil { recovery.invocationCount == 1 }
+        XCTAssertNotNil(queue.jobs.first { $0.id == activeID })
+        XCTAssertEqual(operation.startedURLs, [activeURL])
+        recovery.releaseAll(with: .success(.cleaned))
+        waitUntil {
+            queue.jobs.first { $0.id == activeID } == nil
+                && operation.startedURLs == [activeURL, queuedURL]
+        }
+
+        XCTAssertEqual(operation.attemptCount(url: queuedURL), 1)
+        XCTAssertEqual(recovery.totalInvocationCount, 1)
+        operation.succeed(url: queuedURL, track: track(id: "after-cancel-remove"))
+        waitUntil { job(queuedID, in: queue).state == .success }
+    }
+
     func testProgressForOneJobDoesNotChangeOtherJobs() throws {
         let operation = ControlledQueueDownloadOperation()
         let queue = makeQueue(operation: operation)
@@ -406,6 +535,27 @@ final class DownloadQueueTests: XCTestCase {
         try original.write(to: fileURL)
 
         XCTAssertThrowsError(try DownloadQueueStore(fileURL: fileURL).load())
+        XCTAssertEqual(try Data(contentsOf: fileURL), original)
+    }
+
+    func testQueueWithCorruptLedgerRunsInMemoryWithoutReplacingOriginalBytes() throws {
+        let fileURL = try makeTemporaryDirectory()
+            .appendingPathComponent("download-queue.json")
+        let original = Data("{not-json".utf8)
+        try original.write(to: fileURL)
+        let operation = ControlledQueueDownloadOperation()
+        let queue = makeQueue(
+            operation: operation,
+            store: DownloadQueueStore(fileURL: fileURL)
+        )
+        let url = URL(string: "https://example.com/after-corrupt-ledger.m4a")!
+
+        let id = try queue.enqueue(url)
+        waitUntil { operation.startedURLs == [url] }
+
+        XCTAssertEqual(try Data(contentsOf: fileURL), original)
+        operation.succeed(url: url, track: track(id: "after-corrupt-ledger"))
+        waitUntil { job(id, in: queue).state == .success }
         XCTAssertEqual(try Data(contentsOf: fileURL), original)
     }
 
@@ -919,9 +1069,11 @@ private final class GatedRecovery {
 
     private var invocations = [Invocation]()
     private var releasedResult: Result<DownloadQueue.RecoveryDisposition, Error>?
+    private(set) var totalInvocationCount = 0
     var invocationCount: Int { invocations.count }
 
     func perform(_ fileName: String) async throws -> DownloadQueue.RecoveryDisposition {
+        totalInvocationCount += 1
         if let releasedResult {
             return try releasedResult.get()
         }

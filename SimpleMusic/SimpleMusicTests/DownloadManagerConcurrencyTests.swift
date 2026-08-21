@@ -548,20 +548,26 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: temporaryFile.path))
     }
 
-    func testReservationObserverRunsBeforeCommitAndReceivesControlledLeafName() async throws {
+    func testReservationObserverSeesEmptyReservationBeforeCommit() async throws {
         var events = [String]()
         let harness = try makeDownloadHarness(
             fileName: "ordered.m4a",
-            onCommit: { events.append("commit") }
+            onMetadataRead: { events.append("metadata") }
         )
+        var reservedByteCount: Int?
 
         _ = try await harness.manager.download(
             from: audioURL("ordered.m4a"),
             progress: { _ in },
-            onReservation: { fileName in events.append("reserve:\(fileName)") }
+            onReservation: { fileName in
+                let destination = harness.downloadRoot.appendingPathComponent(fileName)
+                reservedByteCount = try Data(contentsOf: destination).count
+                events.append("reserve:\(fileName)")
+            }
         )
 
-        XCTAssertEqual(Array(events.prefix(2)), ["reserve:ordered.m4a", "commit"])
+        XCTAssertEqual(reservedByteCount, 0)
+        XCTAssertEqual(Array(events.prefix(2)), ["reserve:ordered.m4a", "metadata"])
     }
 
     func testReservationPersistenceFailureDiscardsReservationAndDoesNotInsertIndex() async throws {
@@ -615,7 +621,7 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
 
     private func makeDownloadHarness(
         fileName: String,
-        onCommit: @escaping @MainActor () -> Void = {}
+        onMetadataRead: @escaping @MainActor () -> Void = {}
     ) throws -> (
         manager: DownloadManager,
         musicStore: LocalMusicStore,
@@ -646,7 +652,7 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
                 ))
             },
             metadataReader: { _, storedFileName in
-                onCommit()
+                onMetadataRead()
                 return DownloadedTrackMetadata(
                     id: UUID().uuidString,
                     fileName: storedFileName,

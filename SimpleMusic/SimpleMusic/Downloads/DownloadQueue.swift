@@ -34,11 +34,14 @@ final class DownloadQueue {
     private let maximumActiveCount: Int
     private let now: @MainActor () -> Date
     private let log: @MainActor (String) -> Void
+    private let persistenceWritesEnabled: Bool
     private var activeTasks = [UUID: Task<Void, Never>]()
     private var attemptAutoPlay = [UUID: Bool]()
     private var successfulTracks = [UUID: MusicTrack]()
     private var consumedPlayIDs = Set<UUID>()
     private var persistedProgressBuckets = [UUID: Int]()
+    private var pendingCancellationAttempts = [UUID: UInt64]()
+    private var pendingCancellationActions = [UUID: PendingRecoveryAction]()
     private var pendingRemovalAttempts = [UUID: UInt64]()
     private var recoveryTokens = [UUID: UInt64]()
     private var recoveryTasks = [UUID: Task<Void, Never>]()
@@ -71,12 +74,15 @@ final class DownloadQueue {
 
         var normalizedJobs: [DownloadJob]
         var didNormalize = false
+        var persistenceWritesEnabled = true
         do {
             normalizedJobs = try store.load()
         } catch {
             log("Download queue ledger could not be loaded: \(error)")
             normalizedJobs = []
+            persistenceWritesEnabled = false
         }
+        self.persistenceWritesEnabled = persistenceWritesEnabled
         for index in normalizedJobs.indices
         where normalizedJobs[index].state == .queued || normalizedJobs[index].state == .downloading {
             normalizedJobs[index].state = .interrupted
@@ -86,7 +92,7 @@ final class DownloadQueue {
         jobs = Self.sortedForDisplay(normalizedJobs)
         subject = CurrentValueSubject(jobs)
 
-        if didNormalize {
+        if didNormalize && persistenceWritesEnabled {
             do {
                 try store.save(jobs.filter { $0.state != .success })
             } catch {
@@ -157,19 +163,39 @@ final class DownloadQueue {
         let state = jobs[index].state
         guard state == .queued || state == .downloading else { return }
 
+        if let task = activeTasks[id] {
+            pendingCancellationAttempts[id] = jobs[index].attempt
+            jobs[index].attempt &+= 1
+            jobs[index].state = .cancelled
+            attemptAutoPlay.removeValue(forKey: id)
+            schedulingOrder.removeValue(forKey: id)
+            persistedProgressBuckets.removeValue(forKey: id)
+            persistAndPublish()
+            // 底层事务完成回滚前继续占有槽位，后续意图只能在 terminal 后串行执行。
+            task.cancel()
+            return
+        }
+
         jobs[index].attempt &+= 1
         jobs[index].state = .cancelled
         attemptAutoPlay.removeValue(forKey: id)
         schedulingOrder.removeValue(forKey: id)
         persistedProgressBuckets.removeValue(forKey: id)
-        let task = activeTasks.removeValue(forKey: id)
         persistAndPublish()
-        task?.cancel()
         scheduleIfNeeded()
     }
 
     func retry(id: UUID) {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
+        if pendingCancellationAttempts[id] != nil {
+            guard pendingCancellationActions[id] == nil else { return }
+            let autoPlayEligible = settingsStore.autoPlayAfterDownload
+                && !hasUnfinishedWork(excluding: id)
+            pendingCancellationActions[id] = .retry(autoPlayEligible: autoPlayEligible)
+            attemptAutoPlay[id] = autoPlayEligible
+            schedulingOrder[id] = takeSchedulingOrder()
+            return
+        }
         guard pendingRemovalAttempts[id] == nil else { return }
         switch jobs[index].state {
         case .failure, .cancelled, .interrupted:
@@ -193,6 +219,12 @@ final class DownloadQueue {
 
     func remove(id: UUID) {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
+        if pendingCancellationAttempts[id] != nil {
+            pendingCancellationActions[id] = .remove
+            attemptAutoPlay.removeValue(forKey: id)
+            schedulingOrder.removeValue(forKey: id)
+            return
+        }
         if let task = activeTasks[id] {
             guard pendingRemovalAttempts[id] == nil,
                   jobs[index].state == .downloading else { return }
@@ -312,6 +344,7 @@ final class DownloadQueue {
     }
 
     private func succeed(id: UUID, attempt: UInt64, track: MusicTrack) {
+        if completePendingCancellation(id: id, attempt: attempt) { return }
         if completePendingRemoval(id: id, attempt: attempt) { return }
         guard let index = jobs.firstIndex(where: { $0.id == id }), jobs[index].attempt == attempt else { return }
         jobs[index].state = .success
@@ -328,6 +361,7 @@ final class DownloadQueue {
     }
 
     private func fail(id: UUID, attempt: UInt64, error: Error) {
+        if completePendingCancellation(id: id, attempt: attempt) { return }
         if completePendingRemoval(id: id, attempt: attempt) { return }
         guard let index = jobs.firstIndex(where: { $0.id == id }), jobs[index].attempt == attempt else { return }
         jobs[index].state = .failure
@@ -338,6 +372,7 @@ final class DownloadQueue {
     }
 
     private func finishCancellation(id: UUID, attempt: UInt64) {
+        if completePendingCancellation(id: id, attempt: attempt) { return }
         if completePendingRemoval(id: id, attempt: attempt) { return }
         guard let index = jobs.firstIndex(where: { $0.id == id }), jobs[index].attempt == attempt else { return }
         jobs[index].state = .cancelled
@@ -351,6 +386,36 @@ final class DownloadQueue {
         activeTasks.removeValue(forKey: id)
         attemptAutoPlay.removeValue(forKey: id)
         scheduleIfNeeded()
+    }
+
+    private func completePendingCancellation(id: UUID, attempt: UInt64) -> Bool {
+        guard pendingCancellationAttempts[id] == attempt else { return false }
+        pendingCancellationAttempts.removeValue(forKey: id)
+        let action = pendingCancellationActions.removeValue(forKey: id)
+        activeTasks.removeValue(forKey: id)
+
+        switch action {
+        case let .retry(autoPlayEligible):
+            if let index = jobs.firstIndex(where: { $0.id == id }),
+               let fileName = jobs[index].reservedFileName {
+                pendingRecoveryActions[id] = .retry(autoPlayEligible: autoPlayEligible)
+                startRecovery(id: id, fileName: fileName)
+            } else {
+                queueRetry(id: id, autoPlayEligible: autoPlayEligible)
+            }
+        case .remove:
+            if let index = jobs.firstIndex(where: { $0.id == id }),
+               let fileName = jobs[index].reservedFileName {
+                pendingRecoveryActions[id] = .remove
+                startRecovery(id: id, fileName: fileName)
+            } else {
+                removeJob(id: id)
+            }
+        case nil:
+            persistAndPublish()
+            scheduleIfNeeded()
+        }
+        return true
     }
 
     private func completePendingRemoval(id: UUID, attempt: UInt64) -> Bool {
@@ -367,6 +432,8 @@ final class DownloadQueue {
         successfulTracks.removeValue(forKey: id)
         consumedPlayIDs.remove(id)
         persistedProgressBuckets.removeValue(forKey: id)
+        pendingCancellationAttempts.removeValue(forKey: id)
+        pendingCancellationActions.removeValue(forKey: id)
         pendingRemovalAttempts.removeValue(forKey: id)
         recoveryTokens.removeValue(forKey: id)
         recoveryTasks.removeValue(forKey: id)
@@ -499,6 +566,10 @@ final class DownloadQueue {
             guard id != excludedID else { return false }
             if case .retry = action { return true }
             return false
+        } || pendingCancellationActions.contains { id, action in
+            guard id != excludedID else { return false }
+            if case .retry = action { return true }
+            return false
         }
     }
 
@@ -516,6 +587,8 @@ final class DownloadQueue {
     }
 
     private func saveLedger() throws {
+        // 损坏账本保留原始字节；本进程退化为内存队列，避免后续写回覆盖取证。
+        guard persistenceWritesEnabled else { return }
         try store.save(jobs.filter { $0.state != .success })
     }
 

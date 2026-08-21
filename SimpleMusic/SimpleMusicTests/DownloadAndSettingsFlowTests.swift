@@ -143,7 +143,7 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         waitUntil { self.job(id, in: harness.queue).state == .cancelled }
         layout(harness.controller)
         try tap("download.job.\(id).remove", in: harness.controller)
-        XCTAssertTrue(harness.queue.jobs.isEmpty)
+        waitUntil { harness.queue.jobs.isEmpty }
     }
 
     func testDownloadingRowExposesLocalizedProgressAndMinimumActionTarget() throws {
@@ -648,7 +648,9 @@ private final class ControlledQueueDownloadOperation {
         } onCancel: {
             Task { @MainActor [weak self] in
                 guard let self,
-                      let invocation = invocations.first(where: { $0.url == url }),
+                      let invocation = invocations.last(where: {
+                          $0.url == url && $0.continuation != nil
+                      }),
                       let continuation = invocation.continuation else { return }
                 cancellationCount += 1
                 invocation.continuation = nil
@@ -658,18 +660,18 @@ private final class ControlledQueueDownloadOperation {
     }
 
     func report(url: URL, progress: Double) {
-        invocations.first(where: { $0.url == url })?.progress(progress)
+        invocations.last(where: { $0.url == url && $0.continuation != nil })?.progress(progress)
     }
 
     func succeed(url: URL, track: SimpleMusic.MusicTrack) {
-        guard let invocation = invocations.first(where: { $0.url == url }),
+        guard let invocation = invocations.last(where: { $0.url == url && $0.continuation != nil }),
               let continuation = invocation.continuation else { return }
         invocation.continuation = nil
         continuation.resume(returning: track)
     }
 
     func fail(url: URL, error: Error) {
-        guard let invocation = invocations.first(where: { $0.url == url }),
+        guard let invocation = invocations.last(where: { $0.url == url && $0.continuation != nil }),
               let continuation = invocation.continuation else { return }
         invocation.continuation = nil
         continuation.resume(throwing: error)
