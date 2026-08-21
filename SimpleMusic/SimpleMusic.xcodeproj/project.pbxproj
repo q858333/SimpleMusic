@@ -7,11 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A3C000000000000000000001 /* LocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3C000000000000000000002 /* LocalizationTests.swift */; };
 		A1B2C3D4E5F60718293A4B5C /* MusicTrackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5B /* MusicTrackTests.swift */; };
 		A1B2C3D4E5F60718293A4B6B /* SettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B6A /* SettingsStoreTests.swift */; };
 		A1B2C3D4E5F60718293A4B7B /* AudioDownloadValidatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B7A /* AudioDownloadValidatorTests.swift */; };
 		A1B2C3D4E5F60718293A4B8B /* DownloadFileStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B8A /* DownloadFileStoreTests.swift */; };
+		A3C000000000000000000001 /* LocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3C000000000000000000002 /* LocalizationTests.swift */; };
 		B4C0D0A00000000000000001 /* LocalMusicStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C0D0A00000000000000011 /* LocalMusicStoreTests.swift */; };
 		B4C0D0A00000000000000002 /* DownloadManagerConcurrencyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C0D0A00000000000000012 /* DownloadManagerConcurrencyTests.swift */; };
 		B5E000000000000000000001 /* MusicLibraryServiceMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5E000000000000000000002 /* MusicLibraryServiceMappingTests.swift */; };
@@ -19,11 +19,11 @@
 		C60000000000000000000001 /* PlaybackCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60000000000000000000002 /* PlaybackCoordinatorTests.swift */; };
 		C60000000000000000000003 /* PlaybackBackendLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60000000000000000000004 /* PlaybackBackendLifecycleTests.swift */; };
 		C70000000000000000000001 /* NowPlayingServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C70000000000000000000002 /* NowPlayingServiceTests.swift */; };
+		D21000000000000000000001 /* DownloadQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D21000000000000000000002 /* DownloadQueueTests.swift */; };
 		D80000000000000000000001 /* AppCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D80000000000000000000002 /* AppCoordinatorTests.swift */; };
 		E90000000000000000000001 /* LibraryViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90000000000000000000002 /* LibraryViewModelTests.swift */; };
 		F10000000000000000000001 /* PlayerViewControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* PlayerViewControllerTests.swift */; };
 		F20000000000000000000001 /* DownloadAndSettingsFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000002 /* DownloadAndSettingsFlowTests.swift */; };
-		D21000000000000000000001 /* DownloadQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D21000000000000000000002 /* DownloadQueueTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -42,22 +42,22 @@
 		6A34C52A1ABF5C26C9601CDD /* Pods_SimpleMusic.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_SimpleMusic.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		82FEF5096D84D9077E96AF8F /* Pods-SimpleMusic.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SimpleMusic.release.xcconfig"; path = "Target Support Files/Pods-SimpleMusic/Pods-SimpleMusic.release.xcconfig"; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5B /* MusicTrackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicTrackTests.swift; sourceTree = "<group>"; };
-		A3C000000000000000000002 /* LocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationTests.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5D /* SimpleMusicTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SimpleMusicTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1B2C3D4E5F60718293A4B6A /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B7A /* AudioDownloadValidatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDownloadValidatorTests.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B8A /* DownloadFileStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadFileStoreTests.swift; sourceTree = "<group>"; };
+		A3C000000000000000000002 /* LocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationTests.swift; sourceTree = "<group>"; };
 		B4C0D0A00000000000000011 /* LocalMusicStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalMusicStoreTests.swift; sourceTree = "<group>"; };
 		B4C0D0A00000000000000012 /* DownloadManagerConcurrencyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadManagerConcurrencyTests.swift; sourceTree = "<group>"; };
 		B5E000000000000000000002 /* MusicLibraryServiceMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicLibraryServiceMappingTests.swift; sourceTree = "<group>"; };
 		C60000000000000000000002 /* PlaybackCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackCoordinatorTests.swift; sourceTree = "<group>"; };
 		C60000000000000000000004 /* PlaybackBackendLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackBackendLifecycleTests.swift; sourceTree = "<group>"; };
 		C70000000000000000000002 /* NowPlayingServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingServiceTests.swift; sourceTree = "<group>"; };
+		D21000000000000000000002 /* DownloadQueueTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadQueueTests.swift; sourceTree = "<group>"; };
 		D80000000000000000000002 /* AppCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinatorTests.swift; sourceTree = "<group>"; };
 		E90000000000000000000002 /* LibraryViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryViewModelTests.swift; sourceTree = "<group>"; };
 		F10000000000000000000002 /* PlayerViewControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerViewControllerTests.swift; sourceTree = "<group>"; };
 		F20000000000000000000002 /* DownloadAndSettingsFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadAndSettingsFlowTests.swift; sourceTree = "<group>"; };
-		D21000000000000000000002 /* DownloadQueueTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadQueueTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -227,8 +227,8 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
-				zh-Hans,
-				zh-Hant,
+				"zh-Hans",
+				"zh-Hant",
 				Base,
 			);
 			mainGroup = 23BA7275302F095900023EB5;
@@ -270,9 +270,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-SimpleMusic/Pods-SimpleMusic-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-SimpleMusic/Pods-SimpleMusic-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -357,8 +361,11 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SimpleMusic/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = DiskTone;
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "DiskTone uses your music library to browse and play music on this device.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -366,7 +373,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = DB.SimpleMusic;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -391,8 +398,11 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SimpleMusic/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = DiskTone;
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "DiskTone uses your music library to browse and play music on this device.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -400,7 +410,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = DB.SimpleMusic;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
