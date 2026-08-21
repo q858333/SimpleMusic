@@ -123,6 +123,8 @@ final class PlayerViewController: UIViewController {
     private let volumeView: MPVolumeView = {
         let view = MPVolumeView()
         view.accessibilityIdentifier = "player.volume"
+        // 保留独立的红色 AirPlay 入口，避免旧版 iPadOS 同时显示系统自带的白色按钮。
+        view.showsRouteButton = false
         return view
     }()
 
