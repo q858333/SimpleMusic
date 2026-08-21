@@ -104,6 +104,7 @@
 "settings.permission_status.open_settings" = "Open Settings";
 "about.page_title" = "About DiskTone";
 "about.subtitle" = "Designed for music on your device and local downloads";
+"about.version" = "Version %1$@";
 "about.formats_title" = "MP3, M4A, WAV";
 "about.formats_detail" = "Only direct audio file download links are supported.";
 "about.privacy_title" = "Privacy";

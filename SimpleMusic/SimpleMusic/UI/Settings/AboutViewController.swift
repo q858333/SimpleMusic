@@ -21,8 +21,19 @@ final class AboutViewController: UIViewController {
         name.textAlignment = .center
         let subtitle = makeLabel(L10n.text("about.subtitle"), style: .body, color: .secondaryLabel)
         subtitle.textAlignment = .center
+        // 直接读取工程营销版本，确保关于页始终与发布配置一致。
+        let marketingVersion = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String ?? "—"
+        let version = makeLabel(
+            L10n.format("about.version", marketingVersion),
+            style: .footnote,
+            color: .tertiaryLabel
+        )
+        version.textAlignment = .center
+        version.accessibilityIdentifier = "about.version"
 
-        let hero = UIStackView(arrangedSubviews: [icon, name, subtitle])
+        let hero = UIStackView(arrangedSubviews: [icon, name, subtitle, version])
         hero.axis = .vertical
         hero.alignment = .center
         hero.spacing = 8

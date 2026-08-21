@@ -104,6 +104,7 @@
 "settings.permission_status.open_settings" = "前往設定";
 "about.page_title" = "關於聽見";
 "about.subtitle" = "專為裝置音樂與本機下載設計";
+"about.version" = "版本 %1$@";
 "about.formats_title" = "MP3、M4A、WAV";
 "about.formats_detail" = "僅支援直接指向音訊檔案的下載連結。";
 "about.privacy_title" = "隱私原則";

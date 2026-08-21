@@ -104,6 +104,7 @@
 "settings.permission_status.open_settings" = "去设置";
 "about.page_title" = "关于听见";
 "about.subtitle" = "为设备音乐与本地下载而设计";
+"about.version" = "版本 %1$@";
 "about.formats_title" = "MP3、M4A、WAV";
 "about.formats_detail" = "仅支持直接指向音频文件的下载链接。";
 "about.privacy_title" = "隐私原则";
