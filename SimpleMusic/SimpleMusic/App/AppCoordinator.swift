@@ -262,6 +262,8 @@ final class AppCoordinator {
                 guard navigation.transitionCoordinator == nil,
                       !(navigation.topViewController is SettingsViewController) else { return }
                 let settings = dependencies.makeSettingsViewController()
+                // 设置及其子页面使用完整内容区域，返回资料库后 Tab Bar 会自动恢复。
+                settings.hidesBottomBarWhenPushed = true
                 navigation.pushViewController(settings, animated: true)
             } else {
                 guard library.presentedViewController == nil else { return }

@@ -105,7 +105,7 @@
 "about.page_title" = "关于听见";
 "about.subtitle" = "为设备音乐与本地下载而设计";
 "about.version" = "版本 %1$@";
-"about.formats_title" = "MP3、M4A、WAV";
-"about.formats_detail" = "仅支持直接指向音频文件的下载链接。";
+"about.formats_title" = "系统音频格式";
+"about.formats_detail" = "仅支持音频文件直链。";
 "about.privacy_title" = "隐私原则";
 "about.privacy_detail" = "音乐仅保存在本机，不上传、不进行云同步；不解析音乐平台或普通网页链接。";

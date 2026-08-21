@@ -105,7 +105,7 @@
 "about.page_title" = "關於聽見";
 "about.subtitle" = "專為裝置音樂與本機下載設計";
 "about.version" = "版本 %1$@";
-"about.formats_title" = "MP3、M4A、WAV";
-"about.formats_detail" = "僅支援直接指向音訊檔案的下載連結。";
+"about.formats_title" = "系統音訊格式";
+"about.formats_detail" = "僅支援音訊檔案直連。";
 "about.privacy_title" = "隱私原則";
 "about.privacy_detail" = "音樂只會儲存在本機，不會上傳或進行雲端同步；也不會解析音樂平台或一般網頁連結。";

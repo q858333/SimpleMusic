@@ -16,11 +16,13 @@ final class AboutViewController: UIViewController {
     }
 
     private func buildInterface() {
-        let icon = UIImageView(image: UIImage(systemName: "music.note"))
-        icon.tintColor = Theme.accent
+        // 关于页复用正式 App 图稿，保持与主屏幕图标一致。
+        let icon = UIImageView(image: UIImage(named: "about-app-icon"))
         icon.contentMode = .scaleAspectFit
+        icon.layer.cornerRadius = 18
+        icon.clipsToBounds = true
         icon.isAccessibilityElement = false
-        icon.snp.makeConstraints { make in make.size.equalTo(72) }
+        icon.snp.makeConstraints { make in make.size.equalTo(80) }
 
         let name = makeLabel(L10n.text("app.name"), style: .title1, color: .label)
         name.textAlignment = .center

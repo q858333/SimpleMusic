@@ -105,7 +105,7 @@
 "about.page_title" = "About DiskTone";
 "about.subtitle" = "Designed for music on your device and local downloads";
 "about.version" = "Version %1$@";
-"about.formats_title" = "MP3, M4A, WAV";
-"about.formats_detail" = "Only direct audio file download links are supported.";
+"about.formats_title" = "System Audio Formats";
+"about.formats_detail" = "Direct audio file links only.";
 "about.privacy_title" = "Privacy";
 "about.privacy_detail" = "Music stays on this device. It is never uploaded or synced to the cloud, and DiskTone does not parse music services or ordinary web pages.";
