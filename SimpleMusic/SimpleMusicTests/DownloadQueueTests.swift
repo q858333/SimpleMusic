@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 @testable import SimpleMusic
 
@@ -366,6 +367,55 @@ final class DownloadQueueTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: similarlyNamedDirectory.path))
     }
 
+    func testTemporaryCleanupUnlinksOwnedSymlinkWithoutDeletingExternalTarget() throws {
+        let temporaryDirectory = try makeTemporaryDirectory()
+        let downloadRoot = temporaryDirectory.appendingPathComponent("Downloads", isDirectory: true)
+        let outside = temporaryDirectory.appendingPathComponent("outside.m4a")
+        let link = temporaryDirectory.appendingPathComponent("SimpleMusicDownload-link")
+        try Data("outside".utf8).write(to: outside)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: outside)
+        let service = DownloadRecoveryService(
+            fileStore: try DownloadFileStore(rootURL: downloadRoot),
+            musicStore: try LocalMusicStore.inMemory(),
+            temporaryDirectory: temporaryDirectory
+        )
+
+        try service.cleanupRetainedTemporaryFiles()
+
+        var linkStatus = stat()
+        XCTAssertEqual(Darwin.lstat(link.path, &linkStatus), -1)
+        XCTAssertEqual(try Data(contentsOf: outside), Data("outside".utf8))
+    }
+
+    func testTemporaryCleanupRejectsDirectoryThatReplacesClassifiedFile() throws {
+        let temporaryDirectory = try makeTemporaryDirectory()
+        let downloadRoot = temporaryDirectory.appendingPathComponent("Downloads", isDirectory: true)
+        let owned = temporaryDirectory.appendingPathComponent("SimpleMusicDownload-raced")
+        let child = owned.appendingPathComponent("keep.txt")
+        try Data("partial".utf8).write(to: owned)
+        let service = DownloadRecoveryService(
+            fileStore: try DownloadFileStore(rootURL: downloadRoot),
+            musicStore: try LocalMusicStore.inMemory(),
+            temporaryDirectory: temporaryDirectory,
+            temporaryEntryStatusReader: { path, status in
+                let result = Darwin.lstat(path, status)
+                let errorCode = result < 0 ? errno : 0
+                guard result == 0 else { return (result, errorCode) }
+                try! FileManager.default.removeItem(atPath: path)
+                try! FileManager.default.createDirectory(
+                    atPath: path,
+                    withIntermediateDirectories: false
+                )
+                try! Data("keep".utf8).write(to: child)
+                return (result, errorCode)
+            }
+        )
+
+        XCTAssertThrowsError(try service.cleanupRetainedTemporaryFiles())
+        XCTAssertTrue(FileManager.default.fileExists(atPath: owned.path))
+        XCTAssertEqual(try Data(contentsOf: child), Data("keep".utf8))
+    }
+
     func testLaunchMarksUnfinishedInterruptedWithoutStartingNetwork() throws {
         let queuedJob = persistedJob(state: .queued)
         let downloadingJob = persistedJob(
@@ -444,6 +494,151 @@ final class DownloadQueueTests: XCTestCase {
         }
         operation.succeed(url: interruptedJob.sourceURL, track: track(id: "retried"))
         waitUntil { job(interruptedJob.id, in: queue).state == .success }
+    }
+
+    func testRetryWaitsForOwnedLaunchRecoveryBeforeStartingNetwork() {
+        let interruptedJob = persistedJob(
+            state: .downloading,
+            reservedFileName: "owned-retry.m4a"
+        )
+        let recovery = GatedRecovery()
+        let operation = ControlledQueueDownloadOperation()
+        let queue = makeQueue(
+            operation: operation,
+            store: SpyQueueStore(initialJobs: [interruptedJob]),
+            recovery: recovery.perform
+        )
+        waitUntil { recovery.invocationCount == 1 }
+
+        queue.retry(id: interruptedJob.id)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.03))
+
+        XCTAssertEqual(recovery.invocationCount, 1)
+        XCTAssertEqual(operation.startedURLs, [])
+
+        recovery.complete(at: 0, with: .success(.cleaned))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.03))
+        XCTAssertEqual(operation.startedURLs, [interruptedJob.sourceURL])
+
+        if operation.startedURLs.isEmpty {
+            recovery.releaseAll(with: .success(.cleaned))
+            waitUntil { operation.startedURLs == [interruptedJob.sourceURL] }
+        }
+        guard operation.startedURLs == [interruptedJob.sourceURL] else {
+            recovery.releaseAll(with: .success(.cleaned))
+            return XCTFail("旧恢复收束后应只启动一次 retry")
+        }
+        operation.succeed(url: interruptedJob.sourceURL, track: track(id: "owned-retry"))
+        waitUntil { job(interruptedJob.id, in: queue).state == .success }
+        recovery.releaseAll(with: .success(.cleaned))
+    }
+
+    func testRemoveWaitsForOwnedRecoveryToFinish() {
+        let interruptedJob = persistedJob(
+            state: .downloading,
+            reservedFileName: "owned-remove.m4a"
+        )
+        let recovery = GatedRecovery()
+        let queue = makeQueue(
+            operation: ControlledQueueDownloadOperation(),
+            store: SpyQueueStore(initialJobs: [interruptedJob]),
+            recovery: recovery.perform
+        )
+        waitUntil { recovery.invocationCount == 1 }
+
+        queue.remove(id: interruptedJob.id)
+
+        XCTAssertNotNil(queue.jobs.first { $0.id == interruptedJob.id })
+        XCTAssertEqual(recovery.invocationCount, 1)
+        recovery.complete(at: 0, with: .success(.cleaned))
+        waitUntil { queue.jobs.first { $0.id == interruptedJob.id } == nil }
+        recovery.releaseAll(with: .success(.cleaned))
+    }
+
+    func testPendingRetryPrecedesLaterEnqueueAndOwnsOnlyAutoPlayEligibility() throws {
+        let retryJob = persistedJob(
+            state: .downloading,
+            reservedFileName: "retry-first.m4a"
+        )
+        let recovery = GatedRecovery()
+        let operation = ControlledQueueDownloadOperation()
+        var playedIDs = [String]()
+        let queue = makeQueue(
+            operation: operation,
+            store: SpyQueueStore(initialJobs: [retryJob]),
+            settings: makeSettings(autoPlay: true),
+            recovery: recovery.perform,
+            onPlay: { playedIDs.append($0.id) },
+            maximumActiveCount: 1
+        )
+        waitUntil { recovery.invocationCount == 1 }
+        let enqueuedURL = URL(string: "https://example.com/enqueued-second.m4a")!
+
+        queue.retry(id: retryJob.id)
+        _ = try queue.enqueue(enqueuedURL)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.03))
+
+        XCTAssertEqual(operation.startedURLs, [])
+        recovery.releaseAll(with: .success(.cleaned))
+        waitUntil { !operation.startedURLs.isEmpty }
+        XCTAssertEqual(operation.startedURLs.first, retryJob.sourceURL)
+
+        guard let firstURL = operation.startedURLs.first else {
+            return XCTFail("恢复后应启动 retry")
+        }
+        operation.succeed(url: firstURL, track: track(id: firstURL.lastPathComponent))
+        waitUntil { operation.startedURLs.count == 2 }
+        let secondURL = operation.startedURLs[1]
+        operation.succeed(url: secondURL, track: track(id: secondURL.lastPathComponent))
+        waitUntil { queue.jobs.allSatisfy { $0.state == .success } }
+
+        XCTAssertEqual(operation.startedURLs, [retryJob.sourceURL, enqueuedURL])
+        XCTAssertEqual(playedIDs, [retryJob.sourceURL.lastPathComponent])
+    }
+
+    func testTwoPendingRetriesKeepUserActionOrderAndSingleAutoPlayEligibility() {
+        let firstJob = persistedJob(
+            state: .downloading,
+            reservedFileName: "first-retry.m4a"
+        )
+        let secondJob = persistedJob(
+            state: .downloading,
+            reservedFileName: "second-retry.m4a"
+        )
+        let recovery = GatedRecovery()
+        let operation = ControlledQueueDownloadOperation()
+        var playedIDs = [String]()
+        let queue = makeQueue(
+            operation: operation,
+            store: SpyQueueStore(initialJobs: [firstJob, secondJob]),
+            settings: makeSettings(autoPlay: true),
+            recovery: recovery.perform,
+            onPlay: { playedIDs.append($0.id) },
+            maximumActiveCount: 1
+        )
+        waitUntil { recovery.invocationCount == 1 }
+
+        queue.retry(id: firstJob.id)
+        queue.retry(id: secondJob.id)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.03))
+
+        XCTAssertEqual(operation.startedURLs, [])
+        XCTAssertEqual(recovery.invocationCount, 1)
+        recovery.releaseAll(with: .success(.cleaned))
+        waitUntil { !operation.startedURLs.isEmpty }
+        XCTAssertEqual(operation.startedURLs.first, firstJob.sourceURL)
+
+        guard let firstURL = operation.startedURLs.first else {
+            return XCTFail("恢复完成后应启动第一个 retry")
+        }
+        operation.succeed(url: firstURL, track: track(id: firstURL.lastPathComponent))
+        waitUntil { operation.startedURLs.count == 2 }
+        let secondURL = operation.startedURLs[1]
+        operation.succeed(url: secondURL, track: track(id: secondURL.lastPathComponent))
+        waitUntil { queue.jobs.allSatisfy { $0.state == .success } }
+
+        XCTAssertEqual(operation.startedURLs, [firstJob.sourceURL, secondJob.sourceURL])
+        XCTAssertEqual(playedIDs, [firstJob.sourceURL.lastPathComponent])
     }
 
     private func makeJob(state: DownloadJob.State) -> DownloadJob {
@@ -589,6 +784,44 @@ private final class ControlledRecovery {
     func perform(_ fileName: String) async throws -> DownloadQueue.RecoveryDisposition {
         fileNames.append(fileName)
         return try XCTUnwrap(results[fileName]).get()
+    }
+}
+
+@MainActor
+private final class GatedRecovery {
+    private struct Invocation {
+        let fileName: String
+        var continuation: CheckedContinuation<DownloadQueue.RecoveryDisposition, Error>?
+    }
+
+    private var invocations = [Invocation]()
+    private var releasedResult: Result<DownloadQueue.RecoveryDisposition, Error>?
+    var invocationCount: Int { invocations.count }
+
+    func perform(_ fileName: String) async throws -> DownloadQueue.RecoveryDisposition {
+        if let releasedResult {
+            return try releasedResult.get()
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            invocations.append(Invocation(fileName: fileName, continuation: continuation))
+        }
+    }
+
+    func complete(
+        at index: Int,
+        with result: Result<DownloadQueue.RecoveryDisposition, Error>
+    ) {
+        guard invocations.indices.contains(index),
+              let continuation = invocations[index].continuation else { return }
+        invocations[index].continuation = nil
+        continuation.resume(with: result)
+    }
+
+    func releaseAll(with result: Result<DownloadQueue.RecoveryDisposition, Error>) {
+        releasedResult = result
+        let pending = invocations.compactMap(\.continuation)
+        invocations.removeAll()
+        pending.forEach { $0.resume(with: result) }
     }
 }
 
