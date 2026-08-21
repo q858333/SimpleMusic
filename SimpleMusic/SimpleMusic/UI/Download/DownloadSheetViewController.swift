@@ -136,7 +136,11 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
     private func enqueueInput() {
         let input = urlField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         urlField.resignFirstResponder()
-        guard let url = URL(string: input), url.scheme != nil else {
+        guard let url = URL(string: input),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              let host = url.host,
+              !host.isEmpty else {
             showInputError(L10n.text("download.error.invalid_url"))
             return
         }

@@ -109,6 +109,23 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         XCTAssertEqual(label("download.input.error", in: harness.controller)?.text, L10n.text("download.error.invalid_url"))
     }
 
+    func testMalformedHTTPURLsWithoutHostShowInputErrorWithoutStartingOperation() throws {
+        for malformedURL in ["https:///song.m4a", "http:/example.com/song.m4a"] {
+            let harness = makeQueueSheetHarness()
+            harness.controller.loadViewIfNeeded()
+
+            try submit(malformedURL, in: harness.controller)
+
+            XCTAssertTrue(harness.queue.jobs.isEmpty, "url=\(malformedURL)")
+            XCTAssertTrue(harness.operation.startedURLs.isEmpty, "url=\(malformedURL)")
+            XCTAssertEqual(
+                label("download.input.error", in: harness.controller)?.text,
+                L10n.text("download.error.invalid_url"),
+                "url=\(malformedURL)"
+            )
+        }
+    }
+
     func testFailedRowUsesLocalizedReasonAndCanRetryOrRemove() throws {
         let harness = makeQueueSheetHarness(maximumActiveCount: 1)
         let sourceURL = url("failure.m4a")
