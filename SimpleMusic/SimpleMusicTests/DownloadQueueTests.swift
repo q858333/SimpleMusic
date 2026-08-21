@@ -106,6 +106,48 @@ final class DownloadQueueTests: XCTestCase {
         XCTAssertEqual(operation.cancellationCount, 1)
     }
 
+    func testRemovingActiveReservedJobWaitsForAttemptBeforeReleasingSlot() throws {
+        let operation = ControlledQueueDownloadOperation(automaticallyCompletesCancellation: false)
+        let recovery = GatedRecovery()
+        let queue = makeQueue(
+            operation: operation,
+            recovery: recovery.perform,
+            maximumActiveCount: 1
+        )
+        let activeURL = URL(string: "https://example.com/active.m4a")!
+        let queuedURL = URL(string: "https://example.com/queued.m4a")!
+        let activeID = try queue.enqueue(activeURL)
+        _ = try queue.enqueue(queuedURL)
+        waitUntil { operation.startedURLs == [activeURL] }
+        try operation.reserve(url: activeURL, fileName: "active-reserved.m4a")
+
+        queue.remove(id: activeID)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.03))
+
+        XCTAssertEqual(operation.cancellationCount, 1)
+        XCTAssertEqual(recovery.invocationCount, 0)
+        XCTAssertEqual(operation.startedURLs, [activeURL])
+        XCTAssertNotNil(queue.jobs.first { $0.id == activeID })
+
+        operation.completeCancellation(url: activeURL)
+        waitUntil {
+            queue.jobs.first { $0.id == activeID } == nil
+                && operation.attemptCount(url: queuedURL) == 1
+        }
+
+        XCTAssertNil(queue.jobs.first { $0.id == activeID })
+        XCTAssertEqual(operation.startedURLs, [activeURL, queuedURL])
+        XCTAssertEqual(operation.attemptCount(url: queuedURL), 1)
+        XCTAssertEqual(recovery.invocationCount, 0)
+
+        recovery.releaseAll(with: .success(.cleaned))
+        if operation.attemptCount(url: queuedURL) == 0 {
+            waitUntil { operation.attemptCount(url: queuedURL) == 1 }
+        }
+        operation.succeed(url: queuedURL, track: track(id: "queued"))
+        waitUntil { queue.jobs.allSatisfy { $0.state == .success } }
+    }
+
     func testRemovingActiveJobAfterSuccessSignalStillRemovesAfterTerminalCallback() throws {
         let operation = ControlledQueueDownloadOperation()
         let queue = makeQueue(operation: operation)
@@ -852,7 +894,12 @@ private final class ControlledQueueDownloadOperation {
 
     private var invocations = [Invocation]()
     private(set) var cancellationCount = 0
+    private let automaticallyCompletesCancellation: Bool
     var startedURLs: [URL] { invocations.map(\.url) }
+
+    init(automaticallyCompletesCancellation: Bool = true) {
+        self.automaticallyCompletesCancellation = automaticallyCompletesCancellation
+    }
 
     func perform(
         url: URL,
@@ -860,6 +907,7 @@ private final class ControlledQueueDownloadOperation {
         reservation: @escaping @MainActor @Sendable (String) throws -> Void
     ) async throws -> MusicTrack {
         let index = invocations.count
+        let automaticallyCompletesCancellation = automaticallyCompletesCancellation
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 invocations.append(Invocation(
@@ -873,9 +921,11 @@ private final class ControlledQueueDownloadOperation {
             Task { @MainActor in
                 guard let self, invocations.indices.contains(index),
                       let continuation = invocations[index].continuation else { return }
-                invocations[index].continuation = nil
                 cancellationCount += 1
-                continuation.resume(throwing: CancellationError())
+                if automaticallyCompletesCancellation {
+                    invocations[index].continuation = nil
+                    continuation.resume(throwing: CancellationError())
+                }
             }
         }
     }
@@ -884,6 +934,17 @@ private final class ControlledQueueDownloadOperation {
 
     func report(url: URL, attempt: Int, progress: Double) {
         invocation(url: url, attempt: attempt).progress(progress)
+    }
+
+    func reserve(url: URL, attempt: Int = 0, fileName: String) throws {
+        try invocation(url: url, attempt: attempt).reservation(fileName)
+    }
+
+    func completeCancellation(url: URL, attempt: Int = 0) {
+        let invocation = invocation(url: url, attempt: attempt)
+        let continuation = invocation.continuation
+        invocation.continuation = nil
+        continuation?.resume(throwing: CancellationError())
     }
 
     func succeed(url: URL, attempt: Int = 0, track: MusicTrack) {

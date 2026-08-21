@@ -192,6 +192,18 @@ final class DownloadQueue {
 
     func remove(id: UUID) {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
+        if jobs[index].state == .downloading, activeTasks[id] != nil {
+            pendingRemovalAttempts[id] = jobs[index].attempt
+            jobs[index].attempt &+= 1
+            jobs[index].state = .cancelled
+            attemptAutoPlay.removeValue(forKey: id)
+            schedulingOrder.removeValue(forKey: id)
+            persistedProgressBuckets.removeValue(forKey: id)
+            let task = activeTasks[id]
+            persistAndPublish()
+            task?.cancel()
+            return
+        }
         if recoveryTasks[id] != nil || jobs[index].reservedFileName != nil {
             pendingRecoveryActions[id] = .remove
             attemptAutoPlay.removeValue(forKey: id)
@@ -200,11 +212,6 @@ final class DownloadQueue {
                 startRecovery(id: id, fileName: fileName)
             }
             scheduleIfNeeded()
-            return
-        }
-        if jobs[index].state == .downloading, activeTasks[id] != nil {
-            pendingRemovalAttempts[id] = jobs[index].attempt
-            cancel(id: id)
             return
         }
         removeJob(id: id)
