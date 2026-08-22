@@ -17,7 +17,8 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
         identifier: "download.empty.visual",
         artworkIdentifier: "download.empty.artwork",
         messageIdentifier: "download.empty",
-        message: L10n.text("download.queue.empty")
+        message: L10n.text("download.queue.empty"),
+        messageMaximumWidth: 320
     )
 
     init(downloadQueue: DownloadQueue) {
@@ -104,7 +105,7 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
             make.center.equalToSuperview()
             make.leading.greaterThanOrEqualToSuperview().offset(32)
             make.trailing.lessThanOrEqualToSuperview().offset(-32)
-            make.width.lessThanOrEqualTo(280)
+            make.width.equalTo(360).priority(.high)
         }
 
         tableView.accessibilityIdentifier = "download.jobs"

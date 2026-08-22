@@ -11,7 +11,8 @@ final class BrandedEmptyStateView: UIView {
         identifier: String,
         artworkIdentifier: String,
         messageIdentifier: String,
-        message: String
+        message: String,
+        messageMaximumWidth: CGFloat = 212
     ) {
         super.init(frame: .zero)
         accessibilityIdentifier = identifier
@@ -40,7 +41,9 @@ final class BrandedEmptyStateView: UIView {
             make.width.height.equalTo(52)
         }
         messageLabel.snp.makeConstraints { make in
-            make.width.lessThanOrEqualTo(212)
+            make.width.lessThanOrEqualTo(messageMaximumWidth)
+            make.leading.greaterThanOrEqualTo(stack)
+            make.trailing.lessThanOrEqualTo(stack)
         }
         stack.snp.makeConstraints { make in
             make.edges.equalToSuperview().inset(24)
