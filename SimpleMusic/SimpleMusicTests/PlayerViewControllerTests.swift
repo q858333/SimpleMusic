@@ -507,16 +507,14 @@ final class PlayerViewControllerTests: XCTestCase {
         let table = try XCTUnwrap(
             findView(identifier: "effects.presets", in: effects.view) as? UITableView
         )
+        effects.view.layoutIfNeeded()
+        table.layoutIfNeeded()
         let titles = (0..<table.numberOfRows(inSection: 0)).compactMap {
             table.dataSource?.tableView(table, cellForRowAt: IndexPath(row: $0, section: 0))
                 .textLabel?.text
         }
         XCTAssertEqual(titles, [
             L10n.text("effects.preset.off"),
-            L10n.text("effects.preset.panoramic_surround"),
-            L10n.text("effects.preset.classic_rock"),
-            L10n.text("effects.preset.dynamic_electronic"),
-            L10n.text("effects.preset.clear_vocal"),
             L10n.text("effects.preset.small_room"),
             L10n.text("effects.preset.medium_room"),
             L10n.text("effects.preset.large_room"),
@@ -525,15 +523,17 @@ final class PlayerViewControllerTests: XCTestCase {
             L10n.text("effects.preset.cathedral"),
             L10n.text("effects.preset.plate"),
         ])
+        XCTAssertFalse(table.isScrollEnabled)
+        XCTAssertGreaterThanOrEqual(table.bounds.height + 0.5, table.contentSize.height)
 
         table.delegate?.tableView?(
             table,
-            didSelectRowAt: IndexPath(row: 4, section: 0)
+            didSelectRowAt: IndexPath(row: 1, section: 0)
         )
-        XCTAssertEqual(updates.last, AudioEffectSettings(preset: .clearVocal, wetDryMix: 25))
+        XCTAssertEqual(updates.last, AudioEffectSettings(preset: .smallRoom, wetDryMix: 25))
         table.delegate?.tableView?(
             table,
-            didSelectRowAt: IndexPath(row: 10, section: 0)
+            didSelectRowAt: IndexPath(row: 6, section: 0)
         )
         let slider = try XCTUnwrap(
             findView(identifier: "effects.mix", in: effects.view) as? UISlider

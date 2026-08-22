@@ -748,10 +748,6 @@ final class AudioEffectsViewController: UIViewController, UITableViewDataSource,
     private let onChange: (AudioEffectSettings) -> Void
     private let presets: [AudioEffectPreset] = [
         .off,
-        .panoramicSurround,
-        .classicRock,
-        .dynamicElectronic,
-        .clearVocal,
         .smallRoom,
         .mediumRoom,
         .largeRoom,
@@ -761,6 +757,7 @@ final class AudioEffectsViewController: UIViewController, UITableViewDataSource,
         .plate,
     ]
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
+    private var tableHeightConstraint: Constraint?
     private let statusLabel = PlayerViewController.label(
         identifier: "effects.status",
         style: .footnote,
@@ -817,7 +814,7 @@ final class AudioEffectsViewController: UIViewController, UITableViewDataSource,
         tableView.accessibilityIdentifier = "effects.presets"
         tableView.backgroundColor = .clear
         tableView.rowHeight = 48
-        tableView.isScrollEnabled = true
+        tableView.isScrollEnabled = false
         tableView.dataSource = self
         tableView.delegate = self
 
@@ -829,7 +826,7 @@ final class AudioEffectsViewController: UIViewController, UITableViewDataSource,
         tableView.snp.makeConstraints { make in
             make.top.equalTo(statusLabel.snp.bottom).offset(6)
             make.leading.trailing.equalToSuperview()
-            make.height.equalTo(260).priority(.high)
+            tableHeightConstraint = make.height.equalTo(260).priority(.high).constraint
         }
         mixLabel.snp.makeConstraints { make in
             make.top.equalTo(tableView.snp.bottom).offset(12)
@@ -842,6 +839,18 @@ final class AudioEffectsViewController: UIViewController, UITableViewDataSource,
             make.bottom.lessThanOrEqualTo(view.safeAreaLayoutGuide).inset(12)
         }
         renderSettings()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        tableView.layoutIfNeeded()
+
+        let contentHeight = tableView.contentSize.height
+        guard abs(tableView.bounds.height - contentHeight) > 0.5 else { return }
+
+        // 列表本身不滚动，高度始终覆盖全部音色选项。
+        tableHeightConstraint?.update(offset: contentHeight)
+        view.layoutIfNeeded()
     }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
