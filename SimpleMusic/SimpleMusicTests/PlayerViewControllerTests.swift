@@ -453,6 +453,129 @@ final class PlayerViewControllerTests: XCTestCase {
         XCTAssertNotNil(findView(identifier: "player.airplay", in: sut.view))
     }
 
+    /// 播放模式按钮必须位于上一首左侧，并随快照显示列表、单曲循环和随机状态。
+    func testPlaybackModeButtonPrecedesPreviousAndRendersEveryMode() async throws {
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
+            PlaybackSnapshot(
+                status: .paused,
+                track: makeTrack(),
+                queueIndex: 0,
+                queueCount: 3,
+                playbackMode: .list
+            )
+        )
+        var cycleCount = 0
+        let sut = makePlayer(
+            snapshots: snapshots,
+            onCyclePlaybackMode: { cycleCount += 1 }
+        )
+        sut.loadViewIfNeeded()
+        sut.view.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
+        sut.view.layoutIfNeeded()
+
+        let mode = try XCTUnwrap(
+            findView(identifier: "player.playbackMode", in: sut.view) as? UIButton
+        )
+        let previous = try XCTUnwrap(
+            findView(identifier: "player.previous", in: sut.view) as? UIButton
+        )
+        await waitUntil { mode.accessibilityLabel == L10n.text("player.mode.list") }
+
+        XCTAssertLessThan(mode.frame.maxX, previous.frame.minX)
+        XCTAssertEqual(mode.accessibilityLabel, L10n.text("player.mode.list"))
+        XCTAssertEqual(
+            mode.image(for: .normal)?.pngData(),
+            UIImage(systemName: "list.bullet")?.pngData()
+        )
+
+        snapshots.send(PlaybackSnapshot(
+            status: .paused,
+            track: makeTrack(),
+            queueIndex: 0,
+            queueCount: 3,
+            playbackMode: .repeatOne
+        ))
+        await waitUntil { mode.accessibilityLabel == L10n.text("player.mode.repeat_one") }
+        XCTAssertEqual(
+            mode.image(for: .normal)?.pngData(),
+            UIImage(systemName: "repeat.1")?.pngData()
+        )
+
+        snapshots.send(PlaybackSnapshot(
+            status: .paused,
+            track: makeTrack(),
+            queueIndex: 0,
+            queueCount: 3,
+            playbackMode: .shuffle
+        ))
+        await waitUntil { mode.accessibilityLabel == L10n.text("player.mode.shuffle") }
+        XCTAssertEqual(
+            mode.image(for: .normal)?.pngData(),
+            UIImage(systemName: "shuffle")?.pngData()
+        )
+
+        mode.sendActions(for: .touchUpInside)
+        XCTAssertEqual(cycleCount, 1)
+    }
+
+    /// 播放列表按钮必须位于下一首右侧，并展示当前队列、当前项和可切换歌曲。
+    func testQueueButtonFollowsNextAndPresentsSelectableCurrentQueue() async throws {
+        let tracks = [
+            makeTrack(id: "queue-first", title: "第一首"),
+            makeTrack(id: "queue-current", title: "当前歌曲"),
+            makeTrack(id: "queue-last", title: "最后一首")
+        ]
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
+            PlaybackSnapshot(
+                status: .paused,
+                track: tracks[1],
+                queueIndex: 1,
+                queueCount: tracks.count,
+                queue: tracks
+            )
+        )
+        var selectedIndices = [Int]()
+        let sut = makePlayer(
+            snapshots: snapshots,
+            onSelectQueueItem: { selectedIndices.append($0) }
+        )
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+        window.rootViewController = sut
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        sut.view.layoutIfNeeded()
+
+        let next = try XCTUnwrap(
+            findView(identifier: "player.next", in: sut.view) as? UIButton
+        )
+        let queueButton = try XCTUnwrap(
+            findView(identifier: "player.showQueue", in: sut.view) as? UIButton
+        )
+        await waitUntil(attempts: 2_000) { queueButton.isEnabled }
+        XCTAssertTrue(queueButton.isEnabled)
+        XCTAssertGreaterThan(queueButton.frame.minX, next.frame.maxX)
+
+        queueButton.sendActions(for: .touchUpInside)
+        await waitUntil(attempts: 2_000) { sut.presentedViewController != nil }
+        let navigation = try XCTUnwrap(sut.presentedViewController as? UINavigationController)
+        let queueController = try XCTUnwrap(
+            navigation.topViewController as? PlaybackQueueViewController
+        )
+        let table = try XCTUnwrap(
+            findView(identifier: "player.queueList", in: queueController.view) as? UITableView
+        )
+
+        XCTAssertEqual(table.numberOfRows(inSection: 0), tracks.count)
+        let currentCell = try XCTUnwrap(
+            table.dataSource?.tableView(table, cellForRowAt: IndexPath(row: 1, section: 0))
+        )
+        XCTAssertEqual(currentCell.textLabel?.text, "当前歌曲")
+        XCTAssertEqual(currentCell.accessoryType, .checkmark)
+
+        table.delegate?.tableView?(table, didSelectRowAt: IndexPath(row: 2, section: 0))
+        XCTAssertEqual(selectedIndices, [2])
+    }
+
     /// 如果手机入口不是由根协调器全屏呈现共享播放器，此测试应失败。
     func testPhoneRootPresentsSharedPlayerFullScreen() throws {
         let dependencies = makeDependencies()
@@ -685,14 +808,18 @@ final class PlayerViewControllerTests: XCTestCase {
         onTogglePlay: @escaping () -> Void = {},
         onPrevious: @escaping () -> Void = {},
         onNext: @escaping () -> Void = {},
-        onSeek: @escaping (TimeInterval) -> Void = { _ in }
+        onSeek: @escaping (TimeInterval) -> Void = { _ in },
+        onCyclePlaybackMode: @escaping () -> Void = {},
+        onSelectQueueItem: @escaping (Int) -> Void = { _ in }
     ) -> PlayerViewController {
         PlayerViewController(
             snapshotPublisher: snapshots.eraseToAnyPublisher(),
             onTogglePlay: onTogglePlay,
             onPrevious: onPrevious,
             onNext: onNext,
-            onSeek: onSeek
+            onSeek: onSeek,
+            onCyclePlaybackMode: onCyclePlaybackMode,
+            onSelectQueueItem: onSelectQueueItem
         )
     }
 
@@ -723,13 +850,14 @@ final class PlayerViewControllerTests: XCTestCase {
     }
 
     private func makeTrack(
+        id: String = "track",
         title: String = "歌曲",
         artist: String = "艺人",
         album: String = "专辑",
         artworkData: Data? = nil
     ) -> SimpleMusic.MusicTrack {
         SimpleMusic.MusicTrack(
-            id: "track",
+            id: id,
             title: title,
             artist: artist,
             album: album,

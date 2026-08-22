@@ -12,8 +12,11 @@ final class PlayerViewController: UIViewController {
     private let onPrevious: () -> Void
     private let onNext: () -> Void
     private let onSeek: (TimeInterval) -> Void
+    private let onCyclePlaybackMode: () -> Void
+    private let onSelectQueueItem: (Int) -> Void
     private var snapshotCancellable: AnyCancellable?
     private var isSeeking = false
+    private var latestSnapshot = PlaybackSnapshot()
 
     private let controlsSurface: UIVisualEffectView = {
         let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
@@ -116,6 +119,12 @@ final class PlayerViewController: UIViewController {
         symbol: "backward.fill",
         action: onPrevious
     )
+    private lazy var playbackModeButton = controlButton(
+        identifier: "player.playbackMode",
+        label: L10n.text("player.mode.list"),
+        symbol: "list.bullet",
+        action: onCyclePlaybackMode
+    )
     private lazy var toggleButton = controlButton(
         identifier: "player.toggle",
         label: L10n.text("common.play"),
@@ -129,6 +138,17 @@ final class PlayerViewController: UIViewController {
         symbol: "forward.fill",
         action: onNext
     )
+    private lazy var showQueueButton: UIButton = {
+        let button = controlButton(
+            identifier: "player.showQueue",
+            label: L10n.text("player.queue.show"),
+            symbol: "list.bullet.queue",
+            action: { [weak self] in self?.showPlaybackQueue() }
+        )
+        // 首个快照抵达前没有可信队列，避免短暂可点却无响应。
+        button.isEnabled = false
+        return button
+    }()
 
     private let volumeView: MPVolumeView = {
         let view = MPVolumeView()
@@ -152,12 +172,16 @@ final class PlayerViewController: UIViewController {
         onTogglePlay: @escaping () -> Void,
         onPrevious: @escaping () -> Void,
         onNext: @escaping () -> Void,
-        onSeek: @escaping (TimeInterval) -> Void
+        onSeek: @escaping (TimeInterval) -> Void,
+        onCyclePlaybackMode: @escaping () -> Void = {},
+        onSelectQueueItem: @escaping (Int) -> Void = { _ in }
     ) {
         self.onTogglePlay = onTogglePlay
         self.onPrevious = onPrevious
         self.onNext = onNext
         self.onSeek = onSeek
+        self.onCyclePlaybackMode = onCyclePlaybackMode
+        self.onSelectQueueItem = onSelectQueueItem
         super.init(nibName: nil, bundle: nil)
         snapshotCancellable = snapshotPublisher
             .receive(on: DispatchQueue.main)
@@ -231,7 +255,15 @@ final class PlayerViewController: UIViewController {
         )
         queueTitle.text = L10n.text("player.up_next")
 
-        let controls = UIStackView(arrangedSubviews: [previousButton, toggleButton, nextButton])
+        let controls = UIStackView(
+            arrangedSubviews: [
+                playbackModeButton,
+                previousButton,
+                toggleButton,
+                nextButton,
+                showQueueButton
+            ]
+        )
         controls.axis = .horizontal
         controls.alignment = .center
         controls.distribution = .equalCentering
@@ -309,7 +341,7 @@ final class PlayerViewController: UIViewController {
         }
         controls.snp.makeConstraints { make in
             make.top.equalTo(elapsedLabel.snp.bottom).offset(12)
-            make.leading.trailing.equalToSuperview().inset(46)
+            make.leading.trailing.equalToSuperview().inset(20)
         }
         utilities.snp.makeConstraints { make in
             make.top.equalTo(controls.snp.bottom).offset(16)
@@ -339,6 +371,8 @@ final class PlayerViewController: UIViewController {
     }
 
     private func render(_ snapshot: PlaybackSnapshot) {
+        latestSnapshot = snapshot
+        updatePlaybackModeButton(snapshot.playbackMode)
         guard let track = snapshot.track else {
             renderEmptyState()
             return
@@ -397,12 +431,14 @@ final class PlayerViewController: UIViewController {
         progressSlider.value = 0
         toggleButton.accessibilityLabel = L10n.text("common.play")
         toggleButton.setImage(UIImage(systemName: "play.fill"), for: .normal)
+        showQueueButton.isEnabled = false
         setPlaybackControlsEnabled(false)
     }
 
     private func setPlaybackControlsEnabled(_ enabled: Bool) {
         [previousButton, toggleButton, nextButton].forEach { $0.isEnabled = enabled }
         progressSlider.isEnabled = enabled
+        showQueueButton.isEnabled = enabled && !latestSnapshot.queue.isEmpty
         setSystemUtilitiesEnabled(enabled)
     }
 
@@ -426,6 +462,7 @@ final class PlayerViewController: UIViewController {
         nextButton.isEnabled = index + 1 < snapshot.queueCount
         toggleButton.isEnabled = isReady
         progressSlider.isEnabled = isReady
+        showQueueButton.isEnabled = !snapshot.queue.isEmpty
         setSystemUtilitiesEnabled(true)
     }
 
@@ -434,6 +471,39 @@ final class PlayerViewController: UIViewController {
         routePickerView.isUserInteractionEnabled = enabled
         volumeView.alpha = enabled ? 1 : 0.45
         routePickerView.alpha = enabled ? 1 : 0.45
+    }
+
+    private func updatePlaybackModeButton(_ mode: PlaybackMode) {
+        let labelKey: String
+        let symbol: String
+        switch mode {
+        case .list:
+            labelKey = "player.mode.list"
+            symbol = "list.bullet"
+        case .repeatOne:
+            labelKey = "player.mode.repeat_one"
+            symbol = "repeat.1"
+        case .shuffle:
+            labelKey = "player.mode.shuffle"
+            symbol = "shuffle"
+        }
+        playbackModeButton.accessibilityLabel = L10n.text(labelKey)
+        playbackModeButton.setImage(UIImage(systemName: symbol), for: .normal)
+        playbackModeButton.tintColor = mode == .list ? .secondaryLabel : Theme.accent
+    }
+
+    private func showPlaybackQueue() {
+        guard !latestSnapshot.queue.isEmpty else { return }
+        let controller = PlaybackQueueViewController(
+            tracks: latestSnapshot.queue,
+            currentIndex: latestSnapshot.queueIndex,
+            onSelect: { [weak self] index in
+                self?.onSelectQueueItem(index)
+            }
+        )
+        let navigation = UINavigationController(rootViewController: controller)
+        navigation.modalPresentationStyle = .pageSheet
+        present(navigation, animated: true)
     }
 
     @objc private func beginSeeking() {
@@ -527,6 +597,81 @@ final class PlayerViewController: UIViewController {
         guard snapshot.queueCount > 0 else { return L10n.text("player.queue_empty") }
         guard let index = snapshot.queueIndex else { return L10n.text("player.queue_ended") }
         return L10n.format("player.queue.position", index + 1, snapshot.queueCount)
+    }
+}
+
+/// 当前播放队列的轻量页面；点击歌曲后复用协调器现有的按索引激活入口。
+final class PlaybackQueueViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+    private let tracks: [MusicTrack]
+    private let currentIndex: Int?
+    private let onSelect: (Int) -> Void
+    private let tableView = UITableView(frame: .zero, style: .plain)
+
+    init(tracks: [MusicTrack], currentIndex: Int?, onSelect: @escaping (Int) -> Void) {
+        self.tracks = tracks
+        self.currentIndex = currentIndex
+        self.onSelect = onSelect
+        super.init(nibName: nil, bundle: nil)
+        title = L10n.text("player.queue.title")
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("PlaybackQueueViewController 仅支持纯代码初始化")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = Theme.background
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: L10n.text("common.done"),
+            style: .done,
+            target: self,
+            action: #selector(close)
+        )
+        tableView.accessibilityIdentifier = "player.queueList"
+        tableView.backgroundColor = Theme.background
+        tableView.rowHeight = 64
+        tableView.dataSource = self
+        tableView.delegate = self
+        view.addSubview(tableView)
+        tableView.snp.makeConstraints { make in
+            make.edges.equalTo(view.safeAreaLayoutGuide)
+        }
+    }
+
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        tracks.count
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        cellForRowAt indexPath: IndexPath
+    ) -> UITableViewCell {
+        let identifier = "PlaybackQueueCell"
+        let cell = tableView.dequeueReusableCell(withIdentifier: identifier)
+            ?? UITableViewCell(style: .subtitle, reuseIdentifier: identifier)
+        let track = tracks[indexPath.row]
+        cell.textLabel?.text = track.title
+        cell.detailTextLabel?.text = track.artist
+        cell.imageView?.image = UIImage(named: "music-note-red")
+        cell.accessoryType = indexPath.row == currentIndex ? .checkmark : .none
+        cell.tintColor = Theme.accent
+        cell.backgroundColor = .clear
+        cell.accessibilityValue = indexPath.row == currentIndex
+            ? L10n.text("player.queue.current")
+            : nil
+        return cell
+    }
+
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        guard tracks.indices.contains(indexPath.row) else { return }
+        onSelect(indexPath.row)
+        dismiss(animated: true)
+    }
+
+    @objc private func close() {
+        dismiss(animated: true)
     }
 }
 

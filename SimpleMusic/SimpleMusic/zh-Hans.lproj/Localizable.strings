@@ -52,6 +52,12 @@
 "player.progress" = "播放进度";
 "player.previous" = "上一首";
 "player.next" = "下一首";
+"player.mode.list" = "列表播放";
+"player.mode.repeat_one" = "单曲循环";
+"player.mode.shuffle" = "随机播放";
+"player.queue.show" = "显示播放列表";
+"player.queue.title" = "播放列表";
+"player.queue.current" = "正在播放";
 "player.now_playing" = "正在播放";
 "player.up_next" = "接下来播放";
 "player.empty_title" = "尚未播放";

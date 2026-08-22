@@ -52,6 +52,12 @@
 "player.progress" = "Playback Progress";
 "player.previous" = "Previous Track";
 "player.next" = "Next Track";
+"player.mode.list" = "List Play";
+"player.mode.repeat_one" = "Repeat One";
+"player.mode.shuffle" = "Shuffle";
+"player.queue.show" = "Show Playing Queue";
+"player.queue.title" = "Playing Queue";
+"player.queue.current" = "Now Playing";
 "player.now_playing" = "Now Playing";
 "player.up_next" = "Up Next";
 "player.empty_title" = "Nothing Playing";

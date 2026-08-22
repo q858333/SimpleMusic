@@ -19,6 +19,8 @@ struct AppRootDependencies {
     let onPrevious: () -> Void
     let onNext: () -> Void
     let onSeek: (TimeInterval) -> Void
+    let onCyclePlaybackMode: () -> Void
+    let onSelectQueueItem: (Int) -> Void
     let makeDownloadViewController: @MainActor () -> UIViewController
     let makeSettingsViewController: @MainActor () -> UIViewController
 
@@ -58,6 +60,16 @@ struct AppRootDependencies {
         onSeek = { [playbackCoordinator = environment.playbackCoordinator] seconds in
             playbackCoordinator.seek(to: seconds)
         }
+        onCyclePlaybackMode = { [playbackCoordinator = environment.playbackCoordinator] in
+            playbackCoordinator.cyclePlaybackMode()
+        }
+        onSelectQueueItem = { [playbackCoordinator = environment.playbackCoordinator] index in
+            do {
+                try playbackCoordinator.selectQueueItem(at: index)
+            } catch {
+                NSLog("无法播放队列歌曲：%@", String(describing: error))
+            }
+        }
         makeDownloadViewController = {
             guard let downloadQueue = environment.downloadQueue else {
                 return DownloadUnavailableViewController(
@@ -88,6 +100,8 @@ struct AppRootDependencies {
         onPrevious: @escaping () -> Void = {},
         onNext: @escaping () -> Void = {},
         onSeek: @escaping (TimeInterval) -> Void = { _ in },
+        onCyclePlaybackMode: @escaping () -> Void = {},
+        onSelectQueueItem: @escaping (Int) -> Void = { _ in },
         makeDownloadViewController: @escaping @MainActor () -> UIViewController = { UIViewController() },
         makeSettingsViewController: @escaping @MainActor () -> UIViewController = { UIViewController() }
     ) {
@@ -100,6 +114,8 @@ struct AppRootDependencies {
         self.onPrevious = onPrevious
         self.onNext = onNext
         self.onSeek = onSeek
+        self.onCyclePlaybackMode = onCyclePlaybackMode
+        self.onSelectQueueItem = onSelectQueueItem
         self.makeDownloadViewController = makeDownloadViewController
         self.makeSettingsViewController = makeSettingsViewController
     }
@@ -289,7 +305,9 @@ final class AppCoordinator {
             onTogglePlay: dependencies.onTogglePlay,
             onPrevious: dependencies.onPrevious,
             onNext: dependencies.onNext,
-            onSeek: dependencies.onSeek
+            onSeek: dependencies.onSeek,
+            onCyclePlaybackMode: dependencies.onCyclePlaybackMode,
+            onSelectQueueItem: dependencies.onSelectQueueItem
         )
     }
 

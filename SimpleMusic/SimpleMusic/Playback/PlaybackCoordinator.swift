@@ -11,8 +11,10 @@ final class PlaybackCoordinator: PlaybackBackendDelegate {
     private let localBackend: any PlaybackBackend
     private let systemBackend: any PlaybackBackend
     private let snapshotSubject = CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot())
+    private var sourceQueue = [MusicTrack]()
     private var queue = [MusicTrack]()
     private var currentIndex: Int?
+    private var playbackMode: PlaybackMode = .list
     private weak var activeBackend: (any PlaybackBackend)?
     private var activeGeneration: PlaybackGeneration?
     private var nextGenerationRawValue: UInt64 = 0
@@ -37,8 +39,18 @@ final class PlaybackCoordinator: PlaybackBackendDelegate {
             throw PlaybackCoordinatorError.invalidStartIndex
         }
 
-        self.queue = queue
-        try activate(index: index)
+        sourceQueue = queue
+        if playbackMode == .shuffle {
+            let currentTrack = queue[index]
+            self.queue = [currentTrack] + queue.enumerated()
+                .filter { $0.offset != index }
+                .map(\.element)
+                .shuffled()
+            try activate(index: 0)
+        } else {
+            self.queue = queue
+            try activate(index: index)
+        }
     }
 
     /// 随机播放只生成一次完整队列，后续 next/previous 仍沿该固定顺序移动。
@@ -47,7 +59,28 @@ final class PlaybackCoordinator: PlaybackBackendDelegate {
             stopAndResetQueue()
             return
         }
-        try play(queue: queue.shuffled(), startAt: 0)
+        playbackMode = .shuffle
+        sourceQueue = queue
+        self.queue = queue.shuffled()
+        try activate(index: 0)
+    }
+
+    func cyclePlaybackMode() {
+        playbackMode = playbackMode.next
+        reorderQueueForPlaybackMode()
+        updateSnapshot {
+            $0.playbackMode = playbackMode
+            $0.queueIndex = currentIndex
+            $0.queueCount = queue.count
+            $0.queue = queue
+        }
+    }
+
+    func selectQueueItem(at index: Int) throws {
+        guard queue.indices.contains(index) else {
+            throw PlaybackCoordinatorError.invalidStartIndex
+        }
+        try activate(index: index)
     }
 
     func togglePlay() {
@@ -109,7 +142,11 @@ final class PlaybackCoordinator: PlaybackBackendDelegate {
     ) {
         guard isActive(backend, generation: generation) else { return }
         do {
-            try next()
+            if playbackMode == .repeatOne, let currentIndex {
+                try activate(index: currentIndex)
+            } else {
+                try next()
+            }
         } catch {
             publishFailure(error)
         }
@@ -142,7 +179,9 @@ final class PlaybackCoordinator: PlaybackBackendDelegate {
             elapsed: 0,
             duration: track.duration,
             queueIndex: index,
-            queueCount: queue.count
+            queueCount: queue.count,
+            playbackMode: playbackMode,
+            queue: queue
         ))
 
         do {
@@ -181,9 +220,10 @@ final class PlaybackCoordinator: PlaybackBackendDelegate {
         activeBackend?.stop()
         activeBackend = nil
         activeGeneration = nil
+        sourceQueue = []
         queue = []
         currentIndex = nil
-        snapshotSubject.send(PlaybackSnapshot())
+        snapshotSubject.send(PlaybackSnapshot(playbackMode: playbackMode))
     }
 
     private func publishFailure(_ error: Error) {
@@ -207,5 +247,24 @@ final class PlaybackCoordinator: PlaybackBackendDelegate {
     private func makeGeneration() -> PlaybackGeneration {
         nextGenerationRawValue &+= 1
         return PlaybackGeneration(rawValue: nextGenerationRawValue)
+    }
+
+    private func reorderQueueForPlaybackMode() {
+        guard let currentIndex, queue.indices.contains(currentIndex) else { return }
+        let currentTrack = queue[currentIndex]
+        switch playbackMode {
+        case .shuffle:
+            queue = [currentTrack] + sourceQueue
+                .filter { $0.id != currentTrack.id }
+                .shuffled()
+            self.currentIndex = 0
+        case .list, .repeatOne:
+            guard queue.map(\.id) != sourceQueue.map(\.id),
+                  let restoredIndex = sourceQueue.firstIndex(where: { $0.id == currentTrack.id }) else {
+                return
+            }
+            queue = sourceQueue
+            self.currentIndex = restoredIndex
+        }
     }
 }

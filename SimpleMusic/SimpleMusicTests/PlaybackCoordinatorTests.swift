@@ -169,6 +169,68 @@ final class PlaybackCoordinatorTests: XCTestCase {
         XCTAssertNil(snapshots.value.queueIndex)
     }
 
+    /// 若模式按钮没有按列表、单曲循环、随机的顺序切换，界面会显示错误状态。
+    func testPlaybackModeCyclesFromListToRepeatOneToShuffleAndBack() {
+        let sut = PlaybackCoordinator(
+            localBackend: SpyBackend(kind: .local),
+            systemBackend: SpyBackend(kind: .system)
+        )
+        let snapshots = observe(sut)
+
+        XCTAssertEqual(snapshots.value.playbackMode, .list)
+        sut.cyclePlaybackMode()
+        XCTAssertEqual(snapshots.value.playbackMode, .repeatOne)
+        sut.cyclePlaybackMode()
+        XCTAssertEqual(snapshots.value.playbackMode, .shuffle)
+        sut.cyclePlaybackMode()
+        XCTAssertEqual(snapshots.value.playbackMode, .list)
+    }
+
+    /// 单曲循环只影响自然结束；后端完成后应重新加载当前歌曲而不是推进队列。
+    func testRepeatOneRestartsCurrentTrackAfterNaturalFinish() throws {
+        let local = SpyBackend(kind: .local)
+        let sut = PlaybackCoordinator(
+            localBackend: local,
+            systemBackend: SpyBackend(kind: .system)
+        )
+        let snapshots = observe(sut)
+        sut.cyclePlaybackMode()
+        try sut.play(
+            queue: [downloadedTrack(id: "first"), downloadedTrack(id: "second")],
+            startAt: 0
+        )
+
+        local.reportFinished()
+
+        XCTAssertEqual(local.loadedTrackIDs, ["first", "first"])
+        XCTAssertEqual(snapshots.value.track?.id, "first")
+        XCTAssertEqual(snapshots.value.queueIndex, 0)
+        XCTAssertEqual(snapshots.value.playbackMode, .repeatOne)
+    }
+
+    /// 随机模式应保留当前歌曲并在一轮中恰好播放队列里的每个 ID 一次。
+    func testShuffleModeKeepsCurrentTrackAndLoadsEveryQueueItemOnce() throws {
+        let local = SpyBackend(kind: .local)
+        let sut = PlaybackCoordinator(
+            localBackend: local,
+            systemBackend: SpyBackend(kind: .system)
+        )
+        let tracks = (0..<8).map { downloadedTrack(id: "mode-track-\($0)") }
+        let snapshots = observe(sut)
+        sut.cyclePlaybackMode()
+        sut.cyclePlaybackMode()
+
+        try sut.play(queue: tracks, startAt: 3)
+        for _ in 1..<tracks.count {
+            try sut.next()
+        }
+
+        XCTAssertEqual(local.loadedTrackIDs.first, "mode-track-3")
+        XCTAssertEqual(local.loadedTrackIDs.count, tracks.count)
+        XCTAssertEqual(Set(local.loadedTrackIDs), Set(tracks.map(\.id)))
+        XCTAssertEqual(snapshots.value.playbackMode, .shuffle)
+    }
+
     /// 若后端错误未进入统一快照，界面和日志层无法观察播放失败。
     func testDelegateFailurePublishesFailedSnapshot() throws {
         let local = SpyBackend(kind: .local)
