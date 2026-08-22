@@ -1011,6 +1011,74 @@ final class LibraryViewModelTests: XCTestCase {
         XCTAssertEqual(controllers[1].tabBarItem.title, L10n.text("tab.search"))
     }
 
+    /// 隐藏 Tab Bar 的普通页面仍需让迷你播放器悬浮在安全区底部，不能跟随 Tab Bar 临时 frame 跳动。
+    @MainActor
+    func testPhoneMiniPlayerStaysAtBottomWhenPushedPageHidesTabBar() async throws {
+        let viewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: []),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
+            PlaybackSnapshot(status: .paused, track: makeTrack(id: "navigation-mini"))
+        )
+        let sut = MainTabBarController(
+            libraryViewModel: viewModel,
+            snapshotPublisher: snapshots.eraseToAnyPublisher(),
+            onPlay: { _, _ in },
+            onTogglePlay: {},
+            onOpenPlayer: {}
+        )
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+        window.rootViewController = sut
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        await waitUntil {
+            self.findView(identifier: "mini.material", in: sut.view)?.superview?.isHidden == false
+        }
+        sut.view.layoutIfNeeded()
+
+        let miniPlayer = try XCTUnwrap(
+            findView(identifier: "mini.material", in: sut.view)?.superview
+        )
+        let navigation = try XCTUnwrap(sut.selectedViewController as? UINavigationController)
+        let pushed = UIViewController()
+        pushed.hidesBottomBarWhenPushed = true
+
+        navigation.pushViewController(pushed, animated: true)
+        await waitUntil {
+            navigation.topViewController === pushed
+                && abs(
+                    miniPlayer.frame.maxY
+                        - (sut.view.safeAreaLayoutGuide.layoutFrame.maxY - 8)
+                ) <= 1
+        }
+        sut.view.layoutIfNeeded()
+
+        XCTAssertFalse(miniPlayer.isHidden)
+        XCTAssertGreaterThan(miniPlayer.frame.minY, sut.view.bounds.midY)
+        XCTAssertEqual(
+            miniPlayer.frame.maxY,
+            sut.view.safeAreaLayoutGuide.layoutFrame.maxY - 8,
+            accuracy: 1
+        )
+        snapshots.send(
+            PlaybackSnapshot(status: .playing, track: makeTrack(id: "navigation-mini-updated"))
+        )
+        await Task.yield()
+        XCTAssertFalse(miniPlayer.isHidden)
+
+        navigation.popViewController(animated: true)
+        await waitUntil {
+            navigation.topViewController !== pushed
+                && abs(miniPlayer.frame.maxY - (sut.tabBar.frame.minY - 6)) <= 1
+        }
+        sut.view.layoutIfNeeded()
+
+        XCTAssertFalse(miniPlayer.isHidden)
+        XCTAssertGreaterThan(miniPlayer.frame.minY, sut.view.bounds.midY)
+        XCTAssertEqual(miniPlayer.frame.maxY, sut.tabBar.frame.minY - 6, accuracy: 1)
+    }
+
     /// 如果歌曲行偏离 46pt 封面、两行动态字体、下载标识或更多操作触控目标，此测试应失败。
     @MainActor
     func testTrackCellKeepsRequiredContentAndTouchTarget() throws {

@@ -11,6 +11,9 @@ final class MainTabBarController: UITabBarController {
     private let onDeleteTrack: (MusicTrack) -> Void
     private let onTogglePlay: () -> Void
     private var reloadTask: Task<Void, Never>?
+    private var miniAboveTabBarConstraint: Constraint?
+    private var miniAtSafeAreaConstraint: Constraint?
+    private var miniPlayerUsesSafeAreaBottom = false
 
     var onOpenPlayer: (() -> Void)?
 
@@ -101,17 +104,62 @@ final class MainTabBarController: UITabBarController {
             image: UIImage(systemName: "magnifyingglass"),
             selectedImage: nil
         )
-        viewControllers = [
-            UINavigationController(rootViewController: libraryViewController),
-            UINavigationController(rootViewController: searchViewController)
-        ]
+        let libraryNavigation = UINavigationController(rootViewController: libraryViewController)
+        let searchNavigation = UINavigationController(rootViewController: searchViewController)
+        libraryNavigation.delegate = self
+        searchNavigation.delegate = self
+        viewControllers = [libraryNavigation, searchNavigation]
     }
 
     private func installMiniPlayer() {
         view.addSubview(miniPlayerView)
         miniPlayerView.snp.makeConstraints { make in
             make.leading.trailing.equalTo(view.safeAreaLayoutGuide).inset(8)
-            make.bottom.equalTo(tabBar.snp.top).offset(-6)
+            miniAboveTabBarConstraint = make.bottom.equalTo(tabBar.snp.top).offset(-6).constraint
+            miniAtSafeAreaConstraint = make.bottom
+                .equalTo(view.safeAreaLayoutGuide.snp.bottom)
+                .offset(-8)
+                .constraint
+        }
+        miniAtSafeAreaConstraint?.deactivate()
+    }
+
+    private func setMiniPlayerUsesSafeAreaBottom(_ usesSafeArea: Bool) {
+        guard miniPlayerUsesSafeAreaBottom != usesSafeArea else { return }
+        miniPlayerUsesSafeAreaBottom = usesSafeArea
+        if usesSafeArea {
+            miniAboveTabBarConstraint?.deactivate()
+            miniAtSafeAreaConstraint?.activate()
+        } else {
+            miniAtSafeAreaConstraint?.deactivate()
+            miniAboveTabBarConstraint?.activate()
+        }
+    }
+}
+
+extension MainTabBarController: UINavigationControllerDelegate {
+    func navigationController(
+        _ navigationController: UINavigationController,
+        willShow viewController: UIViewController,
+        animated: Bool
+    ) {
+        let previousValue = miniPlayerUsesSafeAreaBottom
+        let nextValue = viewController.hidesBottomBarWhenPushed
+        guard previousValue != nextValue else { return }
+
+        // Tab Bar 隐藏时改贴安全区底部，让迷你播放器在普通子页面继续悬浮。
+        setMiniPlayerUsesSafeAreaBottom(nextValue)
+        guard animated,
+              let transitionCoordinator = navigationController.transitionCoordinator else {
+            view.layoutIfNeeded()
+            return
+        }
+        transitionCoordinator.animate { [weak self] _ in
+            self?.view.layoutIfNeeded()
+        } completion: { [weak self] context in
+            guard context.isCancelled else { return }
+            self?.setMiniPlayerUsesSafeAreaBottom(previousValue)
+            self?.view.layoutIfNeeded()
         }
     }
 }
