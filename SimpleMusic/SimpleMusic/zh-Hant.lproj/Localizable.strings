@@ -60,7 +60,7 @@
 "player.queue.current" = "正在播放";
 "player.more" = "更多";
 "effects.title" = "音效";
-"effects.intensity" = "混響強度";
+"effects.intensity" = "音效強度";
 "effects.intensity_value" = "強度 · %1$d%%";
 "effects.downloaded_hint" = "混響僅對下載歌曲生效。";
 "effects.system_unavailable" = "Apple Music 歌曲暫不支援音效。";
@@ -72,6 +72,10 @@
 "effects.preset.large_hall" = "大型大廳";
 "effects.preset.cathedral" = "教堂";
 "effects.preset.plate" = "板式混響";
+"effects.preset.panoramic_surround" = "全景環繞";
+"effects.preset.classic_rock" = "搖滾經典";
+"effects.preset.dynamic_electronic" = "動感電音";
+"effects.preset.clear_vocal" = "清晰人聲";
 "player.now_playing" = "正在播放";
 "player.up_next" = "接著播放";
 "player.empty_title" = "尚未播放";

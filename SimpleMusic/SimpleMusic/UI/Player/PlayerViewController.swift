@@ -120,12 +120,16 @@ final class PlayerViewController: UIViewController {
         symbol: "backward.fill",
         action: onPrevious
     )
-    private lazy var playbackModeButton = controlButton(
-        identifier: "player.playbackMode",
-        label: L10n.text("player.mode.list"),
-        symbol: "list.bullet",
-        action: onCyclePlaybackMode
-    )
+    private lazy var playbackModeButton: UIButton = {
+        let button = controlButton(
+            identifier: "player.playbackMode",
+            label: L10n.text("player.mode.list"),
+            symbol: "list.bullet",
+            action: onCyclePlaybackMode
+        )
+        button.tintColor = Theme.accent
+        return button
+    }()
     private lazy var toggleButton = controlButton(
         identifier: "player.toggle",
         label: L10n.text("common.play"),
@@ -529,7 +533,8 @@ final class PlayerViewController: UIViewController {
         }
         playbackModeButton.accessibilityLabel = L10n.text(labelKey)
         playbackModeButton.setImage(UIImage(systemName: symbol), for: .normal)
-        playbackModeButton.tintColor = mode == .list ? .secondaryLabel : Theme.accent
+        // 三种播放模式都处于可操作状态，仅通过图标区分语义，统一使用品牌强调色。
+        playbackModeButton.tintColor = Theme.accent
     }
 
     private func showPlaybackQueue() {

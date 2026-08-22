@@ -60,7 +60,7 @@
 "player.queue.current" = "Now Playing";
 "player.more" = "More";
 "effects.title" = "Sound Effects";
-"effects.intensity" = "Reverb Intensity";
+"effects.intensity" = "Effect Intensity";
 "effects.intensity_value" = "Intensity · %1$d%%";
 "effects.downloaded_hint" = "Reverb applies to downloaded songs.";
 "effects.system_unavailable" = "Sound effects are unavailable for Apple Music tracks.";
@@ -72,6 +72,10 @@
 "effects.preset.large_hall" = "Large Hall";
 "effects.preset.cathedral" = "Cathedral";
 "effects.preset.plate" = "Plate";
+"effects.preset.panoramic_surround" = "Panoramic Surround";
+"effects.preset.classic_rock" = "Classic Rock";
+"effects.preset.dynamic_electronic" = "Dynamic Electronic";
+"effects.preset.clear_vocal" = "Clear Vocal";
 "player.now_playing" = "Now Playing";
 "player.up_next" = "Up Next";
 "player.empty_title" = "Nothing Playing";

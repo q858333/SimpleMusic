@@ -503,6 +503,21 @@ final class PlayerViewControllerTests: XCTestCase {
 
         let navigation = try XCTUnwrap(sut.presentedViewController as? UINavigationController)
         let effects = try XCTUnwrap(navigation.topViewController as? AudioEffectsViewController)
+        effects.loadViewIfNeeded()
+        let table = try XCTUnwrap(
+            findView(identifier: "effects.presets", in: effects.view) as? UITableView
+        )
+        let titles = (0..<table.numberOfRows(inSection: 0)).compactMap {
+            table.dataSource?.tableView(table, cellForRowAt: IndexPath(row: $0, section: 0))
+                .textLabel?.text
+        }
+        XCTAssertTrue(titles.contains(L10n.text("effects.preset.panoramic_surround")))
+        XCTAssertTrue(titles.contains(L10n.text("effects.preset.classic_rock")))
+        XCTAssertTrue(titles.contains(L10n.text("effects.preset.dynamic_electronic")))
+        XCTAssertTrue(titles.contains(L10n.text("effects.preset.clear_vocal")))
+
+        effects.selectPresetForTesting(.clearVocal)
+        XCTAssertEqual(updates.last, AudioEffectSettings(preset: .clearVocal, wetDryMix: 25))
         effects.selectPresetForTesting(.cathedral)
         effects.setWetDryMixForTesting(64)
 
@@ -543,6 +558,7 @@ final class PlayerViewControllerTests: XCTestCase {
             mode.image(for: .normal)?.pngData(),
             UIImage(systemName: "list.bullet")?.pngData()
         )
+        XCTAssertEqual(mode.tintColor, Theme.accent)
 
         snapshots.send(PlaybackSnapshot(
             status: .paused,
@@ -556,6 +572,7 @@ final class PlayerViewControllerTests: XCTestCase {
             mode.image(for: .normal)?.pngData(),
             UIImage(systemName: "repeat.1")?.pngData()
         )
+        XCTAssertEqual(mode.tintColor, Theme.accent)
 
         snapshots.send(PlaybackSnapshot(
             status: .paused,
@@ -569,6 +586,7 @@ final class PlayerViewControllerTests: XCTestCase {
             mode.image(for: .normal)?.pngData(),
             UIImage(systemName: "shuffle")?.pngData()
         )
+        XCTAssertEqual(mode.tintColor, Theme.accent)
 
         mode.sendActions(for: .touchUpInside)
         XCTAssertEqual(cycleCount, 1)

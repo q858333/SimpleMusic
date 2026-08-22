@@ -27,8 +27,8 @@ final class LocalizationTests: XCTestCase {
     func testProjectUsesEnglishFallbackAndRegistersSupportedRegions() throws {
         let project = try String(contentsOf: projectRoot.appendingPathComponent("SimpleMusic.xcodeproj/project.pbxproj"))
         XCTAssertTrue(project.contains("developmentRegion = en;"))
-        XCTAssertTrue(project.contains("zh-Hans,"))
-        XCTAssertTrue(project.contains("zh-Hant,"))
+        XCTAssertTrue(project.contains("\"zh-Hans\","))
+        XCTAssertTrue(project.contains("\"zh-Hant\","))
     }
 
     func testFormattedCopyKeepsParametersAcrossLanguages() throws {
@@ -96,6 +96,20 @@ final class LocalizationTests: XCTestCase {
             "download.queue.progress",
             "download.queue.accessibility.progress",
             "download.queue.error.recovery",
+        ]
+
+        for language in ["en", "zh-Hans", "zh-Hant"] {
+            let values = try stringsDictionary(language: language, name: "Localizable")
+            XCTAssertTrue(requiredKeys.isSubset(of: Set(values.keys)), "language=\(language)")
+        }
+    }
+
+    func testAudioEffectPresetLocalizationsExposeCompleteSharedKeySet() throws {
+        let requiredKeys: Set<String> = [
+            "effects.preset.panoramic_surround",
+            "effects.preset.classic_rock",
+            "effects.preset.dynamic_electronic",
+            "effects.preset.clear_vocal",
         ]
 
         for language in ["en", "zh-Hans", "zh-Hant"] {
