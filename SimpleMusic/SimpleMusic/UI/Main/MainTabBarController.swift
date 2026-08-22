@@ -11,8 +11,7 @@ final class MainTabBarController: UITabBarController {
     private let onDeleteTrack: (MusicTrack) -> Void
     private let onTogglePlay: () -> Void
     private var reloadTask: Task<Void, Never>?
-    private var miniAboveTabBarConstraint: Constraint?
-    private var miniAtSafeAreaConstraint: Constraint?
+    private var miniBottomConstraint: Constraint?
     private var miniPlayerUsesSafeAreaBottom = false
 
     var onOpenPlayer: (() -> Void)?
@@ -84,6 +83,11 @@ final class MainTabBarController: UITabBarController {
         }
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateMiniPlayerBottomConstraint()
+    }
+
     private func configurePages() {
         libraryViewController.onSelectTrack = { [weak self] queue, index in
             self?.onPlay(queue, index)
@@ -115,25 +119,32 @@ final class MainTabBarController: UITabBarController {
         view.addSubview(miniPlayerView)
         miniPlayerView.snp.makeConstraints { make in
             make.leading.trailing.equalTo(view.safeAreaLayoutGuide).inset(8)
-            miniAboveTabBarConstraint = make.bottom.equalTo(tabBar.snp.top).offset(-6).constraint
-            miniAtSafeAreaConstraint = make.bottom
+            miniBottomConstraint = make.bottom
                 .equalTo(view.safeAreaLayoutGuide.snp.bottom)
-                .offset(-8)
                 .constraint
         }
-        miniAtSafeAreaConstraint?.deactivate()
+        updateMiniPlayerBottomConstraint()
     }
 
     private func setMiniPlayerUsesSafeAreaBottom(_ usesSafeArea: Bool) {
         guard miniPlayerUsesSafeAreaBottom != usesSafeArea else { return }
         miniPlayerUsesSafeAreaBottom = usesSafeArea
-        if usesSafeArea {
-            miniAboveTabBarConstraint?.deactivate()
-            miniAtSafeAreaConstraint?.activate()
+        updateMiniPlayerBottomConstraint()
+    }
+
+    private func updateMiniPlayerBottomConstraint() {
+        let offset: CGFloat
+        if miniPlayerUsesSafeAreaBottom {
+            offset = -8
         } else {
-            miniAtSafeAreaConstraint?.deactivate()
-            miniAboveTabBarConstraint?.activate()
+            // 仅使用稳定的根安全区；Tab Bar 被 UIKit 重挂载时也不会产生跨层级约束。
+            let tabBarHeightAboveSafeArea = max(
+                0,
+                tabBar.bounds.height - view.safeAreaInsets.bottom
+            )
+            offset = -(tabBarHeightAboveSafeArea + 6)
         }
+        miniBottomConstraint?.update(offset: offset)
     }
 }
 

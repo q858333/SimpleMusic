@@ -1079,6 +1079,52 @@ final class LibraryViewModelTests: XCTestCase {
         XCTAssertEqual(miniPlayer.frame.maxY, sut.tabBar.frame.minY - 6, accuracy: 1)
     }
 
+    /// UIKit 转场期间可能临时重挂载 Tab Bar；返回时不得激活跨层级约束而崩溃。
+    @MainActor
+    func testPhoneMiniPlayerReturnDoesNotDependOnTabBarHierarchy() async throws {
+        let viewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: []),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
+            PlaybackSnapshot(status: .paused, track: makeTrack(id: "hierarchy-mini"))
+        )
+        let sut = MainTabBarController(
+            libraryViewModel: viewModel,
+            snapshotPublisher: snapshots.eraseToAnyPublisher(),
+            onPlay: { _, _ in },
+            onTogglePlay: {},
+            onOpenPlayer: {}
+        )
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+        window.rootViewController = sut
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        await waitUntil {
+            self.findView(identifier: "mini.material", in: sut.view)?.superview?.isHidden == false
+        }
+
+        let miniPlayer = try XCTUnwrap(
+            findView(identifier: "mini.material", in: sut.view)?.superview
+        )
+        let navigation = try XCTUnwrap(sut.selectedViewController as? UINavigationController)
+        let pushed = UIViewController()
+        pushed.hidesBottomBarWhenPushed = true
+        navigation.pushViewController(pushed, animated: false)
+
+        // 复现真机返回转场中 Tab Bar 与根容器暂时没有共同层级的窗口。
+        sut.tabBar.removeFromSuperview()
+        navigation.popViewController(animated: false)
+        sut.view.layoutIfNeeded()
+
+        XCTAssertFalse(miniPlayer.isHidden)
+        XCTAssertEqual(
+            miniPlayer.frame.maxY,
+            sut.view.bounds.maxY - sut.tabBar.bounds.height - 6,
+            accuracy: 1
+        )
+    }
+
     /// 如果歌曲行偏离 46pt 封面、两行动态字体、下载标识或更多操作触控目标，此测试应失败。
     @MainActor
     func testTrackCellKeepsRequiredContentAndTouchTarget() throws {
