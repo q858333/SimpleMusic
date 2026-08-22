@@ -281,7 +281,7 @@ final class PlayerViewController: UIViewController {
 
         let headerLabel = Self.label(
             identifier: "player.nowPlaying",
-            style: .caption1,
+            style: .title3,
             weight: .semibold,
             color: .secondaryLabel
         )
