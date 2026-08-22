@@ -140,10 +140,11 @@ final class PlayerViewController: UIViewController {
         action: onNext
     )
     private lazy var showQueueButton: UIButton = {
+        // 使用 iOS 15 可用的列表图标，避免无效 SF Symbol 让按钮只剩透明点击区域。
         let button = controlButton(
             identifier: "player.showQueue",
             label: L10n.text("player.queue.show"),
-            symbol: "list.bullet.queue",
+            symbol: "list.bullet.rectangle",
             action: { [weak self] in self?.showPlaybackQueue() }
         )
         // 首个快照抵达前没有可信队列，避免短暂可点却无响应。

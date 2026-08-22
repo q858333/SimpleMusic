@@ -609,6 +609,7 @@ final class PlayerViewControllerTests: XCTestCase {
         )
         await waitUntil(attempts: 2_000) { queueButton.isEnabled }
         XCTAssertTrue(queueButton.isEnabled)
+        XCTAssertNotNil(queueButton.image(for: .normal))
         XCTAssertGreaterThan(queueButton.frame.minX, next.frame.maxX)
 
         queueButton.sendActions(for: .touchUpInside)
