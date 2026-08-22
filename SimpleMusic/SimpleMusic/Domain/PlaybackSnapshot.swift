@@ -34,6 +34,118 @@ nonisolated enum AudioEffectPreset: String, CaseIterable, Equatable, Sendable {
     case largeHall
     case cathedral
     case plate
+    case panoramicSurround
+    case classicRock
+    case dynamicElectronic
+    case clearVocal
+}
+
+nonisolated enum AudioEffectFilterKind: Equatable, Sendable {
+    case lowShelf
+    case parametric
+    case highShelf
+}
+
+nonisolated struct AudioEffectBandProfile: Equatable, Sendable {
+    let kind: AudioEffectFilterKind
+    let frequency: Float
+    let bandwidth: Float
+    let gain: Float
+}
+
+nonisolated enum AudioEffectReverbProfile: Equatable, Sendable {
+    case smallRoom
+    case mediumRoom
+    case largeRoom
+    case mediumHall
+    case largeHall
+    case cathedral
+    case plate
+}
+
+nonisolated struct ResolvedAudioEffectProfile: Equatable, Sendable {
+    let bands: [AudioEffectBandProfile]
+    let reverb: AudioEffectReverbProfile?
+    let wetDryMix: Float
+}
+
+nonisolated extension AudioEffectPreset {
+    func resolvedProfile(intensity: Float) -> ResolvedAudioEffectProfile {
+        let scale = min(100, max(0, intensity)) / 100
+        let baseBands: [AudioEffectBandProfile]
+        let reverb: AudioEffectReverbProfile?
+        let maximumWetMix: Float
+
+        switch self {
+        case .off:
+            return ResolvedAudioEffectProfile(bands: [], reverb: nil, wetDryMix: 0)
+        case .panoramicSurround:
+            baseBands = [
+                .init(kind: .lowShelf, frequency: 120, bandwidth: 1, gain: 1.5),
+                .init(kind: .parametric, frequency: 600, bandwidth: 1, gain: -1.5),
+                .init(kind: .highShelf, frequency: 7_000, bandwidth: 1, gain: 2)
+            ]
+            reverb = .largeRoom
+            maximumWetMix = 30
+        case .classicRock:
+            baseBands = [
+                .init(kind: .lowShelf, frequency: 90, bandwidth: 1, gain: 3),
+                .init(kind: .parametric, frequency: 300, bandwidth: 1, gain: -1),
+                .init(kind: .parametric, frequency: 1_800, bandwidth: 1, gain: 2.5),
+                .init(kind: .highShelf, frequency: 6_000, bandwidth: 1, gain: 2)
+            ]
+            reverb = .plate
+            maximumWetMix = 12
+        case .dynamicElectronic:
+            baseBands = [
+                .init(kind: .lowShelf, frequency: 70, bandwidth: 1, gain: 4),
+                .init(kind: .parametric, frequency: 500, bandwidth: 1, gain: -2),
+                .init(kind: .highShelf, frequency: 8_000, bandwidth: 1, gain: 3)
+            ]
+            reverb = .plate
+            maximumWetMix = 16
+        case .clearVocal:
+            baseBands = [
+                .init(kind: .parametric, frequency: 250, bandwidth: 1, gain: -2),
+                .init(kind: .parametric, frequency: 2_500, bandwidth: 1, gain: 3),
+                .init(kind: .highShelf, frequency: 6_000, bandwidth: 1, gain: 2)
+            ]
+            reverb = .smallRoom
+            maximumWetMix = 8
+        case .smallRoom, .mediumRoom, .largeRoom, .mediumHall, .largeHall, .cathedral, .plate:
+            baseBands = []
+            reverb = legacyReverbProfile
+            maximumWetMix = 100
+        }
+
+        let bands = baseBands.map {
+            AudioEffectBandProfile(
+                kind: $0.kind,
+                frequency: $0.frequency,
+                bandwidth: $0.bandwidth,
+                gain: $0.gain * scale
+            )
+        }
+        return ResolvedAudioEffectProfile(
+            bands: bands,
+            reverb: reverb,
+            wetDryMix: maximumWetMix * scale
+        )
+    }
+
+    private var legacyReverbProfile: AudioEffectReverbProfile? {
+        switch self {
+        case .off, .panoramicSurround, .classicRock, .dynamicElectronic, .clearVocal:
+            return nil
+        case .smallRoom: return .smallRoom
+        case .mediumRoom: return .mediumRoom
+        case .largeRoom: return .largeRoom
+        case .mediumHall: return .mediumHall
+        case .largeHall: return .largeHall
+        case .cathedral: return .cathedral
+        case .plate: return .plate
+        }
+    }
 }
 
 /// 混响参数使用 0...100 的百分比，便于直接绑定 UIKit 滑块和持久化。
