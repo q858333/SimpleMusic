@@ -12,7 +12,13 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
     private let urlField = UITextField()
     private let inputErrorLabel = UILabel()
     private let tableView = UITableView(frame: .zero, style: .plain)
-    private let emptyLabel = UILabel()
+    private let emptyBackgroundView = UIView()
+    private let emptyStateView = BrandedEmptyStateView(
+        identifier: "download.empty.visual",
+        artworkIdentifier: "download.empty.artwork",
+        messageIdentifier: "download.empty",
+        message: L10n.text("download.queue.empty")
+    )
 
     init(downloadQueue: DownloadQueue) {
         self.downloadQueue = downloadQueue
@@ -93,12 +99,13 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
         inputStack.axis = .vertical
         inputStack.spacing = 10
 
-        emptyLabel.text = L10n.text("download.queue.empty")
-        emptyLabel.font = .preferredFont(forTextStyle: .body)
-        emptyLabel.adjustsFontForContentSizeCategory = true
-        emptyLabel.textColor = .secondaryLabel
-        emptyLabel.textAlignment = .center
-        emptyLabel.numberOfLines = 0
+        emptyBackgroundView.addSubview(emptyStateView)
+        emptyStateView.snp.makeConstraints { make in
+            make.center.equalToSuperview()
+            make.leading.greaterThanOrEqualToSuperview().offset(32)
+            make.trailing.lessThanOrEqualToSuperview().offset(-32)
+            make.width.lessThanOrEqualTo(280)
+        }
 
         tableView.accessibilityIdentifier = "download.jobs"
         tableView.backgroundColor = .clear
@@ -108,7 +115,7 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
         tableView.estimatedRowHeight = 150
         tableView.register(DownloadJobCell.self, forCellReuseIdentifier: DownloadJobCell.reuseIdentifier)
         tableView.dataSource = self
-        tableView.backgroundView = emptyLabel
+        tableView.backgroundView = emptyBackgroundView
 
         view.addSubview(inputStack)
         view.addSubview(tableView)
@@ -127,7 +134,7 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
             .sink { [weak self] jobs in
                 guard let self else { return }
                 self.jobs = jobs
-                self.emptyLabel.isHidden = !jobs.isEmpty
+                self.emptyStateView.isHidden = !jobs.isEmpty
                 self.tableView.reloadData()
             }
             .store(in: &cancellables)
@@ -181,6 +188,7 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
         button.accessibilityIdentifier = identifier
         button.titleLabel?.font = .preferredFont(forTextStyle: .headline)
         button.titleLabel?.adjustsFontForContentSizeCategory = true
+        Theme.installPressFeedback(on: button)
         button.snp.makeConstraints { make in make.height.greaterThanOrEqualTo(44) }
         return button
     }

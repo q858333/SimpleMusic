@@ -15,6 +15,15 @@ final class PlayerViewController: UIViewController {
     private var snapshotCancellable: AnyCancellable?
     private var isSeeking = false
 
+    private let controlsSurface: UIVisualEffectView = {
+        let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+        view.accessibilityIdentifier = "player.controls.surface"
+        view.isUserInteractionEnabled = false
+        view.layer.cornerRadius = 22
+        view.clipsToBounds = true
+        return view
+    }()
+
     private let artworkView: UIImageView = {
         let view = UIImageView()
         view.accessibilityIdentifier = "player.artwork"
@@ -37,12 +46,13 @@ final class PlayerViewController: UIViewController {
     private let titleLabel = PlayerViewController.label(
         identifier: "player.title",
         style: .title2,
-        weight: .semibold,
+        weight: .black,
         color: .label
     )
     private let artistLabel = PlayerViewController.label(
         identifier: "player.artist",
         style: .body,
+        weight: .light,
         color: .secondaryLabel
     )
     private let albumLabel = PlayerViewController.label(
@@ -172,6 +182,21 @@ final class PlayerViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = Theme.background
         buildView()
+        updateTraitVisuals()
+        if #available(iOS 17.0, *) {
+            registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
+                (controller: PlayerViewController, _) in
+                controller.updateTraitVisuals()
+            }
+        }
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle else {
+            return
+        }
+        updateTraitVisuals()
     }
 
     private func buildView() {
@@ -217,6 +242,7 @@ final class PlayerViewController: UIViewController {
         utilities.spacing = 12
 
         [
+            controlsSurface,
             closeButton,
             headerLabel,
             artworkView,
@@ -294,6 +320,12 @@ final class PlayerViewController: UIViewController {
         }
         routePickerView.snp.makeConstraints { make in
             make.size.greaterThanOrEqualTo(44)
+        }
+        controlsSurface.snp.makeConstraints { make in
+            // 只在既有控件后方增加材质，不参与任何控件的位置计算。
+            make.top.equalTo(progressSlider).offset(-6)
+            make.leading.trailing.equalToSuperview().inset(12)
+            make.bottom.equalTo(utilities).offset(10)
         }
         queueTitle.snp.makeConstraints { make in
             make.top.equalTo(utilities.snp.bottom).offset(18)
@@ -434,13 +466,41 @@ final class PlayerViewController: UIViewController {
         button.tintColor = prominent ? .white : .label
         if prominent {
             button.backgroundColor = Theme.accent
-            button.layer.cornerRadius = 31
+            button.layer.cornerRadius = 22
+            button.layer.shadowOpacity = 0.22
+            button.layer.shadowRadius = 8
+            button.layer.shadowOffset = CGSize(width: 0, height: 4)
             button.snp.makeConstraints { make in make.size.equalTo(62) }
         } else {
             button.snp.makeConstraints { make in make.size.greaterThanOrEqualTo(44) }
         }
+        Theme.installPressFeedback(on: button)
         button.addAction(UIAction { _ in action() }, for: .touchUpInside)
         return button
+    }
+
+    private func updateTraitVisuals() {
+        let accent = Theme.accent.resolvedColor(with: traitCollection)
+        progressSlider.minimumTrackTintColor = accent
+        progressSlider.setThumbImage(Self.progressThumb(color: accent), for: .normal)
+        progressSlider.setThumbImage(Self.progressThumb(color: accent), for: .highlighted)
+        toggleButton.backgroundColor = accent
+        toggleButton.layer.shadowColor = accent.cgColor
+        routePickerView.tintColor = accent
+        routePickerView.activeTintColor = accent
+    }
+
+    private static func progressThumb(color: UIColor) -> UIImage {
+        let size = CGSize(width: 24, height: 24)
+        return UIGraphicsImageRenderer(size: size).image { context in
+            context.cgContext.setShadow(
+                offset: .zero,
+                blur: 5,
+                color: color.withAlphaComponent(0.32).cgColor
+            )
+            color.setFill()
+            context.cgContext.fillEllipse(in: CGRect(x: 5, y: 5, width: 14, height: 14))
+        }
     }
 
     private static func label(

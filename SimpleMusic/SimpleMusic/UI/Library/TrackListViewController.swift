@@ -226,6 +226,7 @@ final class TrackListViewController: UIViewController, UICollectionViewDataSourc
         let button = UIButton(configuration: configuration)
         button.accessibilityIdentifier = identifier
         button.accessibilityLabel = title
+        Theme.installPressFeedback(on: button)
         button.addAction(UIAction { _ in action() }, for: .touchUpInside)
         return button
     }

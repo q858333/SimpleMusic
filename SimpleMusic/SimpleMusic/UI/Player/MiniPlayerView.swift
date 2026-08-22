@@ -9,6 +9,13 @@ final class MiniPlayerView: UIView {
     private var snapshotCancellable: AnyCancellable?
     private var usesPlaceholderArtwork = false
 
+    private let materialView: UIVisualEffectView = {
+        let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+        view.accessibilityIdentifier = "mini.material"
+        view.isUserInteractionEnabled = false
+        return view
+    }()
+
     private let artworkView: UIImageView = {
         let view = UIImageView()
         view.accessibilityIdentifier = "mini.artwork"
@@ -49,6 +56,7 @@ final class MiniPlayerView: UIView {
         let button = UIButton(type: .system)
         button.accessibilityIdentifier = "mini.toggle"
         button.tintColor = .label
+        Theme.installPressFeedback(on: button)
         button.addAction(UIAction { [weak self] _ in
             self?.onTogglePlay()
         }, for: .touchUpInside)
@@ -59,6 +67,7 @@ final class MiniPlayerView: UIView {
         let button = UIButton(type: .custom)
         button.accessibilityIdentifier = "mini.open"
         button.accessibilityLabel = L10n.text("player.open_now_playing")
+        Theme.installPressFeedback(on: button)
         button.addAction(UIAction { [weak self] _ in
             self?.onOpenPlayer()
         }, for: .touchUpInside)
@@ -79,8 +88,10 @@ final class MiniPlayerView: UIView {
             // 新版 UIKit 需显式监听界面样式，确保迷你播放器即时切换红白音符。
             registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
                 (view: MiniPlayerView, _) in
-                guard view.usesPlaceholderArtwork else { return }
-                view.updatePlaceholderArtwork()
+                view.updateBorderColor()
+                if view.usesPlaceholderArtwork {
+                    view.updatePlaceholderArtwork()
+                }
             }
         }
         snapshotCancellable = snapshotPublisher
@@ -114,6 +125,9 @@ final class MiniPlayerView: UIView {
             != traitCollection.preferredContentSizeCategory {
             invalidateIntrinsicContentSize()
         }
+        if previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle {
+            updateBorderColor()
+        }
         guard usesPlaceholderArtwork,
               previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle else {
             return
@@ -127,16 +141,21 @@ final class MiniPlayerView: UIView {
     }
 
     private func buildView() {
-        backgroundColor = Theme.surface
+        backgroundColor = .clear
         layer.cornerRadius = 14
         layer.borderWidth = 0.5
-        layer.borderColor = UIColor.separator.cgColor
         clipsToBounds = true
+        updateBorderColor()
 
+        addSubview(materialView)
         addSubview(openButton)
         addSubview(artworkView)
         addSubview(metadataStack)
         addSubview(toggleButton)
+
+        materialView.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
 
         openButton.snp.makeConstraints { make in
             make.edges.equalToSuperview()
@@ -163,6 +182,10 @@ final class MiniPlayerView: UIView {
         snp.makeConstraints { make in
             make.height.greaterThanOrEqualTo(64)
         }
+    }
+
+    private func updateBorderColor() {
+        layer.borderColor = Theme.hairline.resolvedColor(with: traitCollection).cgColor
     }
 
     private func render(_ snapshot: PlaybackSnapshot) {

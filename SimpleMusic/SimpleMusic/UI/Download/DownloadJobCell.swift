@@ -25,6 +25,12 @@ final class DownloadJobCell: UITableViewCell {
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         buildInterface()
+        if #available(iOS 17.0, *) {
+            registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
+                (cell: DownloadJobCell, _) in
+                cell.updateBorderColor()
+            }
+        }
     }
 
     @available(*, unavailable)
@@ -90,8 +96,11 @@ final class DownloadJobCell: UITableViewCell {
         selectionStyle = .none
         backgroundColor = .clear
         contentView.backgroundColor = .clear
-        cardView.backgroundColor = .secondarySystemBackground
-        cardView.layer.cornerRadius = 14
+        cardView.backgroundColor = Theme.elevatedSurface
+        cardView.layer.cornerRadius = Theme.buttonRadius
+        cardView.layer.cornerCurve = .continuous
+        cardView.layer.borderWidth = 0.5
+        cardView.layer.borderColor = Theme.hairline.resolvedColor(with: traitCollection).cgColor
 
         nameLabel.font = .preferredFont(forTextStyle: .headline)
         nameLabel.adjustsFontForContentSizeCategory = true
@@ -126,9 +135,20 @@ final class DownloadJobCell: UITableViewCell {
         let button = UIButton(configuration: configuration)
         button.titleLabel?.font = .preferredFont(forTextStyle: .subheadline)
         button.titleLabel?.adjustsFontForContentSizeCategory = true
+        Theme.installPressFeedback(on: button)
         button.addTarget(self, action: action, for: .touchUpInside)
         button.snp.makeConstraints { make in make.height.greaterThanOrEqualTo(44) }
         return button
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle else { return }
+        updateBorderColor()
+    }
+
+    private func updateBorderColor() {
+        cardView.layer.borderColor = Theme.hairline.resolvedColor(with: traitCollection).cgColor
     }
 
     private func configure(button: UIButton, title: String, suffix: String, id: UUID) {

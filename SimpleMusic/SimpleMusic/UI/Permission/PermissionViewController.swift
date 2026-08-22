@@ -150,7 +150,9 @@ final class PermissionViewController: UIViewController {
         button.titleLabel?.font = .preferredFont(forTextStyle: .headline)
         button.titleLabel?.adjustsFontForContentSizeCategory = true
         button.backgroundColor = backgroundColor
-        button.layer.cornerRadius = 14
+        button.layer.cornerRadius = Theme.buttonRadius
+        button.layer.cornerCurve = .continuous
+        Theme.installPressFeedback(on: button)
         button.addTarget(self, action: action, for: .touchUpInside)
         return button
     }

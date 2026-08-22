@@ -460,6 +460,29 @@ final class LibraryViewModelTests: XCTestCase {
         XCTAssertEqual(artist.text, track.artist)
     }
 
+    /// 如果迷你播放器退回普通纯色卡片，关键悬浮层就失去材质层次。
+    @MainActor
+    func testMiniPlayerUsesMaterialInsideExistingAdaptiveCard() throws {
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
+            PlaybackSnapshot(status: .paused, track: makeTrack(id: "material"))
+        )
+        let sut = MiniPlayerView(
+            snapshotPublisher: snapshots.eraseToAnyPublisher(),
+            onTogglePlay: {},
+            onOpenPlayer: {}
+        )
+
+        let material = try XCTUnwrap(
+            findView(identifier: "mini.material", in: sut) as? UIVisualEffectView
+        )
+
+        XCTAssertTrue(material.effect is UIBlurEffect)
+        XCTAssertEqual(sut.layer.cornerRadius, 14)
+        XCTAssertTrue(sut.constraints.contains {
+            $0.firstAttribute == .height && $0.relation == .greaterThanOrEqual && $0.constant == 64
+        })
+    }
+
     /// 如果迷你播放器仍使用系统符号，或界面样式变化后没有切换红白资源，此测试应失败。
     @MainActor
     func testMiniPlayerUsesAppearanceSpecificMusicNoteWhenArtworkIsMissing() async throws {
@@ -701,15 +724,22 @@ final class LibraryViewModelTests: XCTestCase {
             (.artists, "category.artists"),
             (.downloaded, "category.downloaded")
         ]
+        var categoryColors = [UIColor]()
         for (index, (_, expected)) in categories.enumerated() {
             let cell = try XCTUnwrap(collection.cellForItem(at: IndexPath(item: index, section: 0)))
             XCTAssertEqual(cell.accessibilityLabel, L10n.text(expected))
+            categoryColors.append(try XCTUnwrap(cell.backgroundColor))
+            XCTAssertEqual(cell.layer.cornerRadius, Theme.cardRadius)
             XCTAssertTrue(
                 allSubviews(in: cell)
                     .compactMap { ($0 as? UILabel)?.text }
                     .contains(L10n.text(expected))
             )
         }
+        let resolvedColors = categoryColors.map {
+            $0.resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
+        }
+        XCTAssertEqual(Set(resolvedColors).count, categories.count)
 
         let header = library.collectionView(
             collection,
@@ -926,6 +956,30 @@ final class LibraryViewModelTests: XCTestCase {
             findView(identifier: "search.empty", in: populatedSearch.view) as? UILabel
         )
         XCTAssertEqual(noResultsLabel.text, L10n.text("search.no_results"))
+    }
+
+    /// 如果搜索空状态退回单独一行灰字，就会失去品牌图形和清晰的卡片层次。
+    @MainActor
+    func testSearchEmptyStateUsesBrandedArtworkCard() throws {
+        let viewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: []),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        let sut = SearchViewController(viewModel: viewModel)
+        sut.loadViewIfNeeded()
+
+        let card = try XCTUnwrap(findView(identifier: "search.empty.visual", in: sut.view))
+        let artwork = try XCTUnwrap(
+            findView(identifier: "search.empty.artwork", in: card) as? UIImageView
+        )
+        let message = try XCTUnwrap(
+            findView(identifier: "search.empty", in: card) as? UILabel
+        )
+
+        XCTAssertEqual(card.layer.cornerRadius, 18)
+        XCTAssertNotNil(artwork.image)
+        XCTAssertEqual(message.text, L10n.text("search.empty_library"))
+        XCTAssertEqual(message.textAlignment, .center)
     }
 
     /// 如果手机资料库与搜索各自创建 ViewModel，此测试应失败。

@@ -74,8 +74,10 @@ final class TrackCell: UICollectionViewCell {
             // 新版 UIKit 不再保证调用 traitCollectionDidChange，需显式监听界面样式变化。
             registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
                 (cell: TrackCell, _) in
-                guard cell.usesPlaceholderArtwork else { return }
-                cell.updatePlaceholderArtwork()
+                cell.updateCardVisuals()
+                if cell.usesPlaceholderArtwork {
+                    cell.updatePlaceholderArtwork()
+                }
             }
         }
     }
@@ -116,11 +118,11 @@ final class TrackCell: UICollectionViewCell {
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
         super.traitCollectionDidChange(previousTraitCollection)
-        guard usesPlaceholderArtwork,
-              previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle else {
-            return
+        guard previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle else { return }
+        updateCardVisuals()
+        if usesPlaceholderArtwork {
+            updatePlaceholderArtwork()
         }
-        updatePlaceholderArtwork()
     }
 
     private func updatePlaceholderArtwork() {
@@ -133,9 +135,12 @@ final class TrackCell: UICollectionViewCell {
     }
 
     private func buildView() {
-        backgroundColor = .secondarySystemGroupedBackground
-        layer.cornerRadius = 12
+        backgroundColor = Theme.surface
+        layer.cornerRadius = Theme.rowRadius
+        layer.cornerCurve = .continuous
+        layer.borderWidth = 0.5
         clipsToBounds = true
+        updateCardVisuals()
 
         contentView.addSubview(artworkView)
         contentView.addSubview(titleLabel)
@@ -172,6 +177,11 @@ final class TrackCell: UICollectionViewCell {
             make.top.equalTo(titleLabel.snp.bottom).offset(3)
             make.bottom.equalToSuperview().inset(9)
         }
+    }
+
+    private func updateCardVisuals() {
+        backgroundColor = Theme.surface
+        layer.borderColor = Theme.hairline.resolvedColor(with: traitCollection).cgColor
     }
 }
 

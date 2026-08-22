@@ -100,6 +100,34 @@ final class PlayerViewControllerTests: XCTestCase {
         XCTAssertEqual(placeholder.contentMode, .scaleAspectFit)
     }
 
+    /// 如果播放页失去标题粗细对比、材质控制区或定制进度圆点，视觉层级会退回系统默认样式。
+    func testPlayerUsesExpressiveTypographyMaterialControlsAndCustomProgressThumb() throws {
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
+            PlaybackSnapshot(status: .paused, track: makeTrack())
+        )
+        let sut = makePlayer(snapshots: snapshots)
+        sut.loadViewIfNeeded()
+        sut.view.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
+        sut.view.layoutIfNeeded()
+
+        let title = try XCTUnwrap(findView(identifier: "player.title", in: sut.view) as? UILabel)
+        let artist = try XCTUnwrap(findView(identifier: "player.artist", in: sut.view) as? UILabel)
+        let material = try XCTUnwrap(
+            findView(identifier: "player.controls.surface", in: sut.view) as? UIVisualEffectView
+        )
+        let slider = try XCTUnwrap(findView(identifier: "player.progress", in: sut.view) as? UISlider)
+        let toggle = try XCTUnwrap(findView(identifier: "player.toggle", in: sut.view) as? UIButton)
+        let titleWeight = try XCTUnwrap(fontWeight(title.font))
+        let artistWeight = try XCTUnwrap(fontWeight(artist.font))
+
+        XCTAssertTrue(material.effect is UIBlurEffect)
+        XCTAssertGreaterThan(titleWeight, UIFont.Weight.bold.rawValue)
+        XCTAssertLessThan(artistWeight, UIFont.Weight.regular.rawValue)
+        XCTAssertEqual(slider.thumbImage(for: .normal)?.size, CGSize(width: 24, height: 24))
+        XCTAssertEqual(toggle.bounds.size, CGSize(width: 62, height: 62))
+        XCTAssertEqual(toggle.layer.cornerRadius, 22)
+    }
+
     /// 如果真实封面出现后放大的默认音符仍叠在封面上，此测试应失败。
     func testPlayerHidesPlaceholderWhenRealArtworkIsAvailable() async throws {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2))
@@ -716,6 +744,12 @@ final class PlayerViewControllerTests: XCTestCase {
         return root.subviews.lazy.compactMap {
             self.findView(identifier: identifier, in: $0)
         }.first
+    }
+
+    private func fontWeight(_ font: UIFont) -> CGFloat? {
+        let traits = font.fontDescriptor.object(forKey: .traits) as? [UIFontDescriptor.TraitKey: Any]
+        if let value = traits?[.weight] as? CGFloat { return value }
+        return (traits?[.weight] as? NSNumber).map { CGFloat($0.doubleValue) }
     }
 
     private func descendant<T: UIViewController>(

@@ -177,6 +177,24 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         })
     }
 
+    func testEmptyDownloadQueueUsesBrandedArtworkCard() throws {
+        let harness = makeQueueSheetHarness()
+        harness.controller.loadViewIfNeeded()
+        layout(harness.controller)
+
+        let card = try XCTUnwrap(view("download.empty.visual", in: harness.controller.view))
+        let artwork = try XCTUnwrap(
+            view("download.empty.artwork", in: card) as? UIImageView
+        )
+        let message = try XCTUnwrap(
+            view("download.empty", in: card) as? UILabel
+        )
+
+        XCTAssertEqual(card.layer.cornerRadius, 18)
+        XCTAssertNotNil(artwork.image)
+        XCTAssertEqual(message.text, L10n.text("download.queue.empty"))
+    }
+
     func testSettingsSwitchesReadAndWriteSettingsStore() throws {
         let defaults = UserDefaults(suiteName: #function)!
         defaults.removePersistentDomain(forName: #function)

@@ -384,11 +384,14 @@ private final class CategoryCell: UICollectionViewCell {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = Theme.surface
         layer.cornerRadius = Theme.cardRadius
+        layer.cornerCurve = .continuous
         iconView.tintColor = Theme.accent
         iconView.contentMode = .scaleAspectFit
-        label.font = .preferredFont(forTextStyle: .subheadline)
+        let baseFont = UIFont.preferredFont(forTextStyle: .subheadline)
+        let boldDescriptor = baseFont.fontDescriptor.withSymbolicTraits(.traitBold)
+            ?? baseFont.fontDescriptor
+        label.font = UIFont(descriptor: boldDescriptor, size: 0)
         label.adjustsFontForContentSizeCategory = true
         label.textAlignment = .center
         contentView.addSubview(iconView)
@@ -410,6 +413,8 @@ private final class CategoryCell: UICollectionViewCell {
     func configure(title: String, symbol: String) {
         label.text = title
         iconView.image = UIImage(systemName: symbol)
+        backgroundColor = Theme.categoryBackground(for: symbol)
+        iconView.tintColor = Theme.categoryForeground(for: symbol)
         accessibilityLabel = title
     }
 }

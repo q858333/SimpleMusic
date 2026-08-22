@@ -16,16 +16,12 @@ final class SearchViewController: UIViewController,
     private var results = [MusicTrack]()
     private var cancellable: AnyCancellable?
 
-    private let emptyLabel: UILabel = {
-        let label = UILabel()
-        label.accessibilityIdentifier = "search.empty"
-        label.font = .preferredFont(forTextStyle: .body)
-        label.adjustsFontForContentSizeCategory = true
-        label.textColor = .secondaryLabel
-        label.textAlignment = .center
-        label.numberOfLines = 0
-        return label
-    }()
+    private let emptyStateView = BrandedEmptyStateView(
+        identifier: "search.empty.visual",
+        artworkIdentifier: "search.empty.artwork",
+        messageIdentifier: "search.empty",
+        message: L10n.text("search.empty_library")
+    )
 
     init(viewModel: LibraryViewModel) {
         self.viewModel = viewModel
@@ -122,13 +118,15 @@ final class SearchViewController: UIViewController,
         collectionView.register(TrackCell.self, forCellWithReuseIdentifier: TrackCell.reuseIdentifier)
 
         view.addSubview(collectionView)
-        view.addSubview(emptyLabel)
+        view.addSubview(emptyStateView)
         collectionView.snp.makeConstraints { make in
             make.edges.equalTo(view.safeAreaLayoutGuide)
         }
-        emptyLabel.snp.makeConstraints { make in
+        emptyStateView.snp.makeConstraints { make in
             make.center.equalTo(view.safeAreaLayoutGuide)
-            make.leading.trailing.equalTo(view.safeAreaLayoutGuide).inset(32)
+            make.leading.greaterThanOrEqualTo(view.safeAreaLayoutGuide).offset(32)
+            make.trailing.lessThanOrEqualTo(view.safeAreaLayoutGuide).offset(-32)
+            make.width.lessThanOrEqualTo(280)
         }
     }
 
@@ -143,7 +141,7 @@ final class SearchViewController: UIViewController,
         collectionView?.reloadData()
         let query = searchController.searchBar.text?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        emptyLabel.text = L10n.text(query.isEmpty ? "search.empty_library" : "search.no_results")
-        emptyLabel.isHidden = !results.isEmpty
+        emptyStateView.message = L10n.text(query.isEmpty ? "search.empty_library" : "search.no_results")
+        emptyStateView.isHidden = !results.isEmpty
     }
 }

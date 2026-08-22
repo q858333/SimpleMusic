@@ -356,6 +356,26 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertEqual(allowButton.titleLabel?.textColor, .white)
     }
 
+    /// 如果主要按钮没有轻量触觉式缩放，视觉升级会退回完全静态的系统控件。
+    @MainActor
+    func testPermissionButtonUsesSubtlePressFeedback() throws {
+        let controller = PermissionViewController(onAllow: {}, onDefer: {})
+        controller.loadViewIfNeeded()
+        let button = try XCTUnwrap(
+            findView(identifier: "permission.allow", in: controller.view) as? UIButton
+        )
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(false)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+
+        button.sendActions(for: .touchDown)
+        let expectedScale: CGFloat = UIAccessibility.isReduceMotionEnabled ? 1 : 0.97
+        XCTAssertEqual(button.transform.a, expectedScale, accuracy: 0.001)
+
+        button.sendActions(for: .touchCancel)
+        XCTAssertEqual(button.transform, .identity)
+    }
+
     /// 如果允许按钮重复触发请求，或权限结果不是允许时无法进入主界面，此测试应失败。
     @MainActor
     func testAllowRequestsOnceAndEntersMainOnceRegardlessOfResult() async throws {
@@ -466,13 +486,35 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertTrue(nowPlaying.view.superview === content)
     }
 
-    /// 如果主题颜色或卡片圆角偏离已批准设计 token，此测试应失败。
+    /// 如果视觉升级退回冷灰系统底色，或深色模式没有独立层次，此测试应失败。
     @MainActor
-    func testThemeMatchesApprovedDesignTokens() {
-        XCTAssertEqual(Theme.background, .systemGroupedBackground)
-        XCTAssertEqual(Theme.surface, .secondarySystemGroupedBackground)
+    func testThemeUsesWarmLayeredPaletteInLightAndDarkModes() {
+        let light = UITraitCollection(userInterfaceStyle: .light)
+        let dark = UITraitCollection(userInterfaceStyle: .dark)
+
+        XCTAssertEqual(
+            Theme.background.resolvedColor(with: light),
+            UIColor(red: 247 / 255, green: 244 / 255, blue: 241 / 255, alpha: 1)
+        )
+        XCTAssertEqual(
+            Theme.surface.resolvedColor(with: light),
+            UIColor(red: 1, green: 253 / 255, blue: 252 / 255, alpha: 1)
+        )
+        XCTAssertEqual(
+            Theme.background.resolvedColor(with: dark),
+            UIColor(red: 16 / 255, green: 17 / 255, blue: 20 / 255, alpha: 1)
+        )
+        XCTAssertEqual(
+            Theme.surface.resolvedColor(with: dark),
+            UIColor(red: 26 / 255, green: 28 / 255, blue: 32 / 255, alpha: 1)
+        )
+        XCTAssertEqual(
+            Theme.accent.resolvedColor(with: dark),
+            UIColor(red: 1, green: 77 / 255, blue: 103 / 255, alpha: 1)
+        )
         XCTAssertEqual(Theme.cardRadius, 16)
-        XCTAssertEqual(Theme.accent, UIColor(red: 250 / 255, green: 45 / 255, blue: 72 / 255, alpha: 1))
+        XCTAssertEqual(Theme.rowRadius, 12)
+        XCTAssertEqual(Theme.buttonRadius, 14)
     }
 
     /// 如果启动页退回空白页面、品牌图缺失或不再居中，此测试应失败。
