@@ -265,7 +265,7 @@ final class PlayerViewController: UIViewController {
             make.bottom.equalTo(bottomToolbar.snp.top)
         }
         bottomToolbar.snp.makeConstraints { make in
-            make.leading.trailing.equalTo(view.safeAreaLayoutGuide).inset(12)
+            make.leading.trailing.equalToSuperview()
             make.bottom.equalTo(view.safeAreaLayoutGuide)
             make.height.greaterThanOrEqualTo(50)
         }
