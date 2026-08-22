@@ -153,6 +153,9 @@ private extension AudioEffectPreset {
         case .largeHall: return .largeHall
         case .cathedral: return .cathedral
         case .plate: return .plate
+        case .panoramicSurround: return .largeRoom
+        case .classicRock, .dynamicElectronic: return .plate
+        case .clearVocal: return .smallRoom
         }
     }
 }

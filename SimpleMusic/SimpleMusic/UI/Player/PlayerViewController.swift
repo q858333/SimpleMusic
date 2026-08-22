@@ -904,6 +904,10 @@ private extension AudioEffectPreset {
         case .largeHall: return "effects.preset.large_hall"
         case .cathedral: return "effects.preset.cathedral"
         case .plate: return "effects.preset.plate"
+        case .panoramicSurround: return "effects.preset.panoramic_surround"
+        case .classicRock: return "effects.preset.classic_rock"
+        case .dynamicElectronic: return "effects.preset.dynamic_electronic"
+        case .clearVocal: return "effects.preset.clear_vocal"
         }
     }
 }
