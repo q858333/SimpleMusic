@@ -6,9 +6,9 @@ nonisolated private enum LocalLeasePreparationResult: @unchecked Sendable {
     case failure(Error)
 }
 
-/// 混响播放驱动只负责单个本地文件；generation 与 lease 生命周期仍由后端维护。
+/// 组合音效播放驱动只负责单个本地文件；generation 与 lease 生命周期仍由后端维护。
 @MainActor
-protocol ReverbAudioPlaying: AnyObject {
+protocol AudioEffectAudioPlaying: AnyObject {
     var elapsed: TimeInterval { get }
     var duration: TimeInterval { get }
     var onFinish: (() -> Void)? { get set }
@@ -20,13 +20,14 @@ protocol ReverbAudioPlaying: AnyObject {
     func seek(to seconds: TimeInterval)
 }
 
-/// 通过系统 AVAudioEngine 把下载文件接入 AVAudioUnitReverb，不处理系统音乐库输出。
+/// 通过系统 AVAudioEngine 把下载文件接入 EQ 与混响链，不处理系统音乐库输出。
 @MainActor
-final class SystemReverbAudioPlayer: ReverbAudioPlaying {
+final class SystemAudioEffectPlayer: AudioEffectAudioPlaying {
     var onFinish: (() -> Void)?
 
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
+    private let equalizer = AVAudioUnitEQ(numberOfBands: 4)
     private let reverb = AVAudioUnitReverb()
     private var file: AVAudioFile?
     private var startFrame: AVAudioFramePosition = 0
@@ -53,6 +54,7 @@ final class SystemReverbAudioPlayer: ReverbAudioPlaying {
 
     init() {
         engine.attach(playerNode)
+        engine.attach(equalizer)
         engine.attach(reverb)
     }
 
@@ -66,8 +68,10 @@ final class SystemReverbAudioPlayer: ReverbAudioPlaying {
         let file = try AVAudioFile(forReading: url)
         self.file = file
         engine.disconnectNodeOutput(playerNode)
+        engine.disconnectNodeOutput(equalizer)
         engine.disconnectNodeOutput(reverb)
-        engine.connect(playerNode, to: reverb, format: file.processingFormat)
+        engine.connect(playerNode, to: equalizer, format: file.processingFormat)
+        engine.connect(equalizer, to: reverb, format: file.processingFormat)
         engine.connect(reverb, to: engine.mainMixerNode, format: nil)
         update(settings: settings)
         engine.prepare()
@@ -78,8 +82,24 @@ final class SystemReverbAudioPlayer: ReverbAudioPlaying {
     }
 
     func update(settings: AudioEffectSettings) {
-        reverb.loadFactoryPreset(settings.preset.avPreset)
-        reverb.wetDryMix = settings.preset == .off ? 0 : settings.wetDryMix
+        let profile = settings.preset.resolvedProfile(intensity: settings.wetDryMix)
+        for band in equalizer.bands {
+            band.bypass = true
+        }
+        for (index, profileBand) in profile.bands.enumerated() where index < equalizer.bands.count {
+            let band = equalizer.bands[index]
+            band.filterType = Self.filterType(for: profileBand.kind)
+            band.frequency = profileBand.frequency
+            band.bandwidth = profileBand.bandwidth
+            band.gain = profileBand.gain
+            band.bypass = false
+        }
+        guard let reverbProfile = profile.reverb else {
+            reverb.wetDryMix = 0
+            return
+        }
+        reverb.loadFactoryPreset(Self.reverbPreset(for: reverbProfile))
+        reverb.wetDryMix = profile.wetDryMix
     }
 
     func play() {
@@ -141,21 +161,24 @@ final class SystemReverbAudioPlayer: ReverbAudioPlaying {
             }
         }
     }
-}
 
-private extension AudioEffectPreset {
-    var avPreset: AVAudioUnitReverbPreset {
-        switch self {
-        case .off, .smallRoom: return .smallRoom
+    private static func filterType(for kind: AudioEffectFilterKind) -> AVAudioUnitEQFilterType {
+        switch kind {
+        case .lowShelf: return .lowShelf
+        case .parametric: return .parametric
+        case .highShelf: return .highShelf
+        }
+    }
+
+    private static func reverbPreset(for profile: AudioEffectReverbProfile) -> AVAudioUnitReverbPreset {
+        switch profile {
+        case .smallRoom: return .smallRoom
         case .mediumRoom: return .mediumRoom
         case .largeRoom: return .largeRoom
         case .mediumHall: return .mediumHall
         case .largeHall: return .largeHall
         case .cathedral: return .cathedral
         case .plate: return .plate
-        case .panoramicSurround: return .largeRoom
-        case .classicRock, .dynamicElectronic: return .plate
-        case .clearVocal: return .smallRoom
         }
     }
 }
@@ -227,13 +250,13 @@ final class LocalPlaybackBackend: NSObject, PlaybackBackend {
     private let leaseProvider: LeaseProvider
     private let player: AVPlayer
     private let playerLifetime: LocalPlayerLifetime
-    private let reverbPlayer: any ReverbAudioPlaying
+    private let effectPlayer: any AudioEffectAudioPlaying
     private let observationBag: NotificationObservationBag
     private var activeItem: ActiveItem?
     private var requestedGeneration: PlaybackGeneration?
     private var pendingPlay = false
     private var isPlayingRequested = false
-    private var isReverbTransportActive = false
+    private var isEffectTransportActive = false
     private var audioEffectSettings = AudioEffectSettings()
     private var preparationTask: Task<Void, Never>?
 
@@ -242,20 +265,20 @@ final class LocalPlaybackBackend: NSObject, PlaybackBackend {
         player: AVPlayer = AVPlayer(),
         notificationCenter: NotificationCenter = .default,
         leaseProvider: LeaseProvider? = nil,
-        reverbPlayer: (any ReverbAudioPlaying)? = nil
+        effectPlayer: (any AudioEffectAudioPlaying)? = nil
     ) {
         self.leaseProvider = leaseProvider ?? { fileName in
             guard let fileStore else { throw DownloadFileStoreError.fileNotFound }
             return try fileStore.playbackLease(for: fileName)
         }
         self.player = player
-        self.reverbPlayer = reverbPlayer ?? SystemReverbAudioPlayer()
+        self.effectPlayer = effectPlayer ?? SystemAudioEffectPlayer()
         playerLifetime = LocalPlayerLifetime(player: player)
         observationBag = NotificationObservationBag(notificationCenter: notificationCenter)
         super.init()
 
-        self.reverbPlayer.onFinish = { [weak self] in
-            self?.reverbDidFinish()
+        self.effectPlayer.onFinish = { [weak self] in
+            self?.effectDidFinish()
         }
 
         observationBag.insert(notificationCenter.addObserver(
@@ -287,7 +310,7 @@ final class LocalPlaybackBackend: NSObject, PlaybackBackend {
         playerLifetime.setTimeObserver(timeObserver)
         let progressTimer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.isReverbTransportActive else { return }
+                guard let self, self.isEffectTransportActive else { return }
                 self.publishProgress()
             }
         }
@@ -332,8 +355,8 @@ final class LocalPlaybackBackend: NSObject, PlaybackBackend {
     func play() {
         if activeItem != nil {
             isPlayingRequested = true
-            if isReverbTransportActive {
-                reverbPlayer.play()
+            if isEffectTransportActive {
+                effectPlayer.play()
             } else {
                 player.play()
             }
@@ -345,8 +368,8 @@ final class LocalPlaybackBackend: NSObject, PlaybackBackend {
     func pause() {
         pendingPlay = false
         isPlayingRequested = false
-        if isReverbTransportActive {
-            reverbPlayer.pause()
+        if isEffectTransportActive {
+            effectPlayer.pause()
         } else {
             player.pause()
         }
@@ -356,26 +379,26 @@ final class LocalPlaybackBackend: NSObject, PlaybackBackend {
         cancelPreparation()
         isPlayingRequested = false
         player.pause()
-        reverbPlayer.stop()
+        effectPlayer.stop()
         releaseActiveItem()
     }
 
     func seek(to seconds: TimeInterval) {
-        if isReverbTransportActive {
-            reverbPlayer.seek(to: seconds)
+        if isEffectTransportActive {
+            effectPlayer.seek(to: seconds)
         } else {
             player.seek(to: CMTime(seconds: max(0, seconds), preferredTimescale: 600))
         }
     }
 
     func updateAudioEffect(_ settings: AudioEffectSettings) {
-        let previouslyUsedReverb = isReverbTransportActive
+        let previouslyUsedEffect = isEffectTransportActive
         audioEffectSettings = settings
-        reverbPlayer.update(settings: settings)
-        let wantsReverb = settings.preset != .off
-        guard activeItem != nil, previouslyUsedReverb != wantsReverb else { return }
-        if wantsReverb {
-            switchToReverbPlayback()
+        effectPlayer.update(settings: settings)
+        let wantsEffect = settings.preset != .off
+        guard activeItem != nil, previouslyUsedEffect != wantsEffect else { return }
+        if wantsEffect {
+            switchToEffectPlayback()
         } else {
             switchToPlayerPlayback()
         }
@@ -401,9 +424,9 @@ final class LocalPlaybackBackend: NSObject, PlaybackBackend {
         guard let activeItem else { return }
         let elapsed: TimeInterval
         let duration: TimeInterval
-        if isReverbTransportActive {
-            elapsed = Self.finiteSeconds(reverbPlayer.elapsed)
-            duration = Self.finiteSeconds(reverbPlayer.duration)
+        if isEffectTransportActive {
+            elapsed = Self.finiteSeconds(effectPlayer.elapsed)
+            duration = Self.finiteSeconds(effectPlayer.duration)
         } else {
             guard let item = activeItem.item, player.currentItem === item else { return }
             elapsed = Self.finiteSeconds(player.currentTime().seconds)
@@ -421,8 +444,8 @@ final class LocalPlaybackBackend: NSObject, PlaybackBackend {
         let lease = activeItem?.lease
         activeItem = nil
         player.replaceCurrentItem(with: nil)
-        reverbPlayer.stop()
-        isReverbTransportActive = false
+        effectPlayer.stop()
+        isEffectTransportActive = false
         lease?.release()
     }
 
@@ -444,23 +467,23 @@ final class LocalPlaybackBackend: NSObject, PlaybackBackend {
         case let .success(lease):
             if audioEffectSettings.preset != .off {
                 do {
-                    try reverbPlayer.load(
+                    try effectPlayer.load(
                         url: lease.fileURL,
                         startingAt: 0,
                         settings: audioEffectSettings
                     )
-                    isReverbTransportActive = true
+                    isEffectTransportActive = true
                     activeItem = ActiveItem(item: nil, generation: generation, lease: lease)
                 } catch {
                     // 可选音效失败时保留用户设置，当前歌曲自动回退原始播放。
-                    isReverbTransportActive = false
+                    isEffectTransportActive = false
                     let item = AVPlayerItem(url: lease.fileURL)
                     activeItem = ActiveItem(item: item, generation: generation, lease: lease)
                     player.replaceCurrentItem(with: item)
-                    NSLog("混响引擎启动失败，继续原始播放：%@", String(describing: error))
+                    NSLog("组合音效引擎启动失败，继续原始播放：%@", String(describing: error))
                 }
             } else {
-                isReverbTransportActive = false
+                isEffectTransportActive = false
                 let item = AVPlayerItem(url: lease.fileURL)
                 activeItem = ActiveItem(item: item, generation: generation, lease: lease)
                 player.replaceCurrentItem(with: item)
@@ -468,8 +491,8 @@ final class LocalPlaybackBackend: NSObject, PlaybackBackend {
             if pendingPlay {
                 pendingPlay = false
                 isPlayingRequested = true
-                if isReverbTransportActive {
-                    reverbPlayer.play()
+                if isEffectTransportActive {
+                    effectPlayer.play()
                 } else {
                     player.play()
                 }
@@ -487,22 +510,22 @@ final class LocalPlaybackBackend: NSObject, PlaybackBackend {
         preparationTask = nil
     }
 
-    private func switchToReverbPlayback() {
+    private func switchToEffectPlayback() {
         guard var activeItem, let item = activeItem.item else { return }
         let elapsed = Self.finiteSeconds(player.currentTime().seconds)
         player.pause()
         player.replaceCurrentItem(with: nil)
         do {
-            try reverbPlayer.load(
+            try effectPlayer.load(
                 url: activeItem.lease.fileURL,
                 startingAt: elapsed,
                 settings: audioEffectSettings
             )
             activeItem.item = nil
             self.activeItem = activeItem
-            isReverbTransportActive = true
+            isEffectTransportActive = true
             if isPlayingRequested {
-                reverbPlayer.play()
+                effectPlayer.play()
             }
         } catch {
             // 音效引擎不可用时继续原始播放，不让可选效果中断歌曲。
@@ -511,16 +534,16 @@ final class LocalPlaybackBackend: NSObject, PlaybackBackend {
             if isPlayingRequested {
                 player.play()
             }
-            isReverbTransportActive = false
-            NSLog("混响引擎启动失败，继续原始播放：%@", String(describing: error))
+            isEffectTransportActive = false
+            NSLog("组合音效引擎启动失败，继续原始播放：%@", String(describing: error))
         }
     }
 
     private func switchToPlayerPlayback() {
         guard var activeItem, activeItem.item == nil else { return }
-        let elapsed = Self.finiteSeconds(reverbPlayer.elapsed)
-        reverbPlayer.stop()
-        isReverbTransportActive = false
+        let elapsed = Self.finiteSeconds(effectPlayer.elapsed)
+        effectPlayer.stop()
+        isEffectTransportActive = false
         let item = AVPlayerItem(url: activeItem.lease.fileURL)
         activeItem.item = item
         self.activeItem = activeItem
@@ -531,8 +554,8 @@ final class LocalPlaybackBackend: NSObject, PlaybackBackend {
         }
     }
 
-    private func reverbDidFinish() {
-        guard isReverbTransportActive, let activeItem else { return }
+    private func effectDidFinish() {
+        guard isEffectTransportActive, let activeItem else { return }
         delegate?.playbackBackendDidFinish(self, generation: activeItem.generation)
     }
 

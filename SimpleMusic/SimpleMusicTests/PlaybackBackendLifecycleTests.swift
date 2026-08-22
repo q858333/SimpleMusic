@@ -455,20 +455,20 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
         XCTAssertNil(fixture.player.currentItem)
     }
 
-    /// 播放中开启混响必须从当前时间切到音频引擎，并让完成事件继续携带原 generation。
-    func testLocalBackendSwitchesToReverbPlayerAndAppliesLiveSettings() async throws {
+    /// 播放中开启组合音效必须从当前时间切到音频引擎，并让完成事件继续携带原 generation。
+    func testLocalBackendSwitchesToEffectPlayerAndAppliesLiveSettings() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try DownloadFileStore(rootURL: root)
         try Data("audio".utf8).write(to: root.appendingPathComponent("song.mp3"))
         let player = AVPlayer()
-        let reverbPlayer = FakeReverbAudioPlayer()
+        let effectPlayer = FakeAudioEffectPlayer()
         let delegate = RecordingPlaybackDelegate()
         let backend = LocalPlaybackBackend(
             fileStore: store,
             player: player,
             notificationCenter: NotificationCenter(),
-            reverbPlayer: reverbPlayer
+            effectPlayer: effectPlayer
         )
         backend.delegate = delegate
         let generation = PlaybackGeneration(rawValue: 301)
@@ -476,38 +476,38 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
         backend.play()
         try await waitUntil { player.currentItem != nil }
 
-        let enabled = AudioEffectSettings(preset: .cathedral, wetDryMix: 48)
+        let enabled = AudioEffectSettings(preset: .panoramicSurround, wetDryMix: 48)
         backend.updateAudioEffect(enabled)
-        try await waitUntil { reverbPlayer.loadedSettings.last == enabled }
+        try await waitUntil { effectPlayer.loadedSettings.last == enabled }
 
         XCTAssertNil(player.currentItem)
-        XCTAssertEqual(reverbPlayer.playCallCount, 1)
-        let adjusted = AudioEffectSettings(preset: .cathedral, wetDryMix: 72)
+        XCTAssertEqual(effectPlayer.playCallCount, 1)
+        let adjusted = AudioEffectSettings(preset: .panoramicSurround, wetDryMix: 72)
         backend.updateAudioEffect(adjusted)
-        XCTAssertEqual(reverbPlayer.updatedSettings.last, adjusted)
+        XCTAssertEqual(effectPlayer.updatedSettings.last, adjusted)
 
-        reverbPlayer.finish()
+        effectPlayer.finish()
         XCTAssertEqual(delegate.finishedGenerations, [generation])
     }
 
-    /// 混响引擎不可用是可选功能故障，歌曲必须回退 AVPlayer 继续播放而不是整体失败。
-    func testLocalBackendFallsBackToOriginalPlaybackWhenReverbEngineFails() async throws {
+    /// 组合音效引擎不可用是可选功能故障，歌曲必须回退 AVPlayer 继续播放而不是整体失败。
+    func testLocalBackendFallsBackToOriginalPlaybackWhenEffectEngineFails() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try DownloadFileStore(rootURL: root)
         try Data("audio".utf8).write(to: root.appendingPathComponent("song.mp3"))
         let player = RecordingAVPlayer()
-        let reverbPlayer = FakeReverbAudioPlayer()
-        reverbPlayer.loadError = TestReverbError.unavailable
+        let effectPlayer = FakeAudioEffectPlayer()
+        effectPlayer.loadError = TestAudioEffectError.unavailable
         let delegate = RecordingPlaybackDelegate()
         let backend = LocalPlaybackBackend(
             fileStore: store,
             player: player,
             notificationCenter: NotificationCenter(),
-            reverbPlayer: reverbPlayer
+            effectPlayer: effectPlayer
         )
         backend.delegate = delegate
-        backend.updateAudioEffect(AudioEffectSettings(preset: .largeHall, wetDryMix: 55))
+        backend.updateAudioEffect(AudioEffectSettings(preset: .classicRock, wetDryMix: 55))
 
         try backend.load(
             downloadedTrack(id: "song"),
@@ -520,36 +520,64 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
         XCTAssertTrue(delegate.failures.isEmpty)
     }
 
-    /// 关闭混响必须回到 AVPlayer，并忽略音频引擎随后到达的旧完成回调。
+    /// 关闭组合音效必须回到 AVPlayer，并忽略音频引擎随后到达的旧完成回调。
     func testLocalBackendReturnsToOriginalPlaybackWhenEffectIsTurnedOff() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try DownloadFileStore(rootURL: root)
         try Data("audio".utf8).write(to: root.appendingPathComponent("song.mp3"))
         let player = RecordingAVPlayer()
-        let reverbPlayer = FakeReverbAudioPlayer()
+        let effectPlayer = FakeAudioEffectPlayer()
         let delegate = RecordingPlaybackDelegate()
         let backend = LocalPlaybackBackend(
             fileStore: store,
             player: player,
             notificationCenter: NotificationCenter(),
-            reverbPlayer: reverbPlayer
+            effectPlayer: effectPlayer
         )
         backend.delegate = delegate
-        backend.updateAudioEffect(AudioEffectSettings(preset: .smallRoom, wetDryMix: 40))
+        backend.updateAudioEffect(AudioEffectSettings(preset: .panoramicSurround, wetDryMix: 40))
         try backend.load(
             downloadedTrack(id: "song"),
             generation: PlaybackGeneration(rawValue: 303)
         )
         backend.play()
-        try await waitUntil { reverbPlayer.playCallCount == 1 }
+        try await waitUntil { effectPlayer.playCallCount == 1 }
 
         backend.updateAudioEffect(AudioEffectSettings(preset: .off, wetDryMix: 40))
         try await waitUntil { player.currentItem != nil }
-        reverbPlayer.finish()
+        effectPlayer.finish()
 
         XCTAssertEqual(player.playCallCount, 1)
         XCTAssertTrue(delegate.finishedGenerations.isEmpty)
+    }
+
+    /// 新预设在已启用组合音效链后只更新参数，不能再次替换正在播放的曲目。
+    func testLocalBackendAppliesNewEffectPresetWithoutReloadingTrack() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try DownloadFileStore(rootURL: root)
+        try Data("audio".utf8).write(to: root.appendingPathComponent("song.mp3"))
+        let player = AVPlayer()
+        let center = NotificationCenter()
+        let effectPlayer = FakeAudioEffectPlayer()
+        let generation = PlaybackGeneration(rawValue: 304)
+        let backend = LocalPlaybackBackend(
+            fileStore: store,
+            player: player,
+            notificationCenter: center,
+            effectPlayer: effectPlayer
+        )
+        try backend.load(downloadedTrack(id: "song"), generation: generation)
+        backend.play()
+        try await waitUntil { player.currentItem != nil }
+
+        backend.updateAudioEffect(.init(preset: .panoramicSurround, wetDryMix: 60))
+        try await waitUntil { effectPlayer.playCallCount == 1 }
+        backend.updateAudioEffect(.init(preset: .clearVocal, wetDryMix: 45))
+
+        XCTAssertEqual(effectPlayer.loadedSettings.last?.preset, .panoramicSurround)
+        XCTAssertEqual(effectPlayer.updatedSettings.last?.preset, .clearVocal)
     }
 
     /// 同步 load/play 若等待整文件复制，会阻塞 MainActor；准备完成前也不应提前装载或播放。
@@ -1021,7 +1049,7 @@ private final class RecordingAVPlayer: AVPlayer {
 }
 
 @MainActor
-private final class FakeReverbAudioPlayer: ReverbAudioPlaying {
+private final class FakeAudioEffectPlayer: AudioEffectAudioPlaying {
     var elapsed: TimeInterval = 12
     var duration: TimeInterval = 60
     var onFinish: (() -> Void)?
@@ -1047,7 +1075,7 @@ private final class FakeReverbAudioPlayer: ReverbAudioPlaying {
     func finish() { onFinish?() }
 }
 
-private enum TestReverbError: Error {
+private enum TestAudioEffectError: Error {
     case unavailable
 }
 
