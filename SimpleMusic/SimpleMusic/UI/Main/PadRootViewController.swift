@@ -111,7 +111,8 @@ final class PadRootViewController: UIViewController {
             onNext: dependencies.onNext,
             onSeek: dependencies.onSeek,
             onCyclePlaybackMode: dependencies.onCyclePlaybackMode,
-            onSelectQueueItem: dependencies.onSelectQueueItem
+            onSelectQueueItem: dependencies.onSelectQueueItem,
+            onUpdateAudioEffect: dependencies.onUpdateAudioEffect
         )
         let panel = NowPlayingPanelController(playerViewController: player)
         self.init(

@@ -450,7 +450,63 @@ final class PlayerViewControllerTests: XCTestCase {
         XCTAssertEqual(previousCount, 1)
         XCTAssertEqual(nextCount, 1)
         XCTAssertNotNil(findView(identifier: "player.volume", in: sut.view))
-        XCTAssertNotNil(findView(identifier: "player.airplay", in: sut.view))
+        let toolbar = try XCTUnwrap(
+            findView(identifier: "player.toolbar", in: sut.view) as? UIToolbar
+        )
+        XCTAssertNotNil(
+            toolbar.items?.compactMap(\.customView)
+                .first { $0.accessibilityIdentifier == "player.airplay" }
+        )
+    }
+
+    /// 底部工具栏必须同时提供更多和红色 AirPlay，更多按钮直接打开混响设置弹窗。
+    func testBottomToolbarPresentsAudioEffectsAndRoutesChanges() async throws {
+        let track = makeTrack()
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
+            PlaybackSnapshot(
+                status: .paused,
+                track: track,
+                queueIndex: 0,
+                queueCount: 1,
+                audioEffectSettings: AudioEffectSettings(preset: .smallRoom, wetDryMix: 25),
+                queue: [track]
+            )
+        )
+        var updates = [AudioEffectSettings]()
+        let sut = makePlayer(
+            snapshots: snapshots,
+            onUpdateAudioEffect: { updates.append($0) }
+        )
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+        window.rootViewController = sut
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        sut.loadViewIfNeeded()
+        sut.view.layoutIfNeeded()
+
+        let toolbar = try XCTUnwrap(
+            findView(identifier: "player.toolbar", in: sut.view) as? UIToolbar
+        )
+        XCTAssertEqual(
+            toolbar.frame.maxY,
+            sut.view.safeAreaLayoutGuide.layoutFrame.maxY,
+            accuracy: 1
+        )
+        let toolbarViews = toolbar.items?.compactMap(\.customView) ?? []
+        XCTAssertNotNil(toolbarViews.first { $0.accessibilityIdentifier == "player.airplay" })
+        let more = try XCTUnwrap(
+            toolbarViews.first { $0.accessibilityIdentifier == "player.more" } as? UIButton
+        )
+        await waitUntil(attempts: 2_000) { toolbar.isUserInteractionEnabled && more.isEnabled }
+        more.sendActions(for: .touchUpInside)
+        await waitUntil(attempts: 2_000) { sut.presentedViewController != nil }
+
+        let navigation = try XCTUnwrap(sut.presentedViewController as? UINavigationController)
+        let effects = try XCTUnwrap(navigation.topViewController as? AudioEffectsViewController)
+        effects.selectPresetForTesting(.cathedral)
+        effects.setWetDryMixForTesting(64)
+
+        XCTAssertEqual(updates.last, AudioEffectSettings(preset: .cathedral, wetDryMix: 64))
     }
 
     /// 播放模式按钮必须位于上一首左侧，并随快照显示列表、单曲循环和随机状态。
@@ -810,7 +866,8 @@ final class PlayerViewControllerTests: XCTestCase {
         onNext: @escaping () -> Void = {},
         onSeek: @escaping (TimeInterval) -> Void = { _ in },
         onCyclePlaybackMode: @escaping () -> Void = {},
-        onSelectQueueItem: @escaping (Int) -> Void = { _ in }
+        onSelectQueueItem: @escaping (Int) -> Void = { _ in },
+        onUpdateAudioEffect: @escaping (AudioEffectSettings) -> Void = { _ in }
     ) -> PlayerViewController {
         PlayerViewController(
             snapshotPublisher: snapshots.eraseToAnyPublisher(),
@@ -819,7 +876,8 @@ final class PlayerViewControllerTests: XCTestCase {
             onNext: onNext,
             onSeek: onSeek,
             onCyclePlaybackMode: onCyclePlaybackMode,
-            onSelectQueueItem: onSelectQueueItem
+            onSelectQueueItem: onSelectQueueItem,
+            onUpdateAudioEffect: onUpdateAudioEffect
         )
     }
 

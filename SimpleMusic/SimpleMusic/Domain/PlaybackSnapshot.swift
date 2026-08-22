@@ -24,6 +24,29 @@ enum PlaybackMode: Equatable {
     }
 }
 
+/// 本地歌曲可用的系统混响预设；`off` 保留原始音频输出。
+nonisolated enum AudioEffectPreset: String, CaseIterable, Equatable, Sendable {
+    case off
+    case smallRoom
+    case mediumRoom
+    case largeRoom
+    case mediumHall
+    case largeHall
+    case cathedral
+    case plate
+}
+
+/// 混响参数使用 0...100 的百分比，便于直接绑定 UIKit 滑块和持久化。
+nonisolated struct AudioEffectSettings: Equatable, Sendable {
+    var preset: AudioEffectPreset
+    var wetDryMix: Float
+
+    init(preset: AudioEffectPreset = .off, wetDryMix: Float = 35) {
+        self.preset = preset
+        self.wetDryMix = min(100, max(0, wetDryMix))
+    }
+}
+
 /// 单次播放状态快照；切歌后由播放器同时更新歌曲、进度与队列位置。
 struct PlaybackSnapshot: Equatable {
     var status: PlaybackStatus = .idle
@@ -33,5 +56,6 @@ struct PlaybackSnapshot: Equatable {
     var queueIndex: Int?
     var queueCount = 0
     var playbackMode: PlaybackMode = .list
+    var audioEffectSettings = AudioEffectSettings()
     var queue = [MusicTrack]()
 }

@@ -15,6 +15,7 @@ final class PlaybackCoordinator: PlaybackBackendDelegate {
     private var queue = [MusicTrack]()
     private var currentIndex: Int?
     private var playbackMode: PlaybackMode = .list
+    private var audioEffectSettings: AudioEffectSettings
     private weak var activeBackend: (any PlaybackBackend)?
     private var activeGeneration: PlaybackGeneration?
     private var nextGenerationRawValue: UInt64 = 0
@@ -23,11 +24,18 @@ final class PlaybackCoordinator: PlaybackBackendDelegate {
         snapshotSubject.eraseToAnyPublisher()
     }
 
-    init(localBackend: any PlaybackBackend, systemBackend: any PlaybackBackend) {
+    init(
+        localBackend: any PlaybackBackend,
+        systemBackend: any PlaybackBackend,
+        initialAudioEffectSettings: AudioEffectSettings? = nil
+    ) {
+        let resolvedAudioEffectSettings = initialAudioEffectSettings ?? AudioEffectSettings()
         self.localBackend = localBackend
         self.systemBackend = systemBackend
+        audioEffectSettings = resolvedAudioEffectSettings
         localBackend.delegate = self
         systemBackend.delegate = self
+        localBackend.updateAudioEffect(resolvedAudioEffectSettings)
     }
 
     func play(queue: [MusicTrack], startAt index: Int) throws {
@@ -81,6 +89,12 @@ final class PlaybackCoordinator: PlaybackBackendDelegate {
             throw PlaybackCoordinatorError.invalidStartIndex
         }
         try activate(index: index)
+    }
+
+    func updateAudioEffect(_ settings: AudioEffectSettings) {
+        audioEffectSettings = settings
+        localBackend.updateAudioEffect(settings)
+        updateSnapshot { $0.audioEffectSettings = settings }
     }
 
     func togglePlay() {
@@ -181,6 +195,7 @@ final class PlaybackCoordinator: PlaybackBackendDelegate {
             queueIndex: index,
             queueCount: queue.count,
             playbackMode: playbackMode,
+            audioEffectSettings: audioEffectSettings,
             queue: queue
         ))
 
@@ -223,7 +238,10 @@ final class PlaybackCoordinator: PlaybackBackendDelegate {
         sourceQueue = []
         queue = []
         currentIndex = nil
-        snapshotSubject.send(PlaybackSnapshot(playbackMode: playbackMode))
+        snapshotSubject.send(PlaybackSnapshot(
+            playbackMode: playbackMode,
+            audioEffectSettings: audioEffectSettings
+        ))
     }
 
     private func publishFailure(_ error: Error) {

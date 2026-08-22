@@ -14,6 +14,7 @@ final class PlayerViewController: UIViewController {
     private let onSeek: (TimeInterval) -> Void
     private let onCyclePlaybackMode: () -> Void
     private let onSelectQueueItem: (Int) -> Void
+    private let onUpdateAudioEffect: (AudioEffectSettings) -> Void
     private var snapshotCancellable: AnyCancellable?
     private var isSeeking = false
     private var latestSnapshot = PlaybackSnapshot()
@@ -167,6 +168,32 @@ final class PlayerViewController: UIViewController {
         return view
     }()
 
+    private lazy var moreButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.accessibilityIdentifier = "player.more"
+        button.accessibilityLabel = L10n.text("player.more")
+        button.setImage(UIImage(systemName: "ellipsis.circle"), for: .normal)
+        button.tintColor = Theme.accent
+        button.isEnabled = false
+        button.addAction(UIAction { [weak self] _ in
+            self?.showAudioEffects()
+        }, for: .touchUpInside)
+        return button
+    }()
+
+    private lazy var bottomToolbar: UIToolbar = {
+        let toolbar = UIToolbar()
+        toolbar.accessibilityIdentifier = "player.toolbar"
+        toolbar.isTranslucent = true
+        toolbar.isUserInteractionEnabled = false
+        toolbar.setItems([
+            UIBarButtonItem(customView: moreButton),
+            UIBarButtonItem(systemItem: .flexibleSpace),
+            UIBarButtonItem(customView: routePickerView)
+        ], animated: false)
+        return toolbar
+    }()
+
     init(
         snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>,
         onTogglePlay: @escaping () -> Void,
@@ -174,7 +201,8 @@ final class PlayerViewController: UIViewController {
         onNext: @escaping () -> Void,
         onSeek: @escaping (TimeInterval) -> Void,
         onCyclePlaybackMode: @escaping () -> Void = {},
-        onSelectQueueItem: @escaping (Int) -> Void = { _ in }
+        onSelectQueueItem: @escaping (Int) -> Void = { _ in },
+        onUpdateAudioEffect: @escaping (AudioEffectSettings) -> Void = { _ in }
     ) {
         self.onTogglePlay = onTogglePlay
         self.onPrevious = onPrevious
@@ -182,6 +210,7 @@ final class PlayerViewController: UIViewController {
         self.onSeek = onSeek
         self.onCyclePlaybackMode = onCyclePlaybackMode
         self.onSelectQueueItem = onSelectQueueItem
+        self.onUpdateAudioEffect = onUpdateAudioEffect
         super.init(nibName: nil, bundle: nil)
         snapshotCancellable = snapshotPublisher
             .receive(on: DispatchQueue.main)
@@ -228,10 +257,17 @@ final class PlayerViewController: UIViewController {
         scrollView.alwaysBounceVertical = true
         let contentView = UIView()
         view.addSubview(scrollView)
+        view.addSubview(bottomToolbar)
         scrollView.addSubview(contentView)
 
         scrollView.snp.makeConstraints { make in
-            make.edges.equalToSuperview()
+            make.top.leading.trailing.equalToSuperview()
+            make.bottom.equalTo(bottomToolbar.snp.top)
+        }
+        bottomToolbar.snp.makeConstraints { make in
+            make.leading.trailing.equalTo(view.safeAreaLayoutGuide).inset(12)
+            make.bottom.equalTo(view.safeAreaLayoutGuide)
+            make.height.greaterThanOrEqualTo(50)
         }
         contentView.snp.makeConstraints { make in
             make.edges.equalTo(scrollView.contentLayoutGuide)
@@ -268,7 +304,7 @@ final class PlayerViewController: UIViewController {
         controls.alignment = .center
         controls.distribution = .equalCentering
 
-        let utilities = UIStackView(arrangedSubviews: [volumeView, routePickerView])
+        let utilities = UIStackView(arrangedSubviews: [volumeView])
         utilities.axis = .horizontal
         utilities.alignment = .center
         utilities.spacing = 12
@@ -350,9 +386,8 @@ final class PlayerViewController: UIViewController {
         volumeView.snp.makeConstraints { make in
             make.height.greaterThanOrEqualTo(44)
         }
-        routePickerView.snp.makeConstraints { make in
-            make.size.greaterThanOrEqualTo(44)
-        }
+        moreButton.snp.makeConstraints { make in make.size.greaterThanOrEqualTo(44) }
+        routePickerView.snp.makeConstraints { make in make.size.greaterThanOrEqualTo(44) }
         controlsSurface.snp.makeConstraints { make in
             // 只在既有控件后方增加材质，不参与任何控件的位置计算。
             make.top.equalTo(progressSlider).offset(-6)
@@ -372,6 +407,8 @@ final class PlayerViewController: UIViewController {
 
     private func render(_ snapshot: PlaybackSnapshot) {
         latestSnapshot = snapshot
+        moreButton.isEnabled = snapshot.track != nil
+        bottomToolbar.isUserInteractionEnabled = snapshot.track != nil
         updatePlaybackModeButton(snapshot.playbackMode)
         guard let track = snapshot.track else {
             renderEmptyState()
@@ -432,6 +469,8 @@ final class PlayerViewController: UIViewController {
         toggleButton.accessibilityLabel = L10n.text("common.play")
         toggleButton.setImage(UIImage(systemName: "play.fill"), for: .normal)
         showQueueButton.isEnabled = false
+        moreButton.isEnabled = false
+        bottomToolbar.isUserInteractionEnabled = false
         setPlaybackControlsEnabled(false)
     }
 
@@ -506,6 +545,27 @@ final class PlayerViewController: UIViewController {
         present(navigation, animated: true)
     }
 
+    private func showAudioEffects() {
+        let isAvailable: Bool
+        if case .downloaded? = latestSnapshot.track?.source {
+            isAvailable = true
+        } else {
+            isAvailable = false
+        }
+        let controller = AudioEffectsViewController(
+            settings: latestSnapshot.audioEffectSettings,
+            isAvailable: isAvailable,
+            onChange: onUpdateAudioEffect
+        )
+        let navigation = UINavigationController(rootViewController: controller)
+        navigation.modalPresentationStyle = .pageSheet
+        if let sheet = navigation.sheetPresentationController {
+            sheet.detents = [.medium(), .large()]
+            sheet.prefersGrabberVisible = true
+        }
+        present(navigation, animated: true)
+    }
+
     @objc private func beginSeeking() {
         isSeeking = true
     }
@@ -573,7 +633,7 @@ final class PlayerViewController: UIViewController {
         }
     }
 
-    private static func label(
+    fileprivate static func label(
         identifier: String? = nil,
         style: UIFont.TextStyle,
         weight: UIFont.Weight = .regular,
@@ -672,6 +732,178 @@ final class PlaybackQueueViewController: UIViewController, UITableViewDataSource
 
     @objc private func close() {
         dismiss(animated: true)
+    }
+}
+
+/// 下载歌曲的混响设置页；系统资料库歌曲保持原始输出并明确说明平台限制。
+final class AudioEffectsViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+    private var settings: AudioEffectSettings
+    private let isAvailable: Bool
+    private let onChange: (AudioEffectSettings) -> Void
+    private let presets = AudioEffectPreset.allCases
+    private let tableView = UITableView(frame: .zero, style: .insetGrouped)
+    private let statusLabel = PlayerViewController.label(
+        identifier: "effects.status",
+        style: .footnote,
+        color: .secondaryLabel
+    )
+    private let mixLabel = PlayerViewController.label(
+        identifier: "effects.mixValue",
+        style: .subheadline,
+        weight: .semibold,
+        color: .label
+    )
+    private lazy var mixSlider: UISlider = {
+        let slider = UISlider()
+        slider.accessibilityIdentifier = "effects.mix"
+        slider.accessibilityLabel = L10n.text("effects.intensity")
+        slider.minimumValue = 0
+        slider.maximumValue = 100
+        slider.minimumTrackTintColor = Theme.accent
+        slider.addTarget(self, action: #selector(mixChanged), for: .valueChanged)
+        return slider
+    }()
+
+    init(
+        settings: AudioEffectSettings,
+        isAvailable: Bool,
+        onChange: @escaping (AudioEffectSettings) -> Void
+    ) {
+        self.settings = settings
+        self.isAvailable = isAvailable
+        self.onChange = onChange
+        super.init(nibName: nil, bundle: nil)
+        title = L10n.text("effects.title")
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("AudioEffectsViewController 仅支持纯代码初始化")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = Theme.background
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: L10n.text("common.done"),
+            style: .done,
+            target: self,
+            action: #selector(close)
+        )
+        statusLabel.text = isAvailable
+            ? L10n.text("effects.downloaded_hint")
+            : L10n.text("effects.system_unavailable")
+        statusLabel.numberOfLines = 0
+        statusLabel.textAlignment = .center
+        tableView.accessibilityIdentifier = "effects.presets"
+        tableView.backgroundColor = .clear
+        tableView.rowHeight = 48
+        tableView.isScrollEnabled = true
+        tableView.dataSource = self
+        tableView.delegate = self
+
+        [statusLabel, tableView, mixLabel, mixSlider].forEach(view.addSubview)
+        statusLabel.snp.makeConstraints { make in
+            make.top.equalTo(view.safeAreaLayoutGuide).offset(12)
+            make.leading.trailing.equalToSuperview().inset(20)
+        }
+        tableView.snp.makeConstraints { make in
+            make.top.equalTo(statusLabel.snp.bottom).offset(6)
+            make.leading.trailing.equalToSuperview()
+            make.height.equalTo(260).priority(.high)
+        }
+        mixLabel.snp.makeConstraints { make in
+            make.top.equalTo(tableView.snp.bottom).offset(12)
+            make.leading.trailing.equalToSuperview().inset(20)
+        }
+        mixSlider.snp.makeConstraints { make in
+            make.top.equalTo(mixLabel.snp.bottom).offset(4)
+            make.leading.trailing.equalToSuperview().inset(20)
+            make.height.greaterThanOrEqualTo(44)
+            make.bottom.lessThanOrEqualTo(view.safeAreaLayoutGuide).inset(12)
+        }
+        renderSettings()
+    }
+
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        presets.count
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        cellForRowAt indexPath: IndexPath
+    ) -> UITableViewCell {
+        let identifier = "AudioEffectPresetCell"
+        let cell = tableView.dequeueReusableCell(withIdentifier: identifier)
+            ?? UITableViewCell(style: .default, reuseIdentifier: identifier)
+        let preset = presets[indexPath.row]
+        cell.textLabel?.text = L10n.text(preset.localizationKey)
+        cell.accessoryType = preset == settings.preset ? .checkmark : .none
+        cell.tintColor = Theme.accent
+        cell.selectionStyle = isAvailable ? .default : .none
+        cell.textLabel?.textColor = isAvailable ? .label : .tertiaryLabel
+        return cell
+    }
+
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        guard isAvailable, presets.indices.contains(indexPath.row) else { return }
+        applyPreset(presets[indexPath.row])
+    }
+
+    /// 测试使用与真实点选相同的更新入口，不绕过页面状态。
+    func selectPresetForTesting(_ preset: AudioEffectPreset) {
+        guard isAvailable else { return }
+        applyPreset(preset)
+    }
+
+    /// 测试使用与真实滑块相同的更新入口。
+    func setWetDryMixForTesting(_ value: Float) {
+        guard isAvailable else { return }
+        mixSlider.value = value
+        mixChanged()
+    }
+
+    private func applyPreset(_ preset: AudioEffectPreset) {
+        settings = AudioEffectSettings(preset: preset, wetDryMix: settings.wetDryMix)
+        publishChange()
+    }
+
+    @objc private func mixChanged() {
+        settings = AudioEffectSettings(preset: settings.preset, wetDryMix: mixSlider.value)
+        publishChange()
+    }
+
+    private func publishChange() {
+        renderSettings()
+        onChange(settings)
+    }
+
+    private func renderSettings() {
+        guard isViewLoaded else { return }
+        tableView.reloadData()
+        mixSlider.value = settings.wetDryMix
+        mixSlider.isEnabled = isAvailable && settings.preset != .off
+        mixLabel.text = L10n.format("effects.intensity_value", Int(settings.wetDryMix.rounded()))
+        mixLabel.textColor = mixSlider.isEnabled ? .label : .secondaryLabel
+    }
+
+    @objc private func close() {
+        dismiss(animated: true)
+    }
+}
+
+private extension AudioEffectPreset {
+    var localizationKey: String {
+        switch self {
+        case .off: return "effects.preset.off"
+        case .smallRoom: return "effects.preset.small_room"
+        case .mediumRoom: return "effects.preset.medium_room"
+        case .largeRoom: return "effects.preset.large_room"
+        case .mediumHall: return "effects.preset.medium_hall"
+        case .largeHall: return "effects.preset.large_hall"
+        case .cathedral: return "effects.preset.cathedral"
+        case .plate: return "effects.preset.plate"
+        }
     }
 }
 

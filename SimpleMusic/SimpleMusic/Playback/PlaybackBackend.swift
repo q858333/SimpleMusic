@@ -41,6 +41,12 @@ protocol PlaybackBackend: AnyObject {
     func pause()
     func stop()
     func seek(to seconds: TimeInterval)
+    func updateAudioEffect(_ settings: AudioEffectSettings)
+}
+
+extension PlaybackBackend {
+    /// 系统媒体库后端无法插入 App 内音频单元，因此默认忽略本地音效设置。
+    func updateAudioEffect(_ settings: AudioEffectSettings) {}
 }
 
 enum PlaybackBackendError: Error {

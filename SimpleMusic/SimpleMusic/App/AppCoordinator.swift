@@ -21,6 +21,7 @@ struct AppRootDependencies {
     let onSeek: (TimeInterval) -> Void
     let onCyclePlaybackMode: () -> Void
     let onSelectQueueItem: (Int) -> Void
+    let onUpdateAudioEffect: (AudioEffectSettings) -> Void
     let makeDownloadViewController: @MainActor () -> UIViewController
     let makeSettingsViewController: @MainActor () -> UIViewController
 
@@ -70,6 +71,12 @@ struct AppRootDependencies {
                 NSLog("无法播放队列歌曲：%@", String(describing: error))
             }
         }
+        onUpdateAudioEffect = {
+            [settingsStore = environment.settingsStore,
+             playbackCoordinator = environment.playbackCoordinator] settings in
+            settingsStore.audioEffectSettings = settings
+            playbackCoordinator.updateAudioEffect(settings)
+        }
         makeDownloadViewController = {
             guard let downloadQueue = environment.downloadQueue else {
                 return DownloadUnavailableViewController(
@@ -102,6 +109,7 @@ struct AppRootDependencies {
         onSeek: @escaping (TimeInterval) -> Void = { _ in },
         onCyclePlaybackMode: @escaping () -> Void = {},
         onSelectQueueItem: @escaping (Int) -> Void = { _ in },
+        onUpdateAudioEffect: @escaping (AudioEffectSettings) -> Void = { _ in },
         makeDownloadViewController: @escaping @MainActor () -> UIViewController = { UIViewController() },
         makeSettingsViewController: @escaping @MainActor () -> UIViewController = { UIViewController() }
     ) {
@@ -116,6 +124,7 @@ struct AppRootDependencies {
         self.onSeek = onSeek
         self.onCyclePlaybackMode = onCyclePlaybackMode
         self.onSelectQueueItem = onSelectQueueItem
+        self.onUpdateAudioEffect = onUpdateAudioEffect
         self.makeDownloadViewController = makeDownloadViewController
         self.makeSettingsViewController = makeSettingsViewController
     }
@@ -307,7 +316,8 @@ final class AppCoordinator {
             onNext: dependencies.onNext,
             onSeek: dependencies.onSeek,
             onCyclePlaybackMode: dependencies.onCyclePlaybackMode,
-            onSelectQueueItem: dependencies.onSelectQueueItem
+            onSelectQueueItem: dependencies.onSelectQueueItem,
+            onUpdateAudioEffect: dependencies.onUpdateAudioEffect
         )
     }
 

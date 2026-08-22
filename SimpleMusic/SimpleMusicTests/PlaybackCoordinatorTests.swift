@@ -186,6 +186,21 @@ final class PlaybackCoordinatorTests: XCTestCase {
         XCTAssertEqual(snapshots.value.playbackMode, .list)
     }
 
+    /// 音效只下发给本地后端，同时进入快照供手机和 iPad 共用同一显示状态。
+    func testAudioEffectUpdatesLocalBackendAndSnapshot() {
+        let local = SpyBackend(kind: .local)
+        let system = SpyBackend(kind: .system)
+        let sut = PlaybackCoordinator(localBackend: local, systemBackend: system)
+        let snapshots = observe(sut)
+        let settings = AudioEffectSettings(preset: .largeHall, wetDryMix: 46)
+
+        sut.updateAudioEffect(settings)
+
+        XCTAssertEqual(local.audioEffectSettings.last, settings)
+        XCTAssertTrue(system.audioEffectSettings.isEmpty)
+        XCTAssertEqual(snapshots.value.audioEffectSettings, settings)
+    }
+
     /// 单曲循环只影响自然结束；后端完成后应重新加载当前歌曲而不是推进队列。
     func testRepeatOneRestartsCurrentTrackAfterNaturalFinish() throws {
         let local = SpyBackend(kind: .local)
@@ -373,6 +388,7 @@ private final class SpyBackend: PlaybackBackend {
     weak var delegate: PlaybackBackendDelegate?
     private(set) var events = [Event]()
     private(set) var loadedGenerations = [PlaybackGeneration]()
+    private(set) var audioEffectSettings = [AudioEffectSettings]()
     private let name: String?
     private let eventLog: SharedEventLog?
 
@@ -414,6 +430,9 @@ private final class SpyBackend: PlaybackBackend {
         record("stop")
     }
     func seek(to seconds: TimeInterval) { events.append(.seek(seconds)) }
+    func updateAudioEffect(_ settings: AudioEffectSettings) {
+        audioEffectSettings.append(settings)
+    }
 
     func reportElapsed(
         _ elapsed: TimeInterval,

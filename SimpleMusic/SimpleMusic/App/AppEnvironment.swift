@@ -105,7 +105,8 @@ final class AppEnvironment {
 
     lazy var playbackCoordinator = PlaybackCoordinator(
         localBackend: LocalPlaybackBackend(fileStore: downloadFileStore),
-        systemBackend: SystemPlaybackBackend(libraryService: musicLibraryService)
+        systemBackend: SystemPlaybackBackend(libraryService: musicLibraryService),
+        initialAudioEffectSettings: settingsStore.audioEffectSettings
     )
 
     lazy var nowPlayingService = NowPlayingService(
