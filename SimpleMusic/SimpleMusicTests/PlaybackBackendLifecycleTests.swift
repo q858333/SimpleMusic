@@ -580,6 +580,68 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
         XCTAssertEqual(effectPlayer.updatedSettings.last?.preset, .clearVocal)
     }
 
+    /// 音效 transport 的 seek 必须经真实 LocalPlaybackBackend 路由，并发布跳转后的进度。
+    func testLocalBackendEffectTransportSeekPublishesRequestedProgress() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try DownloadFileStore(rootURL: root)
+        try Data("audio".utf8).write(to: root.appendingPathComponent("song.mp3"))
+        let player = AVPlayer()
+        let effectPlayer = FakeAudioEffectPlayer()
+        let delegate = RecordingPlaybackDelegate()
+        let generation = PlaybackGeneration(rawValue: 305)
+        let backend = LocalPlaybackBackend(
+            fileStore: store,
+            player: player,
+            notificationCenter: NotificationCenter(),
+            effectPlayer: effectPlayer
+        )
+        backend.delegate = delegate
+        backend.updateAudioEffect(.init(preset: .panoramicSurround, wetDryMix: 50))
+        try backend.load(downloadedTrack(id: "song"), generation: generation)
+        backend.play()
+        try await waitUntil { effectPlayer.playCallCount == 1 }
+
+        backend.seek(to: 27)
+
+        try await waitUntil {
+            delegate.elapsedEvents.contains {
+                $0.0 == generation && abs($0.1 - 27) < 0.001 && abs($0.2 - 60) < 0.001
+            }
+        }
+    }
+
+    /// 有效 WAV 必须能实际启动系统 EQ→Reverb 链，并在切换预设和关闭音效后继续传输。
+    func testSystemAudioEffectPlayerLoadsWAVAndSwitchesProfilesThroughOff() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let wavURL = root.appendingPathComponent("effect-smoke.wav")
+        try writeTestWAV(to: wavURL, duration: 2)
+        let player = SystemAudioEffectPlayer()
+        defer { player.stop() }
+        var didFinish = false
+        player.onFinish = { didFinish = true }
+
+        try player.load(
+            url: wavURL,
+            startingAt: 0,
+            settings: AudioEffectSettings(preset: .classicRock, wetDryMix: 100)
+        )
+        XCTAssertEqual(player.duration, 2, accuracy: 0.01)
+        player.play()
+        try await waitUntil(timeoutNanoseconds: 3_000_000_000) { player.elapsed > 0 }
+        let elapsedBeforeUpdates = player.elapsed
+
+        player.update(settings: AudioEffectSettings(preset: .dynamicElectronic, wetDryMix: 50))
+        player.update(settings: AudioEffectSettings(preset: .off, wetDryMix: 50))
+
+        try await waitUntil(timeoutNanoseconds: 3_000_000_000) {
+            player.elapsed > elapsedBeforeUpdates
+        }
+        try await waitUntil(timeoutNanoseconds: 3_000_000_000) { didFinish }
+    }
+
     /// 同步 load/play 若等待整文件复制，会阻塞 MainActor；准备完成前也不应提前装载或播放。
     func testLocalLoadAndPlayReturnBeforeBackgroundLeasePreparationCompletes() async throws {
         let fixture = try AsyncLocalBackendFixture()
@@ -687,6 +749,25 @@ final class PlaybackBackendLifecycleTests: XCTestCase {
             }
             try await Task.sleep(nanoseconds: 10_000_000)
         }
+    }
+
+    private func writeTestWAV(to url: URL, duration: TimeInterval) throws {
+        let sampleRate = 44_100.0
+        let format = try XCTUnwrap(
+            AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)
+        )
+        let frameCount = AVAudioFrameCount(duration * sampleRate)
+        let buffer = try XCTUnwrap(
+            AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)
+        )
+        buffer.frameLength = frameCount
+        let samples = try XCTUnwrap(buffer.floatChannelData?[0])
+        for frame in 0..<Int(frameCount) {
+            let time = Double(frame) / sampleRate
+            samples[frame] = Float(sin(2 * Double.pi * 440 * time) * 0.1)
+        }
+        let file = try AVAudioFile(forWriting: url, settings: format.settings)
+        try file.write(from: buffer)
     }
 
     private func systemTrack(

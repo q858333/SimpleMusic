@@ -104,8 +104,21 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
-    func testAudioEffectPresetLocalizationsExposeCompleteSharedKeySet() throws {
+    func testAudioEffectLocalizationsExposeCompleteSharedKeyAndParameterContract() throws {
         let requiredKeys: Set<String> = [
+            "effects.title",
+            "effects.intensity",
+            "effects.intensity_value",
+            "effects.downloaded_hint",
+            "effects.system_unavailable",
+            "effects.preset.off",
+            "effects.preset.small_room",
+            "effects.preset.medium_room",
+            "effects.preset.large_room",
+            "effects.preset.medium_hall",
+            "effects.preset.large_hall",
+            "effects.preset.cathedral",
+            "effects.preset.plate",
             "effects.preset.panoramic_surround",
             "effects.preset.classic_rock",
             "effects.preset.dynamic_electronic",
@@ -115,6 +128,11 @@ final class LocalizationTests: XCTestCase {
         for language in ["en", "zh-Hans", "zh-Hant"] {
             let values = try stringsDictionary(language: language, name: "Localizable")
             XCTAssertTrue(requiredKeys.isSubset(of: Set(values.keys)), "language=\(language)")
+            XCTAssertEqual(
+                formatParameters(in: try XCTUnwrap(values["effects.intensity_value"])),
+                ["1:d"],
+                "language=\(language)"
+            )
         }
     }
 

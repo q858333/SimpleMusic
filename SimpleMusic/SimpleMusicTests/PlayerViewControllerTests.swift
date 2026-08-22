@@ -459,7 +459,7 @@ final class PlayerViewControllerTests: XCTestCase {
         )
     }
 
-    /// 底部工具栏必须同时提供更多和红色 AirPlay，更多按钮直接打开混响设置弹窗。
+    /// 底部工具栏必须同时提供更多和红色 AirPlay，更多按钮直接打开音效设置弹窗。
     func testBottomToolbarPresentsAudioEffectsAndRoutesChanges() async throws {
         let track = makeTrack()
         let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
@@ -511,17 +511,107 @@ final class PlayerViewControllerTests: XCTestCase {
             table.dataSource?.tableView(table, cellForRowAt: IndexPath(row: $0, section: 0))
                 .textLabel?.text
         }
-        XCTAssertTrue(titles.contains(L10n.text("effects.preset.panoramic_surround")))
-        XCTAssertTrue(titles.contains(L10n.text("effects.preset.classic_rock")))
-        XCTAssertTrue(titles.contains(L10n.text("effects.preset.dynamic_electronic")))
-        XCTAssertTrue(titles.contains(L10n.text("effects.preset.clear_vocal")))
+        XCTAssertEqual(titles, [
+            L10n.text("effects.preset.off"),
+            L10n.text("effects.preset.panoramic_surround"),
+            L10n.text("effects.preset.classic_rock"),
+            L10n.text("effects.preset.dynamic_electronic"),
+            L10n.text("effects.preset.clear_vocal"),
+            L10n.text("effects.preset.small_room"),
+            L10n.text("effects.preset.medium_room"),
+            L10n.text("effects.preset.large_room"),
+            L10n.text("effects.preset.medium_hall"),
+            L10n.text("effects.preset.large_hall"),
+            L10n.text("effects.preset.cathedral"),
+            L10n.text("effects.preset.plate"),
+        ])
 
-        effects.selectPresetForTesting(.clearVocal)
+        table.delegate?.tableView?(
+            table,
+            didSelectRowAt: IndexPath(row: 4, section: 0)
+        )
         XCTAssertEqual(updates.last, AudioEffectSettings(preset: .clearVocal, wetDryMix: 25))
-        effects.selectPresetForTesting(.cathedral)
-        effects.setWetDryMixForTesting(64)
+        table.delegate?.tableView?(
+            table,
+            didSelectRowAt: IndexPath(row: 10, section: 0)
+        )
+        let slider = try XCTUnwrap(
+            findView(identifier: "effects.mix", in: effects.view) as? UISlider
+        )
+        slider.value = 64
+        slider.sendActions(for: .valueChanged)
 
         XCTAssertEqual(updates.last, AudioEffectSettings(preset: .cathedral, wetDryMix: 64))
+    }
+
+    /// 系统音乐必须从真实播放器入口显示不可用说明，并阻止列表和强度控件发布更新。
+    func testSystemTrackAudioEffectsSheetDisablesControlsAndIgnoresSelection() async throws {
+        let systemTrack = makeTrack(source: .system(persistentID: 42))
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(
+            PlaybackSnapshot(
+                status: .paused,
+                track: systemTrack,
+                queueIndex: 0,
+                queueCount: 1,
+                audioEffectSettings: AudioEffectSettings(preset: .off, wetDryMix: 35),
+                queue: [systemTrack]
+            )
+        )
+        var updates = [AudioEffectSettings]()
+        let sut = makePlayer(
+            snapshots: snapshots,
+            onUpdateAudioEffect: { updates.append($0) }
+        )
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+        window.rootViewController = sut
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        sut.loadViewIfNeeded()
+        sut.view.layoutIfNeeded()
+
+        let toolbar = try XCTUnwrap(
+            findView(identifier: "player.toolbar", in: sut.view) as? UIToolbar
+        )
+        let more = try XCTUnwrap(
+            toolbar.items?.compactMap(\.customView)
+                .first { $0.accessibilityIdentifier == "player.more" } as? UIButton
+        )
+        await waitUntil(attempts: 2_000) { toolbar.isUserInteractionEnabled && more.isEnabled }
+        more.sendActions(for: .touchUpInside)
+        await waitUntil(attempts: 2_000) { sut.presentedViewController != nil }
+
+        let navigation = try XCTUnwrap(sut.presentedViewController as? UINavigationController)
+        let effects = try XCTUnwrap(navigation.topViewController as? AudioEffectsViewController)
+        effects.loadViewIfNeeded()
+        let status = try XCTUnwrap(
+            findView(identifier: "effects.status", in: effects.view) as? UILabel
+        )
+        let table = try XCTUnwrap(
+            findView(identifier: "effects.presets", in: effects.view) as? UITableView
+        )
+        let slider = try XCTUnwrap(
+            findView(identifier: "effects.mix", in: effects.view) as? UISlider
+        )
+
+        XCTAssertEqual(status.text, L10n.text("effects.system_unavailable"))
+        XCTAssertFalse(slider.isEnabled)
+        for row in 0..<table.numberOfRows(inSection: 0) {
+            let cell = try XCTUnwrap(
+                table.dataSource?.tableView(
+                    table,
+                    cellForRowAt: IndexPath(row: row, section: 0)
+                )
+            )
+            XCTAssertEqual(cell.selectionStyle, .none)
+            XCTAssertEqual(cell.textLabel?.textColor, .tertiaryLabel)
+        }
+
+        table.delegate?.tableView?(
+            table,
+            didSelectRowAt: IndexPath(row: 1, section: 0)
+        )
+
+        XCTAssertTrue(updates.isEmpty)
     }
 
     /// 播放模式按钮必须位于上一首左侧，并随快照显示列表、单曲循环和随机状态。
@@ -931,7 +1021,8 @@ final class PlayerViewControllerTests: XCTestCase {
         title: String = "歌曲",
         artist: String = "艺人",
         album: String = "专辑",
-        artworkData: Data? = nil
+        artworkData: Data? = nil,
+        source: MusicSource = .downloaded(fileName: "track.mp3")
     ) -> SimpleMusic.MusicTrack {
         SimpleMusic.MusicTrack(
             id: id,
@@ -940,7 +1031,7 @@ final class PlayerViewControllerTests: XCTestCase {
             album: album,
             duration: 180,
             artworkData: artworkData,
-            source: .downloaded(fileName: "track.mp3")
+            source: source
         )
     }
 

@@ -62,7 +62,7 @@
 "effects.title" = "Sound Effects";
 "effects.intensity" = "Effect Intensity";
 "effects.intensity_value" = "Intensity · %1$d%%";
-"effects.downloaded_hint" = "Reverb applies to downloaded songs.";
+"effects.downloaded_hint" = "Sound effects apply to downloaded songs.";
 "effects.system_unavailable" = "Sound effects are unavailable for Apple Music tracks.";
 "effects.preset.off" = "Off";
 "effects.preset.small_room" = "Small Room";

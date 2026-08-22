@@ -46,16 +46,207 @@ final class SettingsStoreTests: XCTestCase {
         }
     }
 
-    func testPanoramicProfileScalesEQAndReverbWithIntensity() {
-        let full = AudioEffectPreset.panoramicSurround.resolvedProfile(intensity: 100)
-        let half = AudioEffectPreset.panoramicSurround.resolvedProfile(intensity: 50)
+    func testPanoramicProfileUsesLiteralValuesAtZeroHalfAndFullIntensity() {
+        XCTAssertEqual(
+            AudioEffectPreset.panoramicSurround.resolvedProfile(intensity: 0),
+            ResolvedAudioEffectProfile(
+                bands: [
+                    .init(kind: .lowShelf, frequency: 120, bandwidth: 1, gain: 0),
+                    .init(kind: .parametric, frequency: 600, bandwidth: 1, gain: 0),
+                    .init(kind: .highShelf, frequency: 7_000, bandwidth: 1, gain: 0),
+                ],
+                reverb: .largeRoom,
+                wetDryMix: 0
+            )
+        )
+        XCTAssertEqual(
+            AudioEffectPreset.panoramicSurround.resolvedProfile(intensity: 50),
+            ResolvedAudioEffectProfile(
+                bands: [
+                    .init(kind: .lowShelf, frequency: 120, bandwidth: 1, gain: 0.75),
+                    .init(kind: .parametric, frequency: 600, bandwidth: 1, gain: -0.75),
+                    .init(kind: .highShelf, frequency: 7_000, bandwidth: 1, gain: 1),
+                ],
+                reverb: .largeRoom,
+                wetDryMix: 15
+            )
+        )
+        XCTAssertEqual(
+            AudioEffectPreset.panoramicSurround.resolvedProfile(intensity: 100),
+            ResolvedAudioEffectProfile(
+                bands: [
+                    .init(kind: .lowShelf, frequency: 120, bandwidth: 1, gain: 1.5),
+                    .init(kind: .parametric, frequency: 600, bandwidth: 1, gain: -1.5),
+                    .init(kind: .highShelf, frequency: 7_000, bandwidth: 1, gain: 2),
+                ],
+                reverb: .largeRoom,
+                wetDryMix: 30
+            )
+        )
+    }
 
-        XCTAssertEqual(full.bands.map(\.frequency), [120, 600, 7_000])
-        XCTAssertEqual(full.bands.map(\.gain), [1.5, -1.5, 2])
-        XCTAssertEqual(half.bands.map(\.gain), [0.75, -0.75, 1])
-        XCTAssertEqual(full.reverb, .largeRoom)
-        XCTAssertEqual(full.wetDryMix, 30)
-        XCTAssertEqual(half.wetDryMix, 15)
+    func testClassicRockProfileUsesLiteralValuesAtZeroHalfAndFullIntensity() {
+        XCTAssertEqual(
+            AudioEffectPreset.classicRock.resolvedProfile(intensity: 0),
+            ResolvedAudioEffectProfile(
+                bands: [
+                    .init(kind: .lowShelf, frequency: 90, bandwidth: 1, gain: 0),
+                    .init(kind: .parametric, frequency: 300, bandwidth: 1, gain: 0),
+                    .init(kind: .parametric, frequency: 1_800, bandwidth: 1, gain: 0),
+                    .init(kind: .highShelf, frequency: 6_000, bandwidth: 1, gain: 0),
+                ],
+                reverb: .plate,
+                wetDryMix: 0
+            )
+        )
+        XCTAssertEqual(
+            AudioEffectPreset.classicRock.resolvedProfile(intensity: 50),
+            ResolvedAudioEffectProfile(
+                bands: [
+                    .init(kind: .lowShelf, frequency: 90, bandwidth: 1, gain: 1.5),
+                    .init(kind: .parametric, frequency: 300, bandwidth: 1, gain: -0.5),
+                    .init(kind: .parametric, frequency: 1_800, bandwidth: 1, gain: 1.25),
+                    .init(kind: .highShelf, frequency: 6_000, bandwidth: 1, gain: 1),
+                ],
+                reverb: .plate,
+                wetDryMix: 6
+            )
+        )
+        XCTAssertEqual(
+            AudioEffectPreset.classicRock.resolvedProfile(intensity: 100),
+            ResolvedAudioEffectProfile(
+                bands: [
+                    .init(kind: .lowShelf, frequency: 90, bandwidth: 1, gain: 3),
+                    .init(kind: .parametric, frequency: 300, bandwidth: 1, gain: -1),
+                    .init(kind: .parametric, frequency: 1_800, bandwidth: 1, gain: 2.5),
+                    .init(kind: .highShelf, frequency: 6_000, bandwidth: 1, gain: 2),
+                ],
+                reverb: .plate,
+                wetDryMix: 12
+            )
+        )
+    }
+
+    func testDynamicElectronicProfileUsesLiteralValuesAtZeroHalfAndFullIntensity() {
+        XCTAssertEqual(
+            AudioEffectPreset.dynamicElectronic.resolvedProfile(intensity: 0),
+            ResolvedAudioEffectProfile(
+                bands: [
+                    .init(kind: .lowShelf, frequency: 70, bandwidth: 1, gain: 0),
+                    .init(kind: .parametric, frequency: 500, bandwidth: 1, gain: 0),
+                    .init(kind: .highShelf, frequency: 8_000, bandwidth: 1, gain: 0),
+                ],
+                reverb: .plate,
+                wetDryMix: 0
+            )
+        )
+        XCTAssertEqual(
+            AudioEffectPreset.dynamicElectronic.resolvedProfile(intensity: 50),
+            ResolvedAudioEffectProfile(
+                bands: [
+                    .init(kind: .lowShelf, frequency: 70, bandwidth: 1, gain: 2),
+                    .init(kind: .parametric, frequency: 500, bandwidth: 1, gain: -1),
+                    .init(kind: .highShelf, frequency: 8_000, bandwidth: 1, gain: 1.5),
+                ],
+                reverb: .plate,
+                wetDryMix: 8
+            )
+        )
+        XCTAssertEqual(
+            AudioEffectPreset.dynamicElectronic.resolvedProfile(intensity: 100),
+            ResolvedAudioEffectProfile(
+                bands: [
+                    .init(kind: .lowShelf, frequency: 70, bandwidth: 1, gain: 4),
+                    .init(kind: .parametric, frequency: 500, bandwidth: 1, gain: -2),
+                    .init(kind: .highShelf, frequency: 8_000, bandwidth: 1, gain: 3),
+                ],
+                reverb: .plate,
+                wetDryMix: 16
+            )
+        )
+    }
+
+    func testClearVocalProfileUsesLiteralValuesAtZeroHalfAndFullIntensity() {
+        XCTAssertEqual(
+            AudioEffectPreset.clearVocal.resolvedProfile(intensity: 0),
+            ResolvedAudioEffectProfile(
+                bands: [
+                    .init(kind: .parametric, frequency: 250, bandwidth: 1, gain: 0),
+                    .init(kind: .parametric, frequency: 2_500, bandwidth: 1, gain: 0),
+                    .init(kind: .highShelf, frequency: 6_000, bandwidth: 1, gain: 0),
+                ],
+                reverb: .smallRoom,
+                wetDryMix: 0
+            )
+        )
+        XCTAssertEqual(
+            AudioEffectPreset.clearVocal.resolvedProfile(intensity: 50),
+            ResolvedAudioEffectProfile(
+                bands: [
+                    .init(kind: .parametric, frequency: 250, bandwidth: 1, gain: -1),
+                    .init(kind: .parametric, frequency: 2_500, bandwidth: 1, gain: 1.5),
+                    .init(kind: .highShelf, frequency: 6_000, bandwidth: 1, gain: 1),
+                ],
+                reverb: .smallRoom,
+                wetDryMix: 4
+            )
+        )
+        XCTAssertEqual(
+            AudioEffectPreset.clearVocal.resolvedProfile(intensity: 100),
+            ResolvedAudioEffectProfile(
+                bands: [
+                    .init(kind: .parametric, frequency: 250, bandwidth: 1, gain: -2),
+                    .init(kind: .parametric, frequency: 2_500, bandwidth: 1, gain: 3),
+                    .init(kind: .highShelf, frequency: 6_000, bandwidth: 1, gain: 2),
+                ],
+                reverb: .smallRoom,
+                wetDryMix: 8
+            )
+        )
+    }
+
+    func testLegacyReverbProfileKeepsOriginalIntensityContract() {
+        XCTAssertEqual(
+            AudioEffectPreset.cathedral.resolvedProfile(intensity: 42),
+            ResolvedAudioEffectProfile(bands: [], reverb: .cathedral, wetDryMix: 42)
+        )
+    }
+
+    func testAudioEffectSettingsClampIntensityToSupportedRange() {
+        XCTAssertEqual(
+            AudioEffectSettings(preset: .classicRock, wetDryMix: -1).wetDryMix,
+            0
+        )
+        XCTAssertEqual(
+            AudioEffectSettings(preset: .classicRock, wetDryMix: 101).wetDryMix,
+            100
+        )
+    }
+
+    func testLegacyRawValueRestoresWithoutMigration() {
+        let suiteName = "\(#function).\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set("largeHall", forKey: "audioEffectPreset")
+        defaults.set(61, forKey: "audioEffectWetDryMix")
+
+        XCTAssertEqual(
+            SettingsStore(defaults: defaults).audioEffectSettings,
+            AudioEffectSettings(preset: .largeHall, wetDryMix: 61)
+        )
+    }
+
+    func testUnknownRawValueFallsBackToOff() {
+        let suiteName = "\(#function).\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set("futureSpatialPreset", forKey: "audioEffectPreset")
+        defaults.set(44, forKey: "audioEffectWetDryMix")
+
+        XCTAssertEqual(
+            SettingsStore(defaults: defaults).audioEffectSettings,
+            AudioEffectSettings(preset: .off, wetDryMix: 44)
+        )
     }
 
     func testOffProfileBypassesEQAndReverb() {

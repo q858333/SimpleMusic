@@ -62,7 +62,7 @@
 "effects.title" = "音效";
 "effects.intensity" = "音效强度";
 "effects.intensity_value" = "强度 · %1$d%%";
-"effects.downloaded_hint" = "混响仅对下载歌曲生效。";
+"effects.downloaded_hint" = "音效仅对下载歌曲生效。";
 "effects.system_unavailable" = "Apple Music 歌曲暂不支持音效。";
 "effects.preset.off" = "关闭";
 "effects.preset.small_room" = "小房间";

@@ -746,7 +746,20 @@ final class AudioEffectsViewController: UIViewController, UITableViewDataSource,
     private var settings: AudioEffectSettings
     private let isAvailable: Bool
     private let onChange: (AudioEffectSettings) -> Void
-    private let presets = AudioEffectPreset.allCases
+    private let presets: [AudioEffectPreset] = [
+        .off,
+        .panoramicSurround,
+        .classicRock,
+        .dynamicElectronic,
+        .clearVocal,
+        .smallRoom,
+        .mediumRoom,
+        .largeRoom,
+        .mediumHall,
+        .largeHall,
+        .cathedral,
+        .plate,
+    ]
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
     private let statusLabel = PlayerViewController.label(
         identifier: "effects.status",
@@ -854,19 +867,6 @@ final class AudioEffectsViewController: UIViewController, UITableViewDataSource,
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         guard isAvailable, presets.indices.contains(indexPath.row) else { return }
         applyPreset(presets[indexPath.row])
-    }
-
-    /// 测试使用与真实点选相同的更新入口，不绕过页面状态。
-    func selectPresetForTesting(_ preset: AudioEffectPreset) {
-        guard isAvailable else { return }
-        applyPreset(preset)
-    }
-
-    /// 测试使用与真实滑块相同的更新入口。
-    func setWetDryMixForTesting(_ value: Float) {
-        guard isAvailable else { return }
-        mixSlider.value = value
-        mixChanged()
     }
 
     private func applyPreset(_ preset: AudioEffectPreset) {
