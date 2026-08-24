@@ -4,11 +4,14 @@
 
 分支：`codex/worker-d1-device-registration`
 
-Worker 实现提交：`483a016 feat: 添加Worker设备注册接口`
+Worker 最终实现提交链：
+
+- `483a016 feat: 添加Worker设备注册接口`
+- `a52bd95 fix: 完善设备令牌迁移约束`
 
 ## 结论
 
-`POST /api/v1/devices/register` 已通过本地 Workers pool 与本地 D1 集成验证。最终 Worker 全量测试为 25 passed、0 failed，TypeScript 类型检查退出码为 0。验证覆盖设备首次注册、APNs token 新增与轮换、重复注册不产生重复设备、时间戳与 metadata 更新、无 token 时保留既有 token，以及 400/404/405/500 HTTP 边界。
+`POST /api/v1/devices/register` 已通过本地 Workers pool 与本地 D1 集成验证。最终 Worker 全量测试为 30 passed、0 failed，TypeScript 类型检查退出码为 0。验证覆盖设备首次注册、APNs token 新增与轮换、重复注册不产生重复设备、时间戳与 metadata 更新、无 token 时保留既有 token，以及 400/404/405/500 HTTP 边界。
 
 本报告只记录本地验证。没有 deploy，没有远程 migration 或远程 D1 写入，也没有修改 iOS/Xcode 工程。
 
@@ -31,6 +34,8 @@ npm test -- test/schema.spec.ts
 ```
 
 `PRAGMA table_info(devices)` 返回空列集合，测试以“期望完整列、实际为空”失败。补充 APNs 约束测试在原约束下为 2 failed、2 passed，证明缺失或空 token 仍可错误携带 environment。
+
+最终 review 又先添加 schema 回归测试，在修改 migration 前取得 `4 failed | 5 passed`：`device_id` 列元数据不是 NOT NULL，NULL `device_id` 插入成功，非空 token + NULL environment 插入成功，空 token + NULL environment 也插入成功。随后 `a52bd95` 为 `device_id` 添加显式 `NOT NULL`，并把约束收紧为 token/environment 必须同时为空或同时有效。
 
 ### Validation
 
@@ -56,6 +61,17 @@ npm test -- test/device-registration.spec.ts
 
 ## 最终本地验证
 
+### Schema focused
+
+```bash
+cd worker
+npm test -- test/schema.spec.ts
+```
+
+- exit code：0
+- Test Files：1 passed
+- Tests：9 passed，0 failed
+
 ### Task 3 focused
 
 ```bash
@@ -76,7 +92,7 @@ npm test
 
 - exit code：0
 - Test Files：3 passed
-- Tests：25 passed，0 failed
+- Tests：30 passed，0 failed
 
 ### TypeScript 与 diff
 
