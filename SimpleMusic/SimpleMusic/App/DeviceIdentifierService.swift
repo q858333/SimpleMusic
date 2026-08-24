@@ -1,3 +1,4 @@
+import Alamofire
 import Foundation
 import Security
 import UIKit
@@ -172,7 +173,13 @@ final class DeviceRegistrationService {
             )
         },
         requestExecutor: @escaping RequestExecutor = { request in
-            try await URLSession.shared.data(for: request)
+            // 统一使用项目现有的 Alamofire 会话执行设备注册请求。
+            let dataResponse = await AF.request(request).serializingData().response
+            let data = try dataResponse.result.get()
+            guard let response = dataResponse.response else {
+                throw DeviceRegistrationError.invalidResponse
+            }
+            return (data, response)
         }
     ) {
         self.endpoint = endpoint
