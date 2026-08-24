@@ -108,3 +108,110 @@ final class DeviceIdentifierService {
         return generatedValue
     }
 }
+
+struct DeviceRegistrationMetadata {
+    let appVersion: String?
+    let systemVersion: String?
+    let deviceModel: String?
+}
+
+enum DeviceRegistrationError: Error, Equatable {
+    case invalidResponse
+    case httpStatus(Int)
+}
+
+/// 将本机设备号与可选 APNs Token 上报到 Worker；网络失败由调用方记录，不阻塞启动。
+@MainActor
+final class DeviceRegistrationService {
+    typealias DeviceIdentifierProvider = @MainActor () throws -> String
+    typealias MetadataProvider = @MainActor () -> DeviceRegistrationMetadata
+    typealias RequestExecutor = (URLRequest) async throws -> (Data, URLResponse)
+
+    static let shared = DeviceRegistrationService()
+
+    private struct Payload: Encodable {
+        let deviceId: String
+        let apnsToken: String?
+        let apnsEnvironment: String?
+        let appVersion: String?
+        let systemVersion: String?
+        let deviceModel: String?
+    }
+
+    private struct WorkerResponse: Decodable {
+        let success: Bool
+    }
+
+    private let endpoint: URL
+    private let deviceIdentifierProvider: DeviceIdentifierProvider
+    private let apnsEnvironmentProvider: () -> String
+    private let metadataProvider: MetadataProvider
+    private let requestExecutor: RequestExecutor
+
+    init(
+        endpoint: URL = URL(
+            string: "https://disktoneweb.dengcheez.workers.dev/api/v1/devices/register"
+        )!,
+        deviceIdentifierProvider: @escaping DeviceIdentifierProvider = {
+            try DeviceIdentifierService().deviceIdentifier()
+        },
+        apnsEnvironmentProvider: @escaping () -> String = {
+#if DEBUG
+            return "development"
+#else
+            return "production"
+#endif
+        },
+        metadataProvider: @escaping MetadataProvider = {
+            DeviceRegistrationMetadata(
+                appVersion: Bundle.main.object(
+                    forInfoDictionaryKey: "CFBundleShortVersionString"
+                ) as? String,
+                systemVersion: UIDevice.current.systemVersion,
+                deviceModel: UIDevice.current.model
+            )
+        },
+        requestExecutor: @escaping RequestExecutor = { request in
+            try await URLSession.shared.data(for: request)
+        }
+    ) {
+        self.endpoint = endpoint
+        self.deviceIdentifierProvider = deviceIdentifierProvider
+        self.apnsEnvironmentProvider = apnsEnvironmentProvider
+        self.metadataProvider = metadataProvider
+        self.requestExecutor = requestExecutor
+    }
+
+    func register(apnsToken: String?) async throws {
+        let metadata = metadataProvider()
+        let payload = Payload(
+            deviceId: try deviceIdentifierProvider(),
+            apnsToken: apnsToken,
+            // Worker 只允许 Token 与环境成对出现。
+            apnsEnvironment: apnsToken == nil ? nil : apnsEnvironmentProvider(),
+            appVersion: metadata.appVersion,
+            systemVersion: metadata.systemVersion,
+            deviceModel: metadata.deviceModel
+        )
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(payload)
+
+        let (data, response) = try await requestExecutor(request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw DeviceRegistrationError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw DeviceRegistrationError.httpStatus(httpResponse.statusCode)
+        }
+        guard
+            let workerResponse = try? JSONDecoder().decode(WorkerResponse.self, from: data),
+            workerResponse.success
+        else {
+            throw DeviceRegistrationError.invalidResponse
+        }
+    }
+}
