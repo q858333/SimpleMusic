@@ -69,3 +69,57 @@ export function parseDeviceRegistration(value: unknown): DeviceRegistrationPaylo
     deviceModel: optionalString(body.deviceModel, "deviceModel", 128),
   };
 }
+
+export async function saveDeviceRegistration(
+  db: D1Database,
+  payload: DeviceRegistrationPayload
+): Promise<void> {
+  await db
+    .prepare(`
+      INSERT INTO devices (
+        device_id,
+        apns_token,
+        apns_environment,
+        platform,
+        app_version,
+        system_version,
+        device_model,
+        first_seen_at,
+        last_seen_at,
+        token_updated_at
+      )
+      VALUES (
+        ?, ?, ?, 'ios', ?, ?, ?,
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP,
+        CASE WHEN ? IS NULL THEN NULL ELSE CURRENT_TIMESTAMP END
+      )
+      ON CONFLICT(device_id) DO UPDATE SET
+        apns_token = CASE
+          WHEN excluded.apns_token IS NULL THEN devices.apns_token
+          ELSE excluded.apns_token
+        END,
+        apns_environment = CASE
+          WHEN excluded.apns_token IS NULL THEN devices.apns_environment
+          ELSE excluded.apns_environment
+        END,
+        app_version = excluded.app_version,
+        system_version = excluded.system_version,
+        device_model = excluded.device_model,
+        last_seen_at = CURRENT_TIMESTAMP,
+        token_updated_at = CASE
+          WHEN excluded.apns_token IS NULL THEN devices.token_updated_at
+          ELSE CURRENT_TIMESTAMP
+        END
+    `)
+    .bind(
+      payload.deviceId,
+      payload.apnsToken,
+      payload.apnsEnvironment,
+      payload.appVersion,
+      payload.systemVersion,
+      payload.deviceModel,
+      payload.apnsToken
+    )
+    .run();
+}
