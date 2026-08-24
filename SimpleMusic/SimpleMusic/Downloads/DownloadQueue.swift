@@ -612,6 +612,9 @@ final class DownloadQueue {
     }
 
     private static func failureReason(for error: Error) -> DownloadJob.FailureReason {
+        if error as? DownloadPolicyError == .cellularAccessDisabled {
+            return .cellularDisabled
+        }
         guard let downloadError = error as? DownloadError else { return .generic }
         switch downloadError {
         case .unsupportedURL:

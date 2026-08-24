@@ -1,4 +1,5 @@
 import CoreData
+import Combine
 import Foundation
 import XCTest
 @testable import SimpleMusic
@@ -467,6 +468,36 @@ final class DownloadManagerConcurrencyTests: XCTestCase {
         }
 
         XCTAssertEqual(receivedAllowsCellularAccess, [false, true])
+    }
+
+    func testCellularDisabledRejectsBeforeCreatingNetworkClient() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: #function))
+        defer { defaults.removePersistentDomain(forName: #function) }
+        let settings = SettingsStore(defaults: defaults)
+        settings.allowsCellularDownloads = false
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DownloadManagerCellular-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var clientCreationCount = 0
+        let manager = DownloadManager(
+            fileStore: try DownloadFileStore(rootURL: root),
+            musicStore: try LocalMusicStore.inMemory(),
+            settingsStore: settings,
+            networkStatusProvider: FixedDownloadNetworkStatusProvider(status: .cellular),
+            clientFactory: { _ in
+                clientCreationCount += 1
+                return ImmediateFailureDownloadClient()
+            }
+        )
+
+        do {
+            _ = try await manager.download(from: audioURL(index: 0), progress: { _ in })
+            XCTFail("禁止蜂窝下载时不应创建网络请求")
+        } catch DownloadPolicyError.cellularAccessDisabled {
+            // 预期在真实网络客户端创建前由下载策略拒绝。
+        }
+
+        XCTAssertEqual(clientCreationCount, 0)
     }
 
     func testInvalidDownloadedMediaRemovesTemporaryAndReservedFiles() async throws {
@@ -1214,6 +1245,20 @@ private actor ControllableAudioDownloadClient: AudioDownloadClient {
         continuations.removeValue(forKey: url)?.resume(throwing: CancellationError())
     }
 
+}
+
+@MainActor
+private final class FixedDownloadNetworkStatusProvider: DownloadNetworkStatusProviding {
+    private let subject: CurrentValueSubject<DownloadNetworkStatus, Never>
+
+    var currentStatus: DownloadNetworkStatus { subject.value }
+    var statusPublisher: AnyPublisher<DownloadNetworkStatus, Never> {
+        subject.eraseToAnyPublisher()
+    }
+
+    init(status: DownloadNetworkStatus) {
+        subject = CurrentValueSubject(status)
+    }
 }
 
 private struct ImmediateFailureDownloadClient: AudioDownloadClient {

@@ -7,6 +7,8 @@ final class AppEnvironment {
     static let shared = AppEnvironment()
 
     let settingsStore = SettingsStore(defaults: .standard)
+    let deviceIdentifierService = DeviceIdentifierService()
+    let downloadNetworkMonitor = DownloadNetworkMonitor()
     let musicLibraryService = MusicLibraryService()
     private var libraryChangeObserver: MusicLibraryChangeObserver?
     private var localMusicCatalog: LocalMusicCatalog?
@@ -30,7 +32,8 @@ final class AppEnvironment {
         return DownloadManager(
             fileStore: downloadFileStore,
             musicStore: localMusicStore,
-            settingsStore: settingsStore
+            settingsStore: settingsStore,
+            networkStatusProvider: downloadNetworkMonitor
         )
     }()
 
@@ -131,6 +134,16 @@ final class AppEnvironment {
             // 后台音频不是应用启动前提；保留前台播放器并记录系统会话失败以便诊断。
             NSLog("后台音频服务启动失败：%@", String(describing: error))
         }
+    }
+
+    /// 返回安装首次运行时由 IDFV 生成并缓存到钥匙串的稳定设备号。
+    func deviceIdentifier() throws -> String {
+        try deviceIdentifierService.deviceIdentifier()
+    }
+
+    /// 返回本次启动由 APNs 回调的最新 Token；回调前为 nil。
+    var apnsDeviceToken: String? {
+        APNsTokenStore.shared.currentToken
     }
 
     private static func makeInMemoryContainer() -> NSPersistentContainer {

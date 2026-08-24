@@ -7,6 +7,8 @@ import UIKit
 final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, UIAdaptivePresentationControllerDelegate {
     let downloadQueue: DownloadQueue
 
+    private let settingsStore: SettingsStore
+    private let networkStatusProvider: (any DownloadNetworkStatusProviding)?
     private var jobs = [DownloadJob]()
     private var cancellables = Set<AnyCancellable>()
     private let urlField = UITextField()
@@ -18,11 +20,22 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
         artworkIdentifier: "download.empty.artwork",
         messageIdentifier: "download.empty",
         message: L10n.text("download.queue.empty"),
-        messageMaximumWidth: 320
+        messageMaximumWidth: 320,
+        artworkSize: 36,
+        spacing: 8,
+        contentInsets: UIEdgeInsets(top: 12, left: 16, bottom: 12, right: 16),
+        messageNumberOfLines: 1
     )
+    private let networkStatusLabel = UILabel()
 
-    init(downloadQueue: DownloadQueue) {
+    init(
+        downloadQueue: DownloadQueue,
+        settingsStore: SettingsStore = SettingsStore(defaults: .standard),
+        networkStatusProvider: (any DownloadNetworkStatusProviding)? = nil
+    ) {
         self.downloadQueue = downloadQueue
+        self.settingsStore = settingsStore
+        self.networkStatusProvider = networkStatusProvider
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .pageSheet
     }
@@ -38,6 +51,7 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
         view.backgroundColor = Theme.background
         buildInterface()
         bindQueue()
+        bindNetworkStatus()
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -89,6 +103,12 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
         inputErrorLabel.numberOfLines = 0
         inputErrorLabel.isHidden = true
 
+        networkStatusLabel.accessibilityIdentifier = "download.network.status"
+        networkStatusLabel.font = .preferredFont(forTextStyle: .footnote)
+        networkStatusLabel.adjustsFontForContentSizeCategory = true
+        networkStatusLabel.numberOfLines = 0
+        networkStatusLabel.isHidden = true
+
         let addButton = makeButton(
             title: L10n.text("download.queue.add"),
             identifier: "download.submit",
@@ -96,7 +116,9 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
         )
         addButton.addAction(UIAction { [weak self] _ in self?.enqueueInput() }, for: .touchUpInside)
 
-        let inputStack = UIStackView(arrangedSubviews: [urlField, helpLabel, inputErrorLabel, addButton])
+        let inputStack = UIStackView(
+            arrangedSubviews: [urlField, helpLabel, networkStatusLabel, inputErrorLabel, addButton]
+        )
         inputStack.axis = .vertical
         inputStack.spacing = 10
 
@@ -105,7 +127,6 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
             make.center.equalToSuperview()
             make.leading.greaterThanOrEqualToSuperview().offset(32)
             make.trailing.lessThanOrEqualToSuperview().offset(-32)
-            make.width.equalTo(360).priority(.high)
         }
 
         tableView.accessibilityIdentifier = "download.jobs"
@@ -141,6 +162,33 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
             .store(in: &cancellables)
     }
 
+    private func bindNetworkStatus() {
+        networkStatusProvider?.statusPublisher
+            .sink { [weak self] status in
+                self?.renderNetworkStatus(status)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func renderNetworkStatus(_ status: DownloadNetworkStatus) {
+        guard status == .cellular else {
+            networkStatusLabel.isHidden = true
+            return
+        }
+
+        if !settingsStore.allowsCellularDownloads {
+            networkStatusLabel.text = L10n.text("download.cellular.blocked")
+            networkStatusLabel.textColor = .systemRed
+            networkStatusLabel.isHidden = false
+        } else if settingsStore.consumeCellularUsageNotice() {
+            networkStatusLabel.text = L10n.text("download.cellular.current")
+            networkStatusLabel.textColor = .systemOrange
+            networkStatusLabel.isHidden = false
+        } else {
+            networkStatusLabel.isHidden = true
+        }
+    }
+
     private func enqueueInput() {
         let input = urlField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         urlField.resignFirstResponder()
@@ -150,6 +198,14 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
               let host = url.host,
               !host.isEmpty else {
             showInputError(L10n.text("download.error.invalid_url"))
+            return
+        }
+
+        if !settingsStore.allowsCellularDownloads,
+           networkStatusProvider?.currentStatus == .cellular {
+            renderNetworkStatus(.cellular)
+            inputErrorLabel.text = nil
+            inputErrorLabel.isHidden = true
             return
         }
 

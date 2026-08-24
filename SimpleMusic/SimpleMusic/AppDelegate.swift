@@ -19,12 +19,31 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         try context.save()
     }
     var appNotificationCenter = NotificationCenter.default
+    var apnsTokenStore = APNsTokenStore.shared
+    var remoteNotificationRegistrar: (UIApplication) -> Void = {
+        $0.registerForRemoteNotifications()
+    }
 
     private lazy var persistentStoreResolution = persistentStoreFactory.resolve()
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // 注册本身不会弹出通知权限框；系统会通过下方 delegate 回调返回最新 Token。
+        remoteNotificationRegistrar(application)
         return true
+    }
+
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        apnsTokenStore.update(deviceToken: deviceToken)
+    }
+
+    func application(
+        _ application: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: Error
+    ) {
+        NSLog("APNs 注册失败：%@", String(describing: error))
     }
 
     // MARK: UISceneSession Lifecycle

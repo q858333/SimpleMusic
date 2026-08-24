@@ -101,6 +101,8 @@
 "download.error.unsupported_url" = "仅支持直接指向 MP3、M4A 或 WAV 文件的链接。";
 "download.error.invalid_payload" = "链接未返回可下载的音频文件。";
 "download.error.generic" = "下载未完成，请检查链接和网络后重试。";
+"download.cellular.current" = "当前正在使用蜂窝网络。";
+"download.cellular.blocked" = "当前正在使用蜂窝网络，已禁止蜂窝网络下载。";
 "download.queue.add" = "添加下载";
 "download.queue.empty" = "暂无下载任务。";
 "download.queue.waiting" = "等待中";

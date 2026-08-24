@@ -193,6 +193,58 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         XCTAssertEqual(card.layer.cornerRadius, 18)
         XCTAssertNotNil(artwork.image)
         XCTAssertEqual(message.text, L10n.text("download.queue.empty"))
+        XCTAssertEqual(message.numberOfLines, 1)
+        XCTAssertLessThan(card.bounds.width, 260)
+        XCTAssertLessThan(card.bounds.height, 100)
+    }
+
+    func testCellularDisabledShowsBlockingMessageAndDoesNotEnqueue() throws {
+        let defaults = UserDefaults(suiteName: #function)!
+        defaults.removePersistentDomain(forName: #function)
+        let settings = SettingsStore(defaults: defaults)
+        settings.allowsCellularDownloads = false
+        let network = FlowDownloadNetworkStatusProvider(status: .cellular)
+        let harness = makeQueueSheetHarness(
+            settingsStore: settings,
+            networkStatusProvider: network
+        )
+        harness.controller.loadViewIfNeeded()
+
+        XCTAssertEqual(
+            label("download.network.status", in: harness.controller)?.text,
+            L10n.text("download.cellular.blocked")
+        )
+        try submit("https://example.com/blocked.m4a", in: harness.controller)
+
+        XCTAssertTrue(harness.queue.jobs.isEmpty)
+        XCTAssertTrue(harness.operation.startedURLs.isEmpty)
+        XCTAssertTrue(try XCTUnwrap(label("download.input.error", in: harness.controller)).isHidden)
+    }
+
+    func testAllowedCellularNoticeAppearsOnlyOncePerDay() throws {
+        let defaults = UserDefaults(suiteName: #function)!
+        defaults.removePersistentDomain(forName: #function)
+        let settings = SettingsStore(defaults: defaults)
+        settings.allowsCellularDownloads = true
+        let network = FlowDownloadNetworkStatusProvider(status: .cellular)
+
+        let first = makeQueueSheetHarness(
+            settingsStore: settings,
+            networkStatusProvider: network
+        ).controller
+        first.loadViewIfNeeded()
+        XCTAssertFalse(try XCTUnwrap(label("download.network.status", in: first)).isHidden)
+        XCTAssertEqual(
+            label("download.network.status", in: first)?.text,
+            L10n.text("download.cellular.current")
+        )
+
+        let second = makeQueueSheetHarness(
+            settingsStore: settings,
+            networkStatusProvider: network
+        ).controller
+        second.loadViewIfNeeded()
+        XCTAssertTrue(try XCTUnwrap(label("download.network.status", in: second)).isHidden)
     }
 
     func testSettingsSwitchesReadAndWriteSettingsStore() throws {
@@ -488,16 +540,29 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         XCTAssertEqual(settingsFactoryCount, 1)
     }
 
-    private func makeQueueSheetHarness(maximumActiveCount: Int = 3) -> QueueSheetHarness {
+    private func makeQueueSheetHarness(
+        maximumActiveCount: Int = 3,
+        settingsStore: SettingsStore? = nil,
+        networkStatusProvider: (any DownloadNetworkStatusProviding)? = nil
+    ) -> QueueSheetHarness {
         let operation = ControlledQueueDownloadOperation()
         var playedTracks = [SimpleMusic.MusicTrack]()
+        let resolvedSettings = settingsStore ?? SettingsStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!
+        )
+        resolvedSettings.autoPlayAfterDownload = false
         let queue = makeQueue(
             operation: operation,
             maximumActiveCount: maximumActiveCount,
+            settingsStore: resolvedSettings,
             onPlay: { playedTracks.append($0) }
         )
         return QueueSheetHarness(
-            controller: DownloadSheetViewController(downloadQueue: queue),
+            controller: DownloadSheetViewController(
+                downloadQueue: queue,
+                settingsStore: resolvedSettings,
+                networkStatusProvider: networkStatusProvider
+            ),
             queue: queue,
             operation: operation,
             playedTracks: { playedTracks }
@@ -507,10 +572,12 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
     private func makeQueue(
         operation: ControlledQueueDownloadOperation,
         maximumActiveCount: Int = 3,
+        settingsStore: SettingsStore? = nil,
         onPlay: @escaping @MainActor (SimpleMusic.MusicTrack) -> Void = { _ in }
     ) -> DownloadQueue {
-        let defaults = UserDefaults(suiteName: UUID().uuidString)!
-        let settings = SettingsStore(defaults: defaults)
+        let settings = settingsStore ?? SettingsStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!
+        )
         settings.autoPlayAfterDownload = false
         let queue = DownloadQueue(
             store: DownloadQueueStore(fileURL: nil),
@@ -613,6 +680,20 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
     }
 
     private func track(id: String) -> SimpleMusic.MusicTrack { Self.track(id: id) }
+}
+
+@MainActor
+private final class FlowDownloadNetworkStatusProvider: DownloadNetworkStatusProviding {
+    private let subject: CurrentValueSubject<DownloadNetworkStatus, Never>
+
+    var currentStatus: DownloadNetworkStatus { subject.value }
+    var statusPublisher: AnyPublisher<DownloadNetworkStatus, Never> {
+        subject.eraseToAnyPublisher()
+    }
+
+    init(status: DownloadNetworkStatus) {
+        subject = CurrentValueSubject(status)
+    }
 }
 
 @MainActor

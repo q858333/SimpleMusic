@@ -50,6 +50,25 @@ final class DownloadQueueTests: XCTestCase {
         waitUntil { queue.jobs.filter { $0.state == .downloading }.isEmpty }
     }
 
+    func testCellularPolicyFailureUsesDedicatedFailureReason() throws {
+        let settings = makeSettings(autoPlay: false)
+        let queue = DownloadQueue(
+            store: RecordingQueueStore(),
+            operation: { _, _, _ in
+                throw DownloadPolicyError.cellularAccessDisabled
+            },
+            settingsStore: settings,
+            recovery: { _ in .cleaned },
+            onReload: {},
+            onPlay: { _ in }
+        )
+
+        let id = try queue.enqueue(URL(string: "https://example.com/cellular.m4a")!)
+        waitUntil { self.job(id, in: queue).state == .failure }
+
+        XCTAssertEqual(job(id, in: queue).failureReason, .cellularDisabled)
+    }
+
     func testCancelAndRetryIgnoreOldAttemptCallbacks() throws {
         let operation = ControlledQueueDownloadOperation()
         let queue = makeQueue(operation: operation)

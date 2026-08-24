@@ -1,5 +1,60 @@
 import AVFoundation
+import Combine
 import Foundation
+import Network
+
+nonisolated enum DownloadNetworkStatus: Equatable, Sendable {
+    case unknown
+    case unavailable
+    case wifi
+    case cellular
+    case other
+}
+
+@MainActor
+protocol DownloadNetworkStatusProviding: AnyObject {
+    var currentStatus: DownloadNetworkStatus { get }
+    var statusPublisher: AnyPublisher<DownloadNetworkStatus, Never> { get }
+}
+
+/// 统一缓存系统当前实际使用的网络接口，下载入口和下载执行阶段共享同一份状态。
+@MainActor
+final class DownloadNetworkMonitor: DownloadNetworkStatusProviding {
+    private let monitor: NWPathMonitor
+    private let monitorQueue = DispatchQueue(label: "SimpleMusic.DownloadNetworkMonitor")
+    private let subject = CurrentValueSubject<DownloadNetworkStatus, Never>(.unknown)
+
+    var currentStatus: DownloadNetworkStatus { subject.value }
+    var statusPublisher: AnyPublisher<DownloadNetworkStatus, Never> {
+        subject.removeDuplicates().eraseToAnyPublisher()
+    }
+
+    init(monitor: NWPathMonitor = NWPathMonitor()) {
+        self.monitor = monitor
+        monitor.pathUpdateHandler = { [weak self] path in
+            let status = Self.status(for: path)
+            Task { @MainActor [weak self] in
+                self?.subject.send(status)
+            }
+        }
+        monitor.start(queue: monitorQueue)
+    }
+
+    deinit {
+        monitor.cancel()
+    }
+
+    private nonisolated static func status(for path: NWPath) -> DownloadNetworkStatus {
+        guard path.status == .satisfied else { return .unavailable }
+        if path.usesInterfaceType(.cellular) { return .cellular }
+        if path.usesInterfaceType(.wifi) || path.usesInterfaceType(.wiredEthernet) { return .wifi }
+        return .other
+    }
+}
+
+nonisolated enum DownloadPolicyError: Error, Equatable, Sendable {
+    case cellularAccessDisabled
+}
 
 /// URLResponse 是 Foundation 只读响应对象；在并发传输边界按不可变值携带。
 struct AudioDownloadPayload: @unchecked Sendable {
@@ -172,6 +227,7 @@ final class DownloadManager {
     private let fileStore: DownloadFileStore
     private let musicStore: LocalMusicStore
     private let settingsStore: SettingsStore
+    private let networkStatusProvider: (any DownloadNetworkStatusProviding)?
     private let clientFactory: ClientFactory
     private let metadataReader: MetadataReader
     private let removeFile: (URL) throws -> Void
@@ -185,6 +241,7 @@ final class DownloadManager {
         fileStore: DownloadFileStore,
         musicStore: LocalMusicStore,
         settingsStore: SettingsStore,
+        networkStatusProvider: (any DownloadNetworkStatusProviding)? = nil,
         fileManager: FileManager = .default,
         clientFactory: @escaping ClientFactory = { configuration in
             URLSessionAudioDownloadClient(configuration: configuration)
@@ -199,6 +256,7 @@ final class DownloadManager {
         self.fileStore = fileStore
         self.musicStore = musicStore
         self.settingsStore = settingsStore
+        self.networkStatusProvider = networkStatusProvider
         self.fileManager = fileManager
         self.clientFactory = clientFactory
         self.metadataReader = metadataReader ?? Self.readMetadata
@@ -231,6 +289,10 @@ final class DownloadManager {
         progress: @escaping @MainActor @Sendable (Double) -> Void,
         onReservation: @escaping ReservationObserver
     ) async throws -> MusicTrack {
+        if !settingsStore.allowsCellularDownloads,
+           networkStatusProvider?.currentStatus == .cellular {
+            throw DownloadPolicyError.cellularAccessDisabled
+        }
         let configuration = URLSessionConfiguration.default
         configuration.allowsCellularAccess = settingsStore.allowsCellularDownloads
         let payload = try await clientFactory(configuration).download(from: url, progress: progress)

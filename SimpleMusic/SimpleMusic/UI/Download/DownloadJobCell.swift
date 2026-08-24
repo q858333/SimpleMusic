@@ -194,6 +194,8 @@ final class DownloadJobCell: UITableViewCell {
             return L10n.text("download.error.unsupported_url")
         case .invalidPayload:
             return L10n.text("download.error.invalid_payload")
+        case .cellularDisabled:
+            return L10n.text("download.cellular.blocked")
         case .recovery:
             return L10n.text("download.queue.error.recovery")
         case .generic, nil:

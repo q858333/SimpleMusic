@@ -101,6 +101,8 @@
 "download.error.unsupported_url" = "僅支援直接指向 MP3、M4A 或 WAV 檔案的連結。";
 "download.error.invalid_payload" = "連結未傳回可下載的音訊檔案。";
 "download.error.generic" = "下載尚未完成，請檢查連結與網路後再試一次。";
+"download.cellular.current" = "目前正在使用行動網路。";
+"download.cellular.blocked" = "目前正在使用行動網路，已禁止使用行動網路下載。";
 "download.queue.add" = "加入下載";
 "download.queue.empty" = "暫無下載任務。";
 "download.queue.waiting" = "等待中";

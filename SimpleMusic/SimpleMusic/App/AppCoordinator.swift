@@ -84,7 +84,11 @@ struct AppRootDependencies {
                 )
             }
             // 手机弹层与 iPad 路由都复用环境中的应用级队列。
-            return DownloadSheetViewController(downloadQueue: downloadQueue)
+            return DownloadSheetViewController(
+                downloadQueue: downloadQueue,
+                settingsStore: environment.settingsStore,
+                networkStatusProvider: environment.downloadNetworkMonitor
+            )
         }
         makeSettingsViewController = {
             SettingsViewController(

@@ -13,6 +13,7 @@ struct DownloadJob: Codable, Equatable, Identifiable {
     enum FailureReason: String, Codable {
         case unsupportedURL
         case invalidPayload
+        case cellularDisabled
         case generic
         case recovery
     }

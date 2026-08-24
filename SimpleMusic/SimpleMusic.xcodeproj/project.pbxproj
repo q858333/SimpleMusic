@@ -20,6 +20,7 @@
 		C60000000000000000000003 /* PlaybackBackendLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60000000000000000000004 /* PlaybackBackendLifecycleTests.swift */; };
 		C70000000000000000000001 /* NowPlayingServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C70000000000000000000002 /* NowPlayingServiceTests.swift */; };
 		D21000000000000000000001 /* DownloadQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D21000000000000000000002 /* DownloadQueueTests.swift */; };
+		D30000000000000000000001 /* DeviceIdentifierServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000002 /* DeviceIdentifierServiceTests.swift */; };
 		D80000000000000000000001 /* AppCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D80000000000000000000002 /* AppCoordinatorTests.swift */; };
 		E90000000000000000000001 /* LibraryViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90000000000000000000002 /* LibraryViewModelTests.swift */; };
 		F10000000000000000000001 /* PlayerViewControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* PlayerViewControllerTests.swift */; };
@@ -54,6 +55,7 @@
 		C60000000000000000000004 /* PlaybackBackendLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackBackendLifecycleTests.swift; sourceTree = "<group>"; };
 		C70000000000000000000002 /* NowPlayingServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingServiceTests.swift; sourceTree = "<group>"; };
 		D21000000000000000000002 /* DownloadQueueTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadQueueTests.swift; sourceTree = "<group>"; };
+		D30000000000000000000002 /* DeviceIdentifierServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentifierServiceTests.swift; sourceTree = "<group>"; };
 		D80000000000000000000002 /* AppCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinatorTests.swift; sourceTree = "<group>"; };
 		E90000000000000000000002 /* LibraryViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryViewModelTests.swift; sourceTree = "<group>"; };
 		F10000000000000000000002 /* PlayerViewControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerViewControllerTests.swift; sourceTree = "<group>"; };
@@ -148,6 +150,7 @@
 				F10000000000000000000002 /* PlayerViewControllerTests.swift */,
 				F20000000000000000000002 /* DownloadAndSettingsFlowTests.swift */,
 				D21000000000000000000002 /* DownloadQueueTests.swift */,
+				D30000000000000000000002 /* DeviceIdentifierServiceTests.swift */,
 			);
 			path = SimpleMusicTests;
 			sourceTree = "<group>";
@@ -215,6 +218,11 @@
 				TargetAttributes = {
 					23BA727D302F095900023EB5 = {
 						CreatedOnToolsVersion = 26.3;
+						SystemCapabilities = {
+							com.apple.Push = {
+								enabled = 1;
+							};
+						};
 					};
 					A1B2C3D4E5F60718293A4B5E = {
 						CreatedOnToolsVersion = 26.3;
@@ -335,6 +343,7 @@
 				F10000000000000000000001 /* PlayerViewControllerTests.swift in Sources */,
 				F20000000000000000000001 /* DownloadAndSettingsFlowTests.swift in Sources */,
 				D21000000000000000000001 /* DownloadQueueTests.swift in Sources */,
+				D30000000000000000000001 /* DeviceIdentifierServiceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -355,6 +364,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = SimpleMusic/SimpleMusic.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = LVZF6F7GU2;
@@ -392,6 +402,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = SimpleMusic/SimpleMusic.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = LVZF6F7GU2;

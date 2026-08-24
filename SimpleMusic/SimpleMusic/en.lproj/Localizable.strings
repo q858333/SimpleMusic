@@ -101,6 +101,8 @@
 "download.error.unsupported_url" = "Only direct MP3, M4A, or WAV file links are supported.";
 "download.error.invalid_payload" = "The link did not return a downloadable audio file.";
 "download.error.generic" = "The download could not be completed. Check the link and your network, then try again.";
+"download.cellular.current" = "You're currently using cellular data.";
+"download.cellular.blocked" = "You're currently using cellular data. Cellular downloads are disabled.";
 "download.queue.add" = "Add Download";
 "download.queue.empty" = "No downloads yet.";
 "download.queue.waiting" = "Waiting";

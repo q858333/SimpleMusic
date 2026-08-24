@@ -12,7 +12,11 @@ final class BrandedEmptyStateView: UIView {
         artworkIdentifier: String,
         messageIdentifier: String,
         message: String,
-        messageMaximumWidth: CGFloat = 212
+        messageMaximumWidth: CGFloat = 212,
+        artworkSize: CGFloat = 52,
+        spacing: CGFloat = 12,
+        contentInsets: UIEdgeInsets = UIEdgeInsets(top: 24, left: 24, bottom: 24, right: 24),
+        messageNumberOfLines: Int = 0
     ) {
         super.init(frame: .zero)
         accessibilityIdentifier = identifier
@@ -29,16 +33,16 @@ final class BrandedEmptyStateView: UIView {
         messageLabel.adjustsFontForContentSizeCategory = true
         messageLabel.textColor = .secondaryLabel
         messageLabel.textAlignment = .center
-        messageLabel.numberOfLines = 0
+        messageLabel.numberOfLines = messageNumberOfLines
 
         let stack = UIStackView(arrangedSubviews: [artworkView, messageLabel])
         stack.axis = .vertical
         stack.alignment = .center
-        stack.spacing = 12
+        stack.spacing = spacing
 
         addSubview(stack)
         artworkView.snp.makeConstraints { make in
-            make.width.height.equalTo(52)
+            make.width.height.equalTo(artworkSize)
         }
         messageLabel.snp.makeConstraints { make in
             make.width.lessThanOrEqualTo(messageMaximumWidth)
@@ -46,7 +50,7 @@ final class BrandedEmptyStateView: UIView {
             make.trailing.lessThanOrEqualTo(stack)
         }
         stack.snp.makeConstraints { make in
-            make.edges.equalToSuperview().inset(24)
+            make.edges.equalToSuperview().inset(contentInsets)
         }
 
         updateVisuals()

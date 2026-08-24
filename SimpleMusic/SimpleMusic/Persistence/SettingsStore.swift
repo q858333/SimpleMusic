@@ -5,6 +5,7 @@ struct SettingsStore {
     private enum Key {
         static let cellular = "allowsCellularDownloads"
         static let autoPlay = "autoPlayAfterDownload"
+        static let cellularNoticeDate = "cellularUsageNoticeDate"
         static let audioEffectPreset = "audioEffectPreset"
         static let audioEffectWetDryMix = "audioEffectWetDryMix"
     }
@@ -19,6 +20,19 @@ struct SettingsStore {
     var autoPlayAfterDownload: Bool {
         get { defaults.bool(forKey: Key.autoPlay) }
         nonmutating set { defaults.set(newValue, forKey: Key.autoPlay) }
+    }
+
+    /// 同一天只消费一次“正在使用蜂窝网络”的信息提示。
+    func consumeCellularUsageNotice(
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Bool {
+        if let lastDate = defaults.object(forKey: Key.cellularNoticeDate) as? Date,
+           calendar.isDate(lastDate, inSameDayAs: now) {
+            return false
+        }
+        defaults.set(now, forKey: Key.cellularNoticeDate)
+        return true
     }
 
     var audioEffectSettings: AudioEffectSettings {
