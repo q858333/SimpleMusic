@@ -362,6 +362,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 55DF45A54AE45924626D378B /* Pods-SimpleMusic.debug.xcconfig */;
 			buildSettings = {
+				APNS_ENVIRONMENT = development;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = SimpleMusic/SimpleMusic.entitlements;
@@ -400,6 +401,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 82FEF5096D84D9077E96AF8F /* Pods-SimpleMusic.release.xcconfig */;
 			buildSettings = {
+				APNS_ENVIRONMENT = production;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = SimpleMusic/SimpleMusic.entitlements;
