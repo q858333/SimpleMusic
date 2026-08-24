@@ -11,6 +11,10 @@ CREATE TABLE devices (
     token_updated_at TEXT,
     CHECK (
         apns_environment IS NULL
-        OR apns_environment IN ('development', 'production')
+        OR (
+            apns_token IS NOT NULL
+            AND length(apns_token) > 0
+            AND apns_environment IN ('development', 'production')
+        )
     )
 );

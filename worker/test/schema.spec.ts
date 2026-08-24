@@ -34,4 +34,19 @@ describe("devices migration", () => {
         .run()
     ).rejects.toThrow();
   });
+
+  it.each([
+    ["a missing token", "66666666-2222-3333-4444-555555555555", null],
+    ["an empty token", "77777777-2222-3333-4444-555555555555", ""],
+  ])("rejects development environment with %s", async (_, deviceId, apnsToken) => {
+    await expect(
+      env.DB
+        .prepare(`
+          INSERT INTO devices (device_id, apns_token, apns_environment)
+          VALUES (?, ?, ?)
+        `)
+        .bind(deviceId, apnsToken, "development")
+        .run()
+    ).rejects.toThrow();
+  });
 });
