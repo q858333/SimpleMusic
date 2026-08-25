@@ -1,5 +1,13 @@
 "app.name" = "DiskTone";
 "launch.subtitle" = "Local music, ready anytime";
+"launch.agreement.title" = "User Agreement and Privacy";
+"launch.agreement.message" = "Before using DiskTone, please read and agree to the User Conduct Guidelines and Privacy Policy.";
+"launch.agreement.decline" = "Disagree";
+"launch.agreement.accept" = "Agree";
+"launch.agreement.decline_title" = "Not using DiskTone?";
+"launch.agreement.decline_message" = "You need to agree to the User Conduct Guidelines and Privacy Policy before you can continue.";
+"launch.agreement.cancel" = "Cancel";
+"launch.agreement.confirm" = "Confirm";
 "common.cancel" = "Cancel";
 "common.delete" = "Delete";
 "common.play" = "Play";

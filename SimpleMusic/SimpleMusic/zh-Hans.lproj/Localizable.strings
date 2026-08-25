@@ -1,5 +1,13 @@
 "app.name" = "听见";
 "launch.subtitle" = "让本地音乐，随时开播";
+"launch.agreement.title" = "用户协议及隐私政策";
+"launch.agreement.message" = "欢迎使用听见。使用前，请阅读并同意《用户行为准则》和《隐私原则》。";
+"launch.agreement.decline" = "不同意";
+"launch.agreement.accept" = "同意";
+"launch.agreement.decline_title" = "确认暂不使用？";
+"launch.agreement.decline_message" = "你需要同意《用户行为准则》和《隐私原则》后才能继续使用。";
+"launch.agreement.cancel" = "取消";
+"launch.agreement.confirm" = "确认";
 "common.cancel" = "取消";
 "common.delete" = "删除";
 "common.play" = "播放";

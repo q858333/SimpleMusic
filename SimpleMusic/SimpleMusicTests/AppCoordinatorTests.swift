@@ -20,8 +20,7 @@ final class AppCoordinatorTests: XCTestCase {
             authorizationStatus: { .authorized },
             requestAuthorization: { .authorized },
             rootKind: .phone,
-            makeMainViewController: { _ in UIViewController() },
-            scheduleLaunchTransition: { _ in }
+            makeMainViewController: { _ in UIViewController() }
         )
 
         coordinator.start()
@@ -49,11 +48,16 @@ final class AppCoordinatorTests: XCTestCase {
     }
 
     @MainActor
-    func testLaunchViewStartsDeviceRegistrationAndAPNsAuthorizationOnlyOnce() async {
+    func testLaunchAgreementRequestsAPNsOnOpenAndDefersDeviceRegistrationUntilAccepting() async throws {
+        let suiteName = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
         let deviceRegistration = expectation(description: "device registration starts")
         let apnsAuthorization = expectation(description: "APNs authorization starts")
         var deviceRegistrationCount = 0
         var apnsAuthorizationCount = 0
+        var routeCount = 0
+        var scheduledRoute: (@MainActor () -> Void)?
         let controller = LaunchViewController(
             registerDevice: {
                 deviceRegistrationCount += 1
@@ -62,22 +66,100 @@ final class AppCoordinatorTests: XCTestCase {
             requestAPNsAuthorization: {
                 apnsAuthorizationCount += 1
                 apnsAuthorization.fulfill()
-            }
+            },
+            agreementDefaults: defaults,
+            onAgreementAccepted: { routeCount += 1 },
+            scheduleRoute: { scheduledRoute = $0 }
         )
         controller.loadViewIfNeeded()
-
         controller.beginAppearanceTransition(true, animated: false)
         controller.endAppearanceTransition()
-        await fulfillment(of: [deviceRegistration, apnsAuthorization], timeout: 1)
 
-        controller.beginAppearanceTransition(false, animated: false)
-        controller.endAppearanceTransition()
-        controller.beginAppearanceTransition(true, animated: false)
-        controller.endAppearanceTransition()
-        await Task.yield()
+        XCTAssertNotNil(findView(identifier: "launch.agreement", in: controller.view))
+        XCTAssertEqual(deviceRegistrationCount, 0)
+        await fulfillment(of: [apnsAuthorization], timeout: 1)
+        XCTAssertEqual(apnsAuthorizationCount, 1)
+        XCTAssertEqual(routeCount, 0)
 
+        let acceptButton = try XCTUnwrap(
+            findView(identifier: "launch.agreement.accept", in: controller.view) as? UIButton
+        )
+        acceptButton.sendActions(for: .touchUpInside)
+        await fulfillment(of: [deviceRegistration], timeout: 1)
+
+        XCTAssertTrue(defaults.bool(forKey: LaunchViewController.agreementAcceptedDefaultsKey))
         XCTAssertEqual(deviceRegistrationCount, 1)
         XCTAssertEqual(apnsAuthorizationCount, 1)
+        XCTAssertEqual(routeCount, 0)
+        try XCTUnwrap(scheduledRoute)()
+        XCTAssertEqual(routeCount, 1)
+    }
+
+    @MainActor
+    func testAcceptedColdStartRequestsAPNsAndRegistersDeviceBeforeDelayedRoute() async throws {
+        let suiteName = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.set(true, forKey: LaunchViewController.agreementAcceptedDefaultsKey)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let deviceRegistration = expectation(description: "device registration starts")
+        let apnsAuthorization = expectation(description: "APNs authorization starts")
+        var routeCount = 0
+        var scheduledRoute: (@MainActor () -> Void)?
+        let controller = LaunchViewController(
+            registerDevice: { deviceRegistration.fulfill() },
+            requestAPNsAuthorization: { apnsAuthorization.fulfill() },
+            agreementDefaults: defaults,
+            onAgreementAccepted: { routeCount += 1 },
+            scheduleRoute: { scheduledRoute = $0 }
+        )
+
+        controller.loadViewIfNeeded()
+        controller.beginAppearanceTransition(true, animated: false)
+        controller.endAppearanceTransition()
+        await fulfillment(of: [apnsAuthorization, deviceRegistration], timeout: 1)
+
+        XCTAssertNil(findView(identifier: "launch.agreement", in: controller.view))
+        XCTAssertEqual(routeCount, 0)
+        try XCTUnwrap(scheduledRoute)()
+        XCTAssertEqual(routeCount, 1)
+    }
+
+    @MainActor
+    func testCoordinatorKeepsLaunchUntilAgreementAcceptanceThenRoutes() async throws {
+        let suiteName = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let window = UIWindow(frame: .zero)
+        let main = UIViewController()
+        var scheduledRoute: (@MainActor () -> Void)?
+        let launch = LaunchViewController(
+            registerDevice: {},
+            requestAPNsAuthorization: {},
+            agreementDefaults: defaults,
+            scheduleRoute: { scheduledRoute = $0 }
+        )
+        let coordinator = AppCoordinator(
+            window: window,
+            authorizationStatus: { .authorized },
+            requestAuthorization: { .authorized },
+            rootKind: .phone,
+            makeMainViewController: { _ in main },
+            makeLaunchViewController: { launch }
+        )
+
+        coordinator.start()
+
+        XCTAssertTrue(window.rootViewController === launch)
+        launch.loadViewIfNeeded()
+        let acceptButton = try XCTUnwrap(
+            findView(identifier: "launch.agreement.accept", in: launch.view) as? UIButton
+        )
+        acceptButton.sendActions(for: .touchUpInside)
+        XCTAssertTrue(window.rootViewController === launch)
+        try XCTUnwrap(scheduledRoute)()
+        await waitUntil { window.rootViewController === main }
+
+        XCTAssertTrue(window.rootViewController === main)
     }
 
     func testPersistentStoreFailureFallsBackToMemoryWithoutRemovingOriginalStore() throws {
@@ -314,17 +396,26 @@ final class AppCoordinatorTests: XCTestCase {
         }
     }
 
-    /// 如果协调器立即跳过 App 内启动页，或一秒调度完成后没有恢复原权限分流，此测试应失败。
+    /// 如果已同意协议的冷启动跳过品牌页，或一秒延迟完成后没有恢复原权限分流，此测试应失败。
     @MainActor
-    func testStartKeepsLaunchVisibleUntilScheduledTransitionThenRoutes() {
+    func testAcceptedColdStartKeepsLaunchVisibleUntilDelayedRouteThenRoutes() throws {
         for status in [
             MPMediaLibraryAuthorizationStatus.notDetermined,
             .authorized
         ] {
             let window = UIWindow(frame: .zero)
-            let launch = UIViewController()
+            let suiteName = UUID().uuidString
+            let defaults = UserDefaults(suiteName: suiteName)!
+            defaults.set(true, forKey: LaunchViewController.agreementAcceptedDefaultsKey)
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            var scheduledRoute: (@MainActor () -> Void)?
+            let launch = LaunchViewController(
+                registerDevice: {},
+                requestAPNsAuthorization: {},
+                agreementDefaults: defaults,
+                scheduleRoute: { scheduledRoute = $0 }
+            )
             let main = UIViewController()
-            var scheduledTransition: (@MainActor () -> Void)?
             var mainCount = 0
             let coordinator = AppCoordinator(
                 window: window,
@@ -335,20 +426,16 @@ final class AppCoordinatorTests: XCTestCase {
                     mainCount += 1
                     return main
                 },
-                makeLaunchViewController: { launch },
-                scheduleLaunchTransition: { scheduledTransition = $0 }
+                makeLaunchViewController: { launch }
             )
 
             coordinator.start()
 
             XCTAssertTrue(window.rootViewController === launch, "status=\(status.rawValue)")
             XCTAssertEqual(mainCount, 0, "status=\(status.rawValue)")
-            guard let scheduledTransition else {
-                XCTFail("启动页必须安排一次后续路由")
-                continue
-            }
-
-            scheduledTransition()
+            launch.loadViewIfNeeded()
+            launch.viewDidAppear(false)
+            try XCTUnwrap(scheduledRoute)()
 
             if status == .notDetermined {
                 XCTAssertTrue(window.rootViewController is PermissionViewController)
@@ -360,29 +447,45 @@ final class AppCoordinatorTests: XCTestCase {
 
     /// 如果非首次授权状态仍展示授权页，或首次状态跳过授权页，此测试应失败。
     @MainActor
-    func testInitialRouteShowsPermissionOnlyForNotDeterminedStatus() {
-        let permissionWindow = UIWindow(frame: .zero)
-        let permissionCoordinator = makeCoordinator(
-            window: permissionWindow,
-            status: .notDetermined
-        )
-
-        permissionCoordinator.start()
-
-        XCTAssertTrue(permissionWindow.rootViewController is PermissionViewController)
-
+    func testInitialRouteShowsPermissionOnlyForNotDeterminedStatus() throws {
         for status in [
+            MPMediaLibraryAuthorizationStatus.notDetermined,
             MPMediaLibraryAuthorizationStatus.authorized,
             .denied,
             .restricted
         ] {
             let window = UIWindow(frame: .zero)
+            let suiteName = UUID().uuidString
+            let defaults = UserDefaults(suiteName: suiteName)!
+            defaults.set(true, forKey: LaunchViewController.agreementAcceptedDefaultsKey)
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            var scheduledRoute: (@MainActor () -> Void)?
+            let launch = LaunchViewController(
+                registerDevice: {},
+                requestAPNsAuthorization: {},
+                agreementDefaults: defaults,
+                scheduleRoute: { scheduledRoute = $0 }
+            )
             let main = UIViewController()
-            let coordinator = makeCoordinator(window: window, status: status) { main }
+            let coordinator = AppCoordinator(
+                window: window,
+                authorizationStatus: { status },
+                requestAuthorization: { status },
+                rootKind: .phone,
+                makeMainViewController: { _ in main },
+                makeLaunchViewController: { launch }
+            )
 
             coordinator.start()
+            launch.loadViewIfNeeded()
+            launch.viewDidAppear(false)
+            try XCTUnwrap(scheduledRoute)()
 
-            XCTAssertTrue(window.rootViewController === main, "状态 \(status.rawValue) 应直接进入主界面")
+            if status == .notDetermined {
+                XCTAssertTrue(window.rootViewController is PermissionViewController)
+            } else {
+                XCTAssertTrue(window.rootViewController === main, "状态 \(status.rawValue) 应进入主界面")
+            }
         }
     }
 
@@ -450,6 +553,7 @@ final class AppCoordinatorTests: XCTestCase {
     func testAllowRequestsOnceAndEntersMainOnceRegardlessOfResult() async throws {
         let window = UIWindow(frame: .zero)
         let main = UIViewController()
+        let launch = acceptedLaunchViewController()
         var requestCount = 0
         var mainCount = 0
         let coordinator = AppCoordinator(
@@ -464,9 +568,11 @@ final class AppCoordinatorTests: XCTestCase {
                 mainCount += 1
                 return main
             },
-            scheduleLaunchTransition: { $0() }
+            makeLaunchViewController: { launch }
         )
         coordinator.start()
+        launch.loadViewIfNeeded()
+        launch.viewDidAppear(false)
         let permission = try XCTUnwrap(window.rootViewController as? PermissionViewController)
         permission.loadViewIfNeeded()
         let allowButton = try XCTUnwrap(
@@ -486,6 +592,7 @@ final class AppCoordinatorTests: XCTestCase {
     func testDeferEntersMainOnlyOnce() throws {
         let window = UIWindow(frame: .zero)
         let main = UIViewController()
+        let launch = acceptedLaunchViewController()
         var mainCount = 0
         let coordinator = AppCoordinator(
             window: window,
@@ -496,9 +603,11 @@ final class AppCoordinatorTests: XCTestCase {
                 mainCount += 1
                 return main
             },
-            scheduleLaunchTransition: { $0() }
+            makeLaunchViewController: { launch }
         )
         coordinator.start()
+        launch.loadViewIfNeeded()
+        launch.viewDidAppear(false)
         let permission = try XCTUnwrap(window.rootViewController as? PermissionViewController)
         permission.loadViewIfNeeded()
         let deferButton = try XCTUnwrap(
@@ -738,18 +847,14 @@ final class AppCoordinatorTests: XCTestCase {
     }
 
     @MainActor
-    private func makeCoordinator(
-        window: UIWindow,
-        status: MPMediaLibraryAuthorizationStatus,
-        makeMain: (@MainActor () -> UIViewController)? = nil
-    ) -> AppCoordinator {
-        AppCoordinator(
-            window: window,
-            authorizationStatus: { status },
-            requestAuthorization: { status },
-            rootKind: .phone,
-            makeMainViewController: { _ in makeMain?() ?? UIViewController() },
-            scheduleLaunchTransition: { $0() }
+    private func acceptedLaunchViewController() -> LaunchViewController {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        defaults.set(true, forKey: LaunchViewController.agreementAcceptedDefaultsKey)
+        return LaunchViewController(
+            registerDevice: {},
+            requestAPNsAuthorization: {},
+            agreementDefaults: defaults,
+            scheduleRoute: { $0() }
         )
     }
 

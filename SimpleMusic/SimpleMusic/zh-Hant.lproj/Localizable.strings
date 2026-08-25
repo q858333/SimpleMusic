@@ -1,5 +1,13 @@
 "app.name" = "聽見";
 "launch.subtitle" = "讓本機音樂，隨時開播";
+"launch.agreement.title" = "使用者協議及隱私政策";
+"launch.agreement.message" = "歡迎使用聽見。使用前，請閱讀並同意《使用者行為準則》和《隱私原則》。";
+"launch.agreement.decline" = "不同意";
+"launch.agreement.accept" = "同意";
+"launch.agreement.decline_title" = "確認暫不使用？";
+"launch.agreement.decline_message" = "你需要同意《使用者行為準則》和《隱私原則》後才能繼續使用。";
+"launch.agreement.cancel" = "取消";
+"launch.agreement.confirm" = "確認";
 "common.cancel" = "取消";
 "common.delete" = "刪除";
 "common.play" = "播放";

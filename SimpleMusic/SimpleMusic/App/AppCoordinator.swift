@@ -141,7 +141,6 @@ final class AppCoordinator {
     typealias AuthorizationRequest = () async -> MPMediaLibraryAuthorizationStatus
     typealias MainViewControllerFactory = (AppRootKind) -> UIViewController
     typealias LaunchViewControllerFactory = @MainActor () -> UIViewController
-    typealias LaunchTransitionScheduler = @MainActor (@escaping @MainActor () -> Void) -> Void
 
     private let window: UIWindow
     private let authorizationStatus: AuthorizationStatus
@@ -149,7 +148,6 @@ final class AppCoordinator {
     private let rootKind: AppRootKind
     private let makeMainViewController: MainViewControllerFactory
     private let makeLaunchViewController: LaunchViewControllerFactory
-    private let scheduleLaunchTransition: LaunchTransitionScheduler
     private var hasStarted = false
     private var hasEnteredMain = false
 
@@ -185,8 +183,7 @@ final class AppCoordinator {
         requestAuthorization: @escaping AuthorizationRequest,
         rootKind: AppRootKind,
         makeMainViewController: @escaping MainViewControllerFactory,
-        makeLaunchViewController: @escaping LaunchViewControllerFactory = AppCoordinator.makeLaunchViewController,
-        scheduleLaunchTransition: @escaping LaunchTransitionScheduler = AppCoordinator.scheduleLaunchTransition
+        makeLaunchViewController: @escaping LaunchViewControllerFactory = AppCoordinator.makeLaunchViewController
     ) {
         self.window = window
         self.authorizationStatus = authorizationStatus
@@ -194,18 +191,20 @@ final class AppCoordinator {
         self.rootKind = rootKind
         self.makeMainViewController = makeMainViewController
         self.makeLaunchViewController = makeLaunchViewController
-        self.scheduleLaunchTransition = scheduleLaunchTransition
     }
 
     func start() {
         guard !hasStarted else { return }
         hasStarted = true
 
-        window.rootViewController = makeLaunchViewController()
-        window.makeKeyAndVisible()
-        scheduleLaunchTransition { [weak self] in
-            self?.showInitialRoute()
+        let launch = makeLaunchViewController()
+        if let launch = launch as? LaunchViewController {
+            launch.onAgreementAccepted = { [weak self] in
+                self?.showInitialRoute()
+            }
         }
+        window.rootViewController = launch
+        window.makeKeyAndVisible()
     }
 
     private func showInitialRoute() {
@@ -216,23 +215,9 @@ final class AppCoordinator {
         }
     }
 
-    /// 系统启动页结束后，使用独立控制器承接 App 内的一秒品牌展示。
+    /// 系统启动页结束后，使用独立控制器承接协议确认。
     private static func makeLaunchViewController() -> UIViewController {
         LaunchViewController()
-    }
-
-    /// 系统启动页结束后继续显示同款 App 内页面一秒，再恢复原有路由。
-    private static func scheduleLaunchTransition(
-        _ transition: @escaping @MainActor () -> Void
-    ) {
-        Task { @MainActor in
-            do {
-                try await Task.sleep(nanoseconds: 1_000_000_000)
-            } catch {
-                return
-            }
-            transition()
-        }
     }
 
     static func rootKind(for idiom: UIUserInterfaceIdiom) -> AppRootKind {

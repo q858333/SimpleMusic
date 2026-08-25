@@ -5,10 +5,18 @@ import UserNotifications
 /// App 启动后短暂展示的品牌页；系统冷启动画面仍由 LaunchScreen.storyboard 提供。
 final class LaunchViewController: UIViewController {
     typealias LaunchAction = @MainActor () async -> Void
+    typealias RouteScheduler = @MainActor (@escaping @MainActor () -> Void) -> Void
+
+    static let agreementAcceptedDefaultsKey = "launch.agreement.accepted"
 
     private let registerDevice: LaunchAction
     private let requestAPNsAuthorization: LaunchAction
-    private var hasStartedLaunchActions = false
+    private let agreementDefaults: UserDefaults
+    private let scheduleRoute: RouteScheduler
+    var onAgreementAccepted: @MainActor () -> Void
+    private var hasAcceptedAgreement = false
+    private var hasRequestedAPNsAuthorization = false
+    private var hasStartedPostAgreementActions = false
 
     private let iconView: UIImageView = {
         let imageView = UIImageView(image: UIImage(named: "music-note-white"))
@@ -42,10 +50,16 @@ final class LaunchViewController: UIViewController {
 
     init(
         registerDevice: @escaping LaunchAction = LaunchViewController.registerDevice,
-        requestAPNsAuthorization: @escaping LaunchAction = LaunchViewController.requestAPNsAuthorization
+        requestAPNsAuthorization: @escaping LaunchAction = LaunchViewController.requestAPNsAuthorization,
+        agreementDefaults: UserDefaults = .standard,
+        onAgreementAccepted: @escaping @MainActor () -> Void = {},
+        scheduleRoute: @escaping RouteScheduler = LaunchViewController.scheduleRoute
     ) {
         self.registerDevice = registerDevice
         self.requestAPNsAuthorization = requestAPNsAuthorization
+        self.agreementDefaults = agreementDefaults
+        self.onAgreementAccepted = onAgreementAccepted
+        self.scheduleRoute = scheduleRoute
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -81,18 +95,96 @@ final class LaunchViewController: UIViewController {
         stackView.snp.makeConstraints { make in
             make.center.equalToSuperview()
         }
+
+        guard !agreementDefaults.bool(forKey: Self.agreementAcceptedDefaultsKey) else { return }
+        let agreementView = LaunchAgreementView(
+            onAccept: { [weak self] in self?.acceptAgreement() },
+            onDecline: { [weak self] in self?.confirmDecline() },
+            onOpenGuidelines: { [weak self] in self?.openGuidelines() },
+            onOpenPrivacy: { [weak self] in self?.openPrivacyPolicy() }
+        )
+        view.addSubview(agreementView)
+        agreementView.snp.makeConstraints { make in make.edges.equalToSuperview() }
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        guard !hasStartedLaunchActions else { return }
-        hasStartedLaunchActions = true
+
+        requestAPNsAuthorizationIfNeeded()
+        if agreementDefaults.bool(forKey: Self.agreementAcceptedDefaultsKey) {
+            startPostAgreementActionsIfNeeded()
+        }
+    }
+
+    private func acceptAgreement() {
+        guard !hasAcceptedAgreement else { return }
+        hasAcceptedAgreement = true
+        agreementDefaults.set(true, forKey: Self.agreementAcceptedDefaultsKey)
+
+        startPostAgreementActionsIfNeeded()
+    }
+
+    private func requestAPNsAuthorizationIfNeeded() {
+        guard !hasRequestedAPNsAuthorization else { return }
+        hasRequestedAPNsAuthorization = true
+
+        let requestAPNsAuthorization = requestAPNsAuthorization
+        Task { await requestAPNsAuthorization() }
+    }
+
+    private func startPostAgreementActionsIfNeeded() {
+        guard !hasStartedPostAgreementActions else { return }
+        hasStartedPostAgreementActions = true
 
         let registerDevice = registerDevice
         Task { await registerDevice() }
 
-        let requestAPNsAuthorization = requestAPNsAuthorization
-        Task { await requestAPNsAuthorization() }
+        scheduleRoute { [weak self] in
+            self?.onAgreementAccepted()
+        }
+    }
+
+    private func confirmDecline() {
+        let alert = UIAlertController(
+            title: L10n.text("launch.agreement.decline_title"),
+            message: L10n.text("launch.agreement.decline_message"),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(
+            title: L10n.text("launch.agreement.cancel"),
+            style: .cancel
+        ))
+        alert.addAction(UIAlertAction(
+            title: L10n.text("launch.agreement.confirm"),
+            style: .default
+        ))
+        present(alert, animated: true)
+    }
+
+    private func openGuidelines() {
+        openDocument(
+            title: L10n.text("about.guidelines_title"),
+            url: URL(string: "https://disktoneweb.dengcheez.workers.dev/terms")!
+        )
+    }
+
+    private func openPrivacyPolicy() {
+        openDocument(
+            title: L10n.text("about.privacy_title"),
+            url: URL(string: "https://disktoneweb.dengcheez.workers.dev/privacy")!
+        )
+    }
+
+    private func openDocument(title: String, url: URL) {
+        guard presentedViewController == nil else { return }
+        let document = WebViewController(title: title, url: url)
+        document.navigationItem.leftBarButtonItem = UIBarButtonItem(
+            systemItem: .close,
+            primaryAction: UIAction { [weak self] _ in
+                self?.dismiss(animated: true)
+            }
+        )
+        present(UINavigationController(rootViewController: document), animated: true)
     }
 
     private static func registerDevice() async {
@@ -116,5 +208,151 @@ final class LaunchViewController: UIViewController {
         } catch {
             NSLog("APNs 权限请求失败：%@", String(describing: error))
         }
+    }
+
+    private static func scheduleRoute(_ route: @escaping @MainActor () -> Void) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            route()
+        }
+    }
+}
+
+@MainActor
+private final class LaunchAgreementView: UIView {
+    private let onAccept: () -> Void
+    private let onDecline: () -> Void
+    private let onOpenGuidelines: () -> Void
+    private let onOpenPrivacy: () -> Void
+
+    init(
+        onAccept: @escaping () -> Void,
+        onDecline: @escaping () -> Void,
+        onOpenGuidelines: @escaping () -> Void,
+        onOpenPrivacy: @escaping () -> Void
+    ) {
+        self.onAccept = onAccept
+        self.onDecline = onDecline
+        self.onOpenGuidelines = onOpenGuidelines
+        self.onOpenPrivacy = onOpenPrivacy
+        super.init(frame: .zero)
+        buildInterface()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("LaunchAgreementView 仅支持纯代码初始化")
+    }
+
+    private func buildInterface() {
+        accessibilityIdentifier = "launch.agreement"
+        backgroundColor = UIColor.black.withAlphaComponent(0.24)
+
+        let title = makeLabel(
+            L10n.text("launch.agreement.title"),
+            style: .headline,
+            color: .label
+        )
+        title.textAlignment = .center
+
+        let body = makeLabel(
+            L10n.text("launch.agreement.message"),
+            style: .body,
+            color: .secondaryLabel
+        )
+
+        let guidelines = makeLinkButton(
+            title: L10n.text("about.guidelines_title"),
+            identifier: "launch.agreement.guidelines",
+            action: onOpenGuidelines
+        )
+        let privacy = makeLinkButton(
+            title: L10n.text("about.privacy_title"),
+            identifier: "launch.agreement.privacy",
+            action: onOpenPrivacy
+        )
+        let links = UIStackView(arrangedSubviews: [guidelines, privacy])
+        links.axis = .horizontal
+        links.alignment = .center
+        links.distribution = .fillEqually
+        links.spacing = 8
+
+        let decline = makeActionButton(
+            title: L10n.text("launch.agreement.decline"),
+            identifier: "launch.agreement.decline",
+            filled: false,
+            action: onDecline
+        )
+        let accept = makeActionButton(
+            title: L10n.text("launch.agreement.accept"),
+            identifier: "launch.agreement.accept",
+            filled: true,
+            action: onAccept
+        )
+        let actions = UIStackView(arrangedSubviews: [decline, accept])
+        actions.axis = .horizontal
+        actions.distribution = .fillEqually
+        actions.spacing = 12
+
+        let content = UIStackView(arrangedSubviews: [title, body, links, actions])
+        content.axis = .vertical
+        content.spacing = 18
+        content.isLayoutMarginsRelativeArrangement = true
+        content.layoutMargins = UIEdgeInsets(top: 28, left: 24, bottom: 24, right: 24)
+        content.backgroundColor = .systemBackground
+        content.layer.cornerRadius = 16
+        content.clipsToBounds = true
+        addSubview(content)
+        content.snp.makeConstraints { make in
+            make.center.equalToSuperview()
+            make.leading.greaterThanOrEqualToSuperview().offset(28)
+            make.trailing.lessThanOrEqualToSuperview().offset(-28)
+            make.width.lessThanOrEqualTo(420)
+        }
+        decline.snp.makeConstraints { make in make.height.equalTo(44) }
+        accept.snp.makeConstraints { make in make.height.equalTo(44) }
+    }
+
+    private func makeLabel(_ text: String, style: UIFont.TextStyle, color: UIColor) -> UILabel {
+        let label = UILabel()
+        label.text = text
+        label.font = .preferredFont(forTextStyle: style)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = color
+        label.numberOfLines = 0
+        return label
+    }
+
+    private func makeLinkButton(
+        title: String,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> UIButton {
+        var configuration = UIButton.Configuration.plain()
+        configuration.title = title
+        configuration.baseForegroundColor = Theme.accent
+        let button = UIButton(configuration: configuration, primaryAction: UIAction { _ in action() })
+        button.accessibilityIdentifier = identifier
+        button.titleLabel?.font = .preferredFont(forTextStyle: .footnote)
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
+        return button
+    }
+
+    private func makeActionButton(
+        title: String,
+        identifier: String,
+        filled: Bool,
+        action: @escaping () -> Void
+    ) -> UIButton {
+        var configuration = filled ? UIButton.Configuration.filled() : UIButton.Configuration.tinted()
+        configuration.title = title
+        configuration.baseBackgroundColor = Theme.accent
+        configuration.baseForegroundColor = filled ? .white : Theme.accent
+        let button = UIButton(configuration: configuration, primaryAction: UIAction { _ in action() })
+        button.accessibilityIdentifier = identifier
+        button.titleLabel?.font = .preferredFont(forTextStyle: .body)
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
+        return button
     }
 }
