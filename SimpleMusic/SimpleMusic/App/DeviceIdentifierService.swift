@@ -127,6 +127,7 @@ final class DeviceRegistrationService {
     typealias DeviceIdentifierProvider = @MainActor () throws -> String
     typealias MetadataProvider = @MainActor () -> DeviceRegistrationMetadata
     typealias RequestExecutor = (URLRequest) async throws -> (Data, URLResponse)
+    typealias RetrySleeper = @MainActor (UInt64) async throws -> Void
 
     static let shared = DeviceRegistrationService()
 
@@ -148,6 +149,7 @@ final class DeviceRegistrationService {
     private let apnsEnvironmentProvider: () -> String
     private let metadataProvider: MetadataProvider
     private let requestExecutor: RequestExecutor
+    private let retrySleeper: RetrySleeper
 
     init(
         endpoint: URL = URL(
@@ -180,6 +182,9 @@ final class DeviceRegistrationService {
                 throw DeviceRegistrationError.invalidResponse
             }
             return (data, response)
+        },
+        retrySleeper: @escaping RetrySleeper = { delay in
+            try await Task.sleep(nanoseconds: delay)
         }
     ) {
         self.endpoint = endpoint
@@ -187,6 +192,24 @@ final class DeviceRegistrationService {
         self.apnsEnvironmentProvider = apnsEnvironmentProvider
         self.metadataProvider = metadataProvider
         self.requestExecutor = requestExecutor
+        self.retrySleeper = retrySleeper
+    }
+
+    /// 首次失败后每隔两秒重试，最多重试三次；最终失败仍交给调用方记录。
+    func registerWithRetry(apnsToken: String?) async throws {
+        var completedRetryCount = 0
+        while true {
+            do {
+                try await register(apnsToken: apnsToken)
+                return
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                guard completedRetryCount < 3 else { throw error }
+                completedRetryCount += 1
+                try await retrySleeper(2_000_000_000)
+            }
+        }
     }
 
     func register(apnsToken: String?) async throws {

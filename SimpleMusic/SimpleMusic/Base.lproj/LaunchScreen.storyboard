@@ -19,7 +19,7 @@
                             <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" alignment="center" spacing="16" translatesAutoresizingMaskIntoConstraints="NO" id="s9C-kH-R8R">
                                 <rect key="frame" x="105" y="351.83333333333331" width="183" height="148.33333333333331"/>
                                 <subviews>
-                                    <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" image="music-note-red" translatesAutoresizingMaskIntoConstraints="NO" id="LJb-VM-CfP">
+                                    <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" image="music-note-white" translatesAutoresizingMaskIntoConstraints="NO" id="LJb-VM-CfP">
                                         <rect key="frame" x="51.5" y="0.0" width="80" height="80"/>
                                         <accessibility key="accessibilityConfiguration" identifier="launch.icon"/>
                                         <constraints>
@@ -34,14 +34,14 @@
                                                 <rect key="frame" x="44.333333333333329" y="0.0" width="94.333333333333329" height="26.333333333333329"/>
                                                 <accessibility key="accessibilityConfiguration" identifier="launch.title"/>
                                                 <fontDescription key="fontDescription" type="boldSystem" pointSize="22"/>
-                                                <color key="textColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                                                <color key="textColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                                                 <nil key="highlightedColor"/>
                                             </label>
                                             <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Local music, ready anytime" textAlignment="center" lineBreakMode="tailTruncation" numberOfLines="1" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" translatesAutoresizingMaskIntoConstraints="NO" id="lch-sub-txt">
                                                 <rect key="frame" x="0.0" y="34.333333333333329" width="183" height="18"/>
                                                 <accessibility key="accessibilityConfiguration" identifier="launch.subtitle"/>
                                                 <fontDescription key="fontDescription" type="system" pointSize="15"/>
-                                                <color key="textColor" white="0.42" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                                                <color key="textColor" white="1" alpha="0.85" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                                                 <nil key="highlightedColor"/>
                                             </label>
                                         </subviews>
@@ -50,7 +50,7 @@
                             </stackView>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="6Tk-OE-BBY"/>
-                        <color key="backgroundColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                        <color key="backgroundColor" red="0.98039215690000003" green="0.17647058819999999" blue="0.28235294119999998" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <constraints>
                             <constraint firstItem="s9C-kH-R8R" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="QXP-xe-uSr"/>
                             <constraint firstItem="s9C-kH-R8R" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="xjk-CR-Qxq"/>
@@ -63,6 +63,6 @@
         </scene>
     </scenes>
     <resources>
-        <image name="music-note-red" width="40" height="40"/>
+        <image name="music-note-white" width="40" height="40"/>
     </resources>
 </document>

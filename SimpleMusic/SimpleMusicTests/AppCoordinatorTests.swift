@@ -28,11 +28,56 @@ final class AppCoordinatorTests: XCTestCase {
 
         let launch = try XCTUnwrap(window.rootViewController as? LaunchViewController)
         launch.loadViewIfNeeded()
+        let icon = try XCTUnwrap(
+            findView(identifier: "launch.icon", in: launch.view) as? UIImageView
+        )
+        let title = try XCTUnwrap(
+            findView(identifier: "launch.title", in: launch.view) as? UILabel
+        )
         let subtitle = try XCTUnwrap(
             findView(identifier: "launch.subtitle", in: launch.view) as? UILabel
         )
+        let launchRed = UIColor(red: 250 / 255, green: 45 / 255, blue: 72 / 255, alpha: 1)
+        let expectedIcon = try XCTUnwrap(UIImage(named: "music-note-white"))
+
+        XCTAssertEqual(launch.view.backgroundColor, launchRed)
+        XCTAssertEqual(icon.image?.pngData(), expectedIcon.pngData())
+        XCTAssertEqual(title.textColor, .white)
         XCTAssertEqual(subtitle.text, L10n.text("launch.subtitle"))
+        XCTAssertEqual(subtitle.textColor, UIColor(white: 1, alpha: 0.85))
         XCTAssertEqual(subtitle.numberOfLines, 1)
+    }
+
+    @MainActor
+    func testLaunchViewStartsDeviceRegistrationAndAPNsAuthorizationOnlyOnce() async {
+        let deviceRegistration = expectation(description: "device registration starts")
+        let apnsAuthorization = expectation(description: "APNs authorization starts")
+        var deviceRegistrationCount = 0
+        var apnsAuthorizationCount = 0
+        let controller = LaunchViewController(
+            registerDevice: {
+                deviceRegistrationCount += 1
+                deviceRegistration.fulfill()
+            },
+            requestAPNsAuthorization: {
+                apnsAuthorizationCount += 1
+                apnsAuthorization.fulfill()
+            }
+        )
+        controller.loadViewIfNeeded()
+
+        controller.beginAppearanceTransition(true, animated: false)
+        controller.endAppearanceTransition()
+        await fulfillment(of: [deviceRegistration, apnsAuthorization], timeout: 1)
+
+        controller.beginAppearanceTransition(false, animated: false)
+        controller.endAppearanceTransition()
+        controller.beginAppearanceTransition(true, animated: false)
+        controller.endAppearanceTransition()
+        await Task.yield()
+
+        XCTAssertEqual(deviceRegistrationCount, 1)
+        XCTAssertEqual(apnsAuthorizationCount, 1)
     }
 
     func testPersistentStoreFailureFallsBackToMemoryWithoutRemovingOriginalStore() throws {
@@ -563,12 +608,28 @@ final class AppCoordinatorTests: XCTestCase {
             findView(identifier: "launch.subtitle", in: controller.view) as? UILabel
         )
 
-        XCTAssertEqual(controller.view.backgroundColor, .white)
-        XCTAssertNotNil(icon.image)
+        let expectedIcon = try XCTUnwrap(UIImage(named: "music-note-white"))
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        XCTAssertTrue(controller.view.backgroundColor?.getRed(
+            &red,
+            green: &green,
+            blue: &blue,
+            alpha: &alpha
+        ) == true)
+        XCTAssertEqual(red, 250 / 255, accuracy: 0.001)
+        XCTAssertEqual(green, 45 / 255, accuracy: 0.001)
+        XCTAssertEqual(blue, 72 / 255, accuracy: 0.001)
+        XCTAssertEqual(alpha, 1, accuracy: 0.001)
+        XCTAssertEqual(icon.image?.pngData(), expectedIcon.pngData())
         XCTAssertEqual(icon.bounds.size, CGSize(width: 80, height: 80))
         XCTAssertEqual(title.text, "DiskTone")
+        XCTAssertEqual(title.textColor, .white)
         XCTAssertTrue(title.font.fontDescriptor.symbolicTraits.contains(.traitBold))
         XCTAssertEqual(subtitle.text, L10n.text("launch.subtitle"))
+        XCTAssertEqual(subtitle.textColor, UIColor(white: 1, alpha: 0.85))
         XCTAssertEqual(subtitle.numberOfLines, 1)
         let iconFrame = icon.convert(icon.bounds, to: controller.view)
         let titleFrame = title.convert(title.bounds, to: controller.view)

@@ -20,15 +20,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
     var appNotificationCenter = NotificationCenter.default
     var apnsTokenStore = APNsTokenStore.shared
-    var remoteNotificationRegistrar: (UIApplication) -> Void = {
-        $0.registerForRemoteNotifications()
-    }
     var deviceRegistrationHandler: (String?) -> Void = { token in
         Task { @MainActor in
             do {
-                try await DeviceRegistrationService.shared.register(apnsToken: token)
+                try await DeviceRegistrationService.shared.registerWithRetry(apnsToken: token)
             } catch {
-                // 设备上报不是启动前提；下一次启动或 Token 更新时会再次尝试。
+                // 设备上报不是启动前提；下一次启动或 Token 更新时仍会再次尝试。
                 NSLog("设备注册上报失败：%@", String(describing: error))
             }
         }
@@ -37,10 +34,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     private lazy var persistentStoreResolution = persistentStoreFactory.resolve()
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // 先用无 Token 请求登记设备；服务端会保留此前已存在的 Token。
-        deviceRegistrationHandler(apnsTokenStore.currentToken)
-        // 注册本身不会弹出通知权限框；系统会通过下方 delegate 回调返回最新 Token。
-        remoteNotificationRegistrar(application)
+        // 设备登记与 APNs 权限请求由 App 内 LaunchViewController 在可见时触发。
         return true
     }
 

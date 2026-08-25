@@ -182,6 +182,81 @@ final class DeviceRegistrationServiceTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
     }
+
+    func testRegisterWithRetryWaitsTwoSecondsAndAllowsThreeRetries() async throws {
+        let endpoint = URL(string: "https://example.com/api/v1/devices/register")!
+        var requestCount = 0
+        var retryDelays = [UInt64]()
+        let service = DeviceRegistrationService(
+            endpoint: endpoint,
+            deviceIdentifierProvider: { "11111111-2222-3333-4444-555555555555" },
+            apnsEnvironmentProvider: { "development" },
+            metadataProvider: {
+                DeviceRegistrationMetadata(
+                    appVersion: "1.2.3",
+                    systemVersion: "18.6",
+                    deviceModel: "iPhone"
+                )
+            },
+            requestExecutor: { _ in
+                requestCount += 1
+                if requestCount < 4 {
+                    throw DeviceRegistrationError.invalidResponse
+                }
+                return (
+                    Data(#"{"success":true}"#.utf8),
+                    HTTPURLResponse(
+                        url: endpoint,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: nil
+                    )!
+                )
+            },
+            retrySleeper: { delay in
+                retryDelays.append(delay)
+            }
+        )
+
+        try await service.registerWithRetry(apnsToken: nil)
+
+        XCTAssertEqual(requestCount, 4)
+        XCTAssertEqual(retryDelays, Array(repeating: 2_000_000_000, count: 3))
+    }
+
+    func testRegisterWithRetryStopsAfterThreeRetries() async {
+        let endpoint = URL(string: "https://example.com/api/v1/devices/register")!
+        var requestCount = 0
+        var retryCount = 0
+        let service = DeviceRegistrationService(
+            endpoint: endpoint,
+            deviceIdentifierProvider: { "11111111-2222-3333-4444-555555555555" },
+            metadataProvider: {
+                DeviceRegistrationMetadata(
+                    appVersion: nil,
+                    systemVersion: nil,
+                    deviceModel: nil
+                )
+            },
+            requestExecutor: { _ in
+                requestCount += 1
+                throw DeviceRegistrationError.httpStatus(503)
+            },
+            retrySleeper: { _ in retryCount += 1 }
+        )
+
+        do {
+            try await service.registerWithRetry(apnsToken: nil)
+            XCTFail("Expected registration to stop after three retries")
+        } catch let error as DeviceRegistrationError {
+            XCTAssertEqual(error, .httpStatus(503))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertEqual(requestCount, 4)
+        XCTAssertEqual(retryCount, 3)
+    }
 }
 
 @MainActor
@@ -206,25 +281,22 @@ final class APNsTokenStoreTests: XCTestCase {
         XCTAssertEqual(publishedToken, token)
     }
 
-    func testAppDelegateRegistersAtLaunchAndForwardsLatestToken() {
+    func testAppDelegateDefersInitialRegistrationToLaunchViewAndForwardsLatestToken() {
         let delegate = AppDelegate()
         let store = APNsTokenStore(notificationCenter: NotificationCenter())
-        var registrationCount = 0
         var uploadedTokens = [String?]()
         delegate.apnsTokenStore = store
-        delegate.remoteNotificationRegistrar = { _ in registrationCount += 1 }
         delegate.deviceRegistrationHandler = { token in uploadedTokens.append(token) }
 
         XCTAssertTrue(delegate.application(.shared, didFinishLaunchingWithOptions: nil))
+        XCTAssertTrue(uploadedTokens.isEmpty)
+
         delegate.application(
             .shared,
             didRegisterForRemoteNotificationsWithDeviceToken: Data([0x01, 0xA2])
         )
 
-        XCTAssertEqual(registrationCount, 1)
         XCTAssertEqual(store.currentToken, "01a2")
-        XCTAssertEqual(uploadedTokens.count, 2)
-        XCTAssertNil(uploadedTokens[0])
-        XCTAssertEqual(uploadedTokens[1], "01a2")
+        XCTAssertEqual(uploadedTokens, ["01a2"])
     }
 }
