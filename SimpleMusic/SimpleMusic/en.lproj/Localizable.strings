@@ -128,7 +128,6 @@
 "settings.feedback_title" = "Feedback";
 "settings.feedback_copy" = "Copy Email";
 "settings.feedback_cancel" = "Cancel";
-"settings.terms_title" = "User Conduct Guidelines";
 "settings.permission_status.not_requested" = "Not Requested";
 "settings.permission_status.denied" = "Denied · Open Settings";
 "settings.permission_status.restricted" = "Restricted · Open Settings";
@@ -141,3 +140,5 @@
 "about.formats_detail" = "Direct audio file links only.";
 "about.privacy_title" = "Privacy";
 "about.privacy_detail" = "Music stays on this device. It is never uploaded or synced to the cloud, and DiskTone does not parse music services or ordinary web pages.";
+"about.guidelines_title" = "User Conduct Guidelines";
+"about.guidelines_detail" = "View guidelines for using DiskTone.";

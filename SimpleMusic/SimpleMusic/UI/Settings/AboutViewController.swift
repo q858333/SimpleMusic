@@ -7,6 +7,9 @@ final class AboutViewController: UIViewController {
     private static let privacyPolicyURL = URL(
         string: "https://disktoneweb.dengcheez.workers.dev/privacy"
     )!
+    private static let userConductGuidelinesURL = URL(
+        string: "https://disktoneweb.dengcheez.workers.dev/terms"
+    )!
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -55,7 +58,13 @@ final class AboutViewController: UIViewController {
             action: #selector(openPrivacyPolicy)
         )
         privacy.accessibilityIdentifier = "about.privacy"
-        let content = UIStackView(arrangedSubviews: [hero, format, privacy])
+        let guidelines = interactiveCard(
+            title: L10n.text("about.guidelines_title"),
+            detail: L10n.text("about.guidelines_detail"),
+            action: #selector(openUserConductGuidelines)
+        )
+        guidelines.accessibilityIdentifier = "about.guidelines"
+        let content = UIStackView(arrangedSubviews: [hero, format, privacy, guidelines])
         content.axis = .vertical
         content.spacing = 24
         content.accessibilityIdentifier = "about.content"
@@ -109,6 +118,14 @@ final class AboutViewController: UIViewController {
         let controller = WebViewController(
             title: L10n.text("about.privacy_title"),
             url: Self.privacyPolicyURL
+        )
+        navigationController?.pushViewController(controller, animated: true)
+    }
+
+    @objc private func openUserConductGuidelines() {
+        let controller = WebViewController(
+            title: L10n.text("about.guidelines_title"),
+            url: Self.userConductGuidelinesURL
         )
         navigationController?.pushViewController(controller, animated: true)
     }

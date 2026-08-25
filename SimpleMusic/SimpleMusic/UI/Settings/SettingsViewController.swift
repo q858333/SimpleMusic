@@ -6,9 +6,6 @@ import UIKit
 @MainActor
 final class SettingsViewController: UIViewController {
     private static let feedbackEmail = "dengcheez@gmail.com"
-    private static let termsURL = URL(
-        string: "https://disktoneweb.dengcheez.workers.dev/terms.html"
-    )!
 
     typealias AuthorizationStatus = () -> MPMediaLibraryAuthorizationStatus
     typealias AuthorizationRequest = () async -> MPMediaLibraryAuthorizationStatus
@@ -132,21 +129,9 @@ final class SettingsViewController: UIViewController {
         ) { [weak self] in
             self?.showFeedback()
         }
-        let termsButton = makeDisclosureButton(
-            title: L10n.text("settings.terms_title"),
-            identifier: "settings.terms"
-        ) { [weak self] in
-            self?.showTerms()
-        }
-
         content.addArrangedSubview(section(title: L10n.text("settings.section.library"), rows: [permissionButton]))
         content.addArrangedSubview(section(title: L10n.text("settings.section.download"), rows: [cellularRow, autoPlayRow]))
-        content.addArrangedSubview(
-            section(
-                title: L10n.text("settings.section.about"),
-                rows: [aboutButton, termsButton]
-            )
-        )
+        content.addArrangedSubview(section(title: L10n.text("settings.section.about"), rows: [aboutButton]))
         content.addArrangedSubview(
             section(
                 title: L10n.text("settings.section.support"),
@@ -275,19 +260,6 @@ final class SettingsViewController: UIViewController {
             style: .cancel
         ))
         present(alert, animated: true)
-    }
-
-    private func showTerms() {
-        guard let navigationController,
-              navigationController.transitionCoordinator == nil,
-              !(navigationController.topViewController is WebViewController) else { return }
-        navigationController.pushViewController(
-            WebViewController(
-                title: L10n.text("settings.terms_title"),
-                url: Self.termsURL
-            ),
-            animated: true
-        )
     }
 
     func handlePermission() {

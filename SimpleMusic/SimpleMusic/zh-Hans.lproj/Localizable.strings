@@ -128,7 +128,6 @@
 "settings.feedback_title" = "反馈";
 "settings.feedback_copy" = "复制邮箱";
 "settings.feedback_cancel" = "取消";
-"settings.terms_title" = "用户行为准则";
 "settings.permission_status.not_requested" = "未请求";
 "settings.permission_status.denied" = "已拒绝 · 去设置";
 "settings.permission_status.restricted" = "受限 · 去设置";
@@ -141,3 +140,5 @@
 "about.formats_detail" = "仅支持音频文件直链。";
 "about.privacy_title" = "隐私原则";
 "about.privacy_detail" = "音乐仅保存在本机，不上传、不进行云同步；不解析音乐平台或普通网页链接。";
+"about.guidelines_title" = "用户行为准则";
+"about.guidelines_detail" = "查看使用规范。";

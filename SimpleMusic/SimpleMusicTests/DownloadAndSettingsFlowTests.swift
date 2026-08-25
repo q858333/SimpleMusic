@@ -485,7 +485,7 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
 
         XCTAssertEqual(
             groups[L10n.text("settings.section.about")],
-            ["settings.about", "settings.terms"]
+            ["settings.about"]
         )
         XCTAssertEqual(
             groups[L10n.text("settings.section.support")],
@@ -493,19 +493,22 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         )
     }
 
-    func testTermsButtonOpensUserAgreementInCommonWebView() throws {
-        let settings = makeIsolatedSettingsController()
-        let navigation = UINavigationController(rootViewController: settings)
+    func testAboutPageOpensUserConductGuidelinesInCommonWebView() throws {
+        let about = AboutViewController()
+        let navigation = UINavigationController(rootViewController: about)
         navigation.loadViewIfNeeded()
-        settings.loadViewIfNeeded()
+        about.loadViewIfNeeded()
 
-        try tap("settings.terms", in: settings)
+        let guidelinesCard = try XCTUnwrap(
+            view("about.guidelines", in: about.view) as? UIControl
+        )
+        guidelinesCard.sendActions(for: .touchUpInside)
 
-        let terms = try XCTUnwrap(navigation.topViewController as? WebViewController)
-        XCTAssertEqual(terms.pageTitle, L10n.text("settings.terms_title"))
+        let guidelines = try XCTUnwrap(navigation.topViewController as? WebViewController)
+        XCTAssertEqual(guidelines.pageTitle, L10n.text("about.guidelines_title"))
         XCTAssertEqual(
-            terms.url.absoluteString,
-            "https://disktoneweb.dengcheez.workers.dev/terms.html"
+            guidelines.url.absoluteString,
+            "https://disktoneweb.dengcheez.workers.dev/terms"
         )
     }
 
