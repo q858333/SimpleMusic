@@ -458,6 +458,51 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         XCTAssertTrue(navigation.topViewController is AboutViewController)
     }
 
+    func testFeedbackShowsContactEmailWithCopyAndCancelActions() throws {
+        let settings = makeIsolatedSettingsController()
+        let navigation = UINavigationController(rootViewController: settings)
+        let window = UIWindow(frame: UIScreen.main.bounds)
+        window.rootViewController = navigation
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+
+        try tap("settings.feedback", in: settings)
+
+        let alert = try XCTUnwrap(settings.presentedViewController as? UIAlertController)
+        XCTAssertEqual(alert.title, L10n.text("settings.feedback_title"))
+        XCTAssertEqual(alert.message, "dengcheez@gmail.com")
+        XCTAssertEqual(
+            alert.actions.map(\.title),
+            [L10n.text("settings.feedback_copy"), L10n.text("settings.feedback_cancel")]
+        )
+    }
+
+    func testTermsButtonOpensUserAgreementInCommonWebView() throws {
+        let settings = makeIsolatedSettingsController()
+        let navigation = UINavigationController(rootViewController: settings)
+        navigation.loadViewIfNeeded()
+        settings.loadViewIfNeeded()
+
+        try tap("settings.terms", in: settings)
+
+        let terms = try XCTUnwrap(navigation.topViewController as? WebViewController)
+        XCTAssertEqual(terms.pageTitle, L10n.text("settings.terms_title"))
+        XCTAssertEqual(
+            terms.url.absoluteString,
+            "https://disktoneweb.dengcheez.workers.dev/terms.html"
+        )
+    }
+
+    func testCommonWebViewShowsLoadingProgressBar() throws {
+        let controller = WebViewController(
+            title: "Terms",
+            url: try XCTUnwrap(URL(string: "https://example.com/terms"))
+        )
+        controller.loadViewIfNeeded()
+
+        XCTAssertNotNil(view("web.progress", in: controller.view) as? UIProgressView)
+    }
+
     func testPrivacyCardOpensPolicyInInternalWebView() throws {
         let about = AboutViewController()
         let navigation = UINavigationController(rootViewController: about)
@@ -470,8 +515,9 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         privacyCard.sendActions(for: .touchUpInside)
 
         let privacy = try XCTUnwrap(
-            navigation.topViewController as? PrivacyWebViewController
+            navigation.topViewController as? WebViewController
         )
+        XCTAssertEqual(privacy.pageTitle, L10n.text("about.privacy_title"))
         XCTAssertEqual(
             privacy.url.absoluteString,
             "https://disktoneweb.dengcheez.workers.dev/privacy"

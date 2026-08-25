@@ -106,7 +106,10 @@ final class AboutViewController: UIViewController {
 
     @objc private func openPrivacyPolicy() {
         // 隐私协议固定在应用内打开，避免把用户跳转到外部浏览器。
-        let controller = PrivacyWebViewController(url: Self.privacyPolicyURL)
+        let controller = WebViewController(
+            title: L10n.text("about.privacy_title"),
+            url: Self.privacyPolicyURL
+        )
         navigationController?.pushViewController(controller, animated: true)
     }
 
@@ -122,11 +125,15 @@ final class AboutViewController: UIViewController {
 }
 
 @MainActor
-final class PrivacyWebViewController: UIViewController {
+final class WebViewController: UIViewController, WKNavigationDelegate {
     let url: URL
+    let pageTitle: String
     private let webView = WKWebView()
+    private let progressView = UIProgressView(progressViewStyle: .default)
+    private var estimatedProgressObservation: NSKeyValueObservation?
 
-    init(url: URL) {
+    init(title: String, url: URL) {
+        self.pageTitle = title
         self.url = url
         super.init(nibName: nil, bundle: nil)
     }
@@ -136,14 +143,67 @@ final class PrivacyWebViewController: UIViewController {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override func loadView() {
-        view = webView
-    }
-
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = L10n.text("about.privacy_title")
+        title = pageTitle
+        view.backgroundColor = Theme.background
         webView.allowsBackForwardNavigationGestures = true
+        webView.navigationDelegate = self
+        progressView.accessibilityIdentifier = "web.progress"
+        progressView.progressTintColor = Theme.accent
+        progressView.trackTintColor = .clear
+        progressView.isHidden = true
+        view.addSubview(webView)
+        view.addSubview(progressView)
+        webView.snp.makeConstraints { make in make.edges.equalToSuperview() }
+        progressView.snp.makeConstraints { make in
+            make.top.leading.trailing.equalTo(view.safeAreaLayoutGuide)
+            make.height.equalTo(2)
+        }
+        estimatedProgressObservation = webView.observe(
+            \.estimatedProgress,
+            options: [.new]
+        ) { [weak self] webView, _ in
+            Task { @MainActor [weak self] in
+                self?.renderProgress(webView.estimatedProgress)
+            }
+        }
         webView.load(URLRequest(url: url))
+    }
+
+    deinit {
+        estimatedProgressObservation?.invalidate()
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation?) {
+        progressView.isHidden = false
+        progressView.setProgress(0, animated: false)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
+        completeProgress()
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation?,
+        withError error: Error
+    ) {
+        completeProgress()
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation?, withError error: Error) {
+        completeProgress()
+    }
+
+    private func renderProgress(_ progress: Double) {
+        let isComplete = progress >= 1
+        progressView.setProgress(Float(progress), animated: !isComplete)
+        progressView.isHidden = isComplete
+    }
+
+    private func completeProgress() {
+        progressView.setProgress(1, animated: true)
+        progressView.isHidden = true
     }
 }

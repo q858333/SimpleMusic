@@ -5,6 +5,11 @@ import UIKit
 /// 设置页直接映射系统媒体权限与持久化下载偏好。
 @MainActor
 final class SettingsViewController: UIViewController {
+    private static let feedbackEmail = "dengcheez@gmail.com"
+    private static let termsURL = URL(
+        string: "https://disktoneweb.dengcheez.workers.dev/terms.html"
+    )!
+
     typealias AuthorizationStatus = () -> MPMediaLibraryAuthorizationStatus
     typealias AuthorizationRequest = () async -> MPMediaLibraryAuthorizationStatus
 
@@ -115,25 +120,34 @@ final class SettingsViewController: UIViewController {
             toggle: autoPlaySwitch
         )
 
-        let aboutButton = makeRowButton(identifier: "settings.about")
-        var configuration = UIButton.Configuration.plain()
-        configuration.title = L10n.text("settings.about_title")
-        configuration.image = UIImage(systemName: "chevron.right")
-        configuration.imagePlacement = .trailing
-        configuration.imagePadding = 12
-        configuration.baseForegroundColor = .label
-        configuration.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 14, bottom: 14, trailing: 14)
-        aboutButton.configuration = configuration
-        aboutButton.contentHorizontalAlignment = .fill
-        aboutButton.titleLabel?.font = .preferredFont(forTextStyle: .body)
-        aboutButton.titleLabel?.adjustsFontForContentSizeCategory = true
-        aboutButton.addAction(UIAction { [weak self] _ in
+        let aboutButton = makeDisclosureButton(
+            title: L10n.text("settings.about_title"),
+            identifier: "settings.about"
+        ) { [weak self] in
             self?.showAbout()
-        }, for: .touchUpInside)
+        }
+        let feedbackButton = makeDisclosureButton(
+            title: L10n.text("settings.feedback_title"),
+            identifier: "settings.feedback"
+        ) { [weak self] in
+            self?.showFeedback()
+        }
+        let termsButton = makeDisclosureButton(
+            title: L10n.text("settings.terms_title"),
+            identifier: "settings.terms"
+        ) { [weak self] in
+            self?.showTerms()
+        }
 
         content.addArrangedSubview(section(title: L10n.text("settings.section.library"), rows: [permissionButton]))
         content.addArrangedSubview(section(title: L10n.text("settings.section.download"), rows: [cellularRow, autoPlayRow]))
         content.addArrangedSubview(section(title: L10n.text("settings.section.about"), rows: [aboutButton]))
+        content.addArrangedSubview(
+            section(
+                title: L10n.text("settings.section.support"),
+                rows: [feedbackButton, termsButton]
+            )
+        )
 
         let scrollView = UIScrollView()
         scrollView.alwaysBounceVertical = true
@@ -184,6 +198,32 @@ final class SettingsViewController: UIViewController {
         return button
     }
 
+    private func makeDisclosureButton(
+        title: String,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> UIButton {
+        let button = makeRowButton(identifier: identifier)
+        var configuration = UIButton.Configuration.plain()
+        configuration.title = title
+        configuration.image = UIImage(systemName: "chevron.right")
+        configuration.imagePlacement = .trailing
+        configuration.imagePadding = 12
+        configuration.baseForegroundColor = .label
+        configuration.contentInsets = NSDirectionalEdgeInsets(
+            top: 14,
+            leading: 14,
+            bottom: 14,
+            trailing: 14
+        )
+        button.configuration = configuration
+        button.contentHorizontalAlignment = .fill
+        button.titleLabel?.font = .preferredFont(forTextStyle: .body)
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
+        button.addAction(UIAction { _ in action() }, for: .touchUpInside)
+        return button
+    }
+
     private func makeLabel(
         _ text: String,
         style: UIFont.TextStyle,
@@ -210,6 +250,39 @@ final class SettingsViewController: UIViewController {
               navigationController.transitionCoordinator == nil,
               !(navigationController.topViewController is AboutViewController) else { return }
         navigationController.pushViewController(AboutViewController(), animated: true)
+    }
+
+    private func showFeedback() {
+        guard presentedViewController == nil else { return }
+        let alert = UIAlertController(
+            title: L10n.text("settings.feedback_title"),
+            message: Self.feedbackEmail,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(
+            title: L10n.text("settings.feedback_copy"),
+            style: .default
+        ) { _ in
+            UIPasteboard.general.string = Self.feedbackEmail
+        })
+        alert.addAction(UIAlertAction(
+            title: L10n.text("settings.feedback_cancel"),
+            style: .cancel
+        ))
+        present(alert, animated: true)
+    }
+
+    private func showTerms() {
+        guard let navigationController,
+              navigationController.transitionCoordinator == nil,
+              !(navigationController.topViewController is WebViewController) else { return }
+        navigationController.pushViewController(
+            WebViewController(
+                title: L10n.text("settings.terms_title"),
+                url: Self.termsURL
+            ),
+            animated: true
+        )
     }
 
     func handlePermission() {
