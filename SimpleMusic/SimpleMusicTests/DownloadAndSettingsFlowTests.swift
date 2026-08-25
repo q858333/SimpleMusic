@@ -388,8 +388,8 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         XCTAssertEqual(about.title, L10n.text("about.page_title"))
         XCTAssertTrue(copy.contains(L10n.text("app.name")))
         XCTAssertTrue(copy.contains(L10n.text("about.subtitle")))
-        XCTAssertTrue(copy.contains(L10n.text("about.formats_title")))
-        XCTAssertTrue(copy.contains(L10n.text("about.formats_detail")))
+        XCTAssertFalse(copy.contains(L10n.text("about.formats_title")))
+        XCTAssertFalse(copy.contains(L10n.text("about.formats_detail")))
         XCTAssertTrue(copy.contains(L10n.text("about.privacy_title")))
         XCTAssertTrue(copy.contains(L10n.text("about.privacy_detail")))
     }

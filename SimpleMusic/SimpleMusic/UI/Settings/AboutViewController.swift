@@ -48,10 +48,6 @@ final class AboutViewController: UIViewController {
         hero.alignment = .center
         hero.spacing = 8
 
-        let format = card(
-            title: L10n.text("about.formats_title"),
-            detail: L10n.text("about.formats_detail")
-        )
         let privacy = interactiveCard(
             title: L10n.text("about.privacy_title"),
             detail: L10n.text("about.privacy_detail"),
@@ -64,7 +60,7 @@ final class AboutViewController: UIViewController {
             action: #selector(openUserConductGuidelines)
         )
         guidelines.accessibilityIdentifier = "about.guidelines"
-        let content = UIStackView(arrangedSubviews: [hero, format, privacy, guidelines])
+        let content = UIStackView(arrangedSubviews: [hero, privacy, guidelines])
         content.axis = .vertical
         content.spacing = 24
         content.accessibilityIdentifier = "about.content"
