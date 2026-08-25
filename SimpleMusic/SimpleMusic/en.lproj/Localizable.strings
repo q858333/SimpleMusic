@@ -128,7 +128,7 @@
 "settings.feedback_title" = "Feedback";
 "settings.feedback_copy" = "Copy Email";
 "settings.feedback_cancel" = "Cancel";
-"settings.terms_title" = "Terms of Service";
+"settings.terms_title" = "User Conduct Guidelines";
 "settings.permission_status.not_requested" = "Not Requested";
 "settings.permission_status.denied" = "Denied · Open Settings";
 "settings.permission_status.restricted" = "Restricted · Open Settings";

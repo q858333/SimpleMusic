@@ -128,7 +128,7 @@
 "settings.feedback_title" = "意見回饋";
 "settings.feedback_copy" = "複製電子郵件";
 "settings.feedback_cancel" = "取消";
-"settings.terms_title" = "使用者服務條款";
+"settings.terms_title" = "使用者行為準則";
 "settings.permission_status.not_requested" = "尚未詢問";
 "settings.permission_status.denied" = "已拒絕 · 前往設定";
 "settings.permission_status.restricted" = "受限制 · 前往設定";

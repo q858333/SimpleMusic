@@ -128,7 +128,7 @@
 "settings.feedback_title" = "反馈";
 "settings.feedback_copy" = "复制邮箱";
 "settings.feedback_cancel" = "取消";
-"settings.terms_title" = "用户服务协议";
+"settings.terms_title" = "用户行为准则";
 "settings.permission_status.not_requested" = "未请求";
 "settings.permission_status.denied" = "已拒绝 · 去设置";
 "settings.permission_status.restricted" = "受限 · 去设置";
