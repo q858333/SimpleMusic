@@ -17,23 +17,35 @@
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" alignment="center" spacing="16" translatesAutoresizingMaskIntoConstraints="NO" id="s9C-kH-R8R">
-                                <rect key="frame" x="149.33333333333334" y="365" width="94.333333333333343" height="122.33333333333331"/>
+                                <rect key="frame" x="105" y="351.83333333333331" width="183" height="148.33333333333331"/>
                                 <subviews>
                                     <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" image="music-note-red" translatesAutoresizingMaskIntoConstraints="NO" id="LJb-VM-CfP">
-                                        <rect key="frame" x="7.3333333333333144" y="0.0" width="80" height="80"/>
+                                        <rect key="frame" x="51.5" y="0.0" width="80" height="80"/>
                                         <accessibility key="accessibilityConfiguration" identifier="launch.icon"/>
                                         <constraints>
                                             <constraint firstAttribute="width" constant="80" id="FZL-fm-ugK"/>
                                             <constraint firstAttribute="height" constant="80" id="SHW-8x-rND"/>
                                         </constraints>
                                     </imageView>
-                                    <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="DiskTone" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" translatesAutoresizingMaskIntoConstraints="NO" id="d3Q-uW-UwY">
-                                        <rect key="frame" x="0.0" y="96" width="94.333333333333329" height="26.333333333333329"/>
-                                        <accessibility key="accessibilityConfiguration" identifier="launch.title"/>
-                                        <fontDescription key="fontDescription" type="boldSystem" pointSize="22"/>
-                                        <color key="textColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-                                        <nil key="highlightedColor"/>
-                                    </label>
+                                    <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" alignment="center" spacing="8" translatesAutoresizingMaskIntoConstraints="NO" id="lch-txt-stk">
+                                        <rect key="frame" x="0.0" y="96" width="183" height="52.333333333333329"/>
+                                        <subviews>
+                                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="DiskTone" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" translatesAutoresizingMaskIntoConstraints="NO" id="d3Q-uW-UwY">
+                                                <rect key="frame" x="44.333333333333329" y="0.0" width="94.333333333333329" height="26.333333333333329"/>
+                                                <accessibility key="accessibilityConfiguration" identifier="launch.title"/>
+                                                <fontDescription key="fontDescription" type="boldSystem" pointSize="22"/>
+                                                <color key="textColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                                                <nil key="highlightedColor"/>
+                                            </label>
+                                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Local music, ready anytime" textAlignment="center" lineBreakMode="tailTruncation" numberOfLines="1" baselineAdjustment="alignBaselines" adjustsFontForContentSizeCategory="YES" translatesAutoresizingMaskIntoConstraints="NO" id="lch-sub-txt">
+                                                <rect key="frame" x="0.0" y="34.333333333333329" width="183" height="18"/>
+                                                <accessibility key="accessibilityConfiguration" identifier="launch.subtitle"/>
+                                                <fontDescription key="fontDescription" type="system" pointSize="15"/>
+                                                <color key="textColor" white="0.42" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                                                <nil key="highlightedColor"/>
+                                            </label>
+                                        </subviews>
+                                    </stackView>
                                 </subviews>
                             </stackView>
                         </subviews>

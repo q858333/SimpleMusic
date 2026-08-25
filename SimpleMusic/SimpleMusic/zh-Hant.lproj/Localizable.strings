@@ -1,4 +1,5 @@
 "app.name" = "聽見";
+"launch.subtitle" = "讓本機音樂，隨時開播";
 "common.cancel" = "取消";
 "common.delete" = "刪除";
 "common.play" = "播放";

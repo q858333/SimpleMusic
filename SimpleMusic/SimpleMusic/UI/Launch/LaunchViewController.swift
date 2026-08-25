@@ -19,12 +19,30 @@ final class LaunchViewController: UIViewController {
         return label
     }()
 
+    private let subtitleLabel: UILabel = {
+        let label = UILabel()
+        label.text = L10n.text("launch.subtitle")
+        label.font = UIFontMetrics(forTextStyle: .subheadline)
+            .scaledFont(for: .systemFont(ofSize: 15))
+        label.textColor = UIColor(white: 0.42, alpha: 1)
+        label.textAlignment = .center
+        label.numberOfLines = 1
+        label.adjustsFontForContentSizeCategory = true
+        label.accessibilityIdentifier = "launch.subtitle"
+        return label
+    }()
+
     override func viewDidLoad() {
         super.viewDidLoad()
 
         view.backgroundColor = .white
 
-        let stackView = UIStackView(arrangedSubviews: [iconView, titleLabel])
+        let textStackView = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
+        textStackView.axis = .vertical
+        textStackView.alignment = .center
+        textStackView.spacing = 8
+
+        let stackView = UIStackView(arrangedSubviews: [iconView, textStackView])
         stackView.axis = .vertical
         stackView.alignment = .center
         stackView.spacing = 16

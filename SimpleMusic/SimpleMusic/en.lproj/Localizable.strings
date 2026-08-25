@@ -1,4 +1,5 @@
 "app.name" = "DiskTone";
+"launch.subtitle" = "Local music, ready anytime";
 "common.cancel" = "Cancel";
 "common.delete" = "Delete";
 "common.play" = "Play";

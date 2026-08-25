@@ -13,7 +13,7 @@ private enum TestStoreError: Error {
 final class AppCoordinatorTests: XCTestCase {
     /// 如果启动后的过渡页退回 Storyboard 通用控制器，此测试应失败。
     @MainActor
-    func testDefaultLaunchRouteUsesDedicatedLaunchViewController() {
+    func testDefaultLaunchRouteUsesDedicatedLaunchViewController() throws {
         let window = UIWindow(frame: .zero)
         let coordinator = AppCoordinator(
             window: window,
@@ -26,7 +26,13 @@ final class AppCoordinatorTests: XCTestCase {
 
         coordinator.start()
 
-        XCTAssertTrue(window.rootViewController is LaunchViewController)
+        let launch = try XCTUnwrap(window.rootViewController as? LaunchViewController)
+        launch.loadViewIfNeeded()
+        let subtitle = try XCTUnwrap(
+            findView(identifier: "launch.subtitle", in: launch.view) as? UILabel
+        )
+        XCTAssertEqual(subtitle.text, L10n.text("launch.subtitle"))
+        XCTAssertEqual(subtitle.numberOfLines, 1)
     }
 
     func testPersistentStoreFailureFallsBackToMemoryWithoutRemovingOriginalStore() throws {
@@ -553,18 +559,26 @@ final class AppCoordinatorTests: XCTestCase {
         let title = try XCTUnwrap(
             findView(identifier: "launch.title", in: controller.view) as? UILabel
         )
+        let subtitle = try XCTUnwrap(
+            findView(identifier: "launch.subtitle", in: controller.view) as? UILabel
+        )
 
         XCTAssertEqual(controller.view.backgroundColor, .white)
         XCTAssertNotNil(icon.image)
         XCTAssertEqual(icon.bounds.size, CGSize(width: 80, height: 80))
         XCTAssertEqual(title.text, "DiskTone")
         XCTAssertTrue(title.font.fontDescriptor.symbolicTraits.contains(.traitBold))
+        XCTAssertEqual(subtitle.text, L10n.text("launch.subtitle"))
+        XCTAssertEqual(subtitle.numberOfLines, 1)
         let iconFrame = icon.convert(icon.bounds, to: controller.view)
         let titleFrame = title.convert(title.bounds, to: controller.view)
+        let subtitleFrame = subtitle.convert(subtitle.bounds, to: controller.view)
         XCTAssertEqual(iconFrame.midX, controller.view.bounds.midX, accuracy: 0.5)
         XCTAssertEqual(titleFrame.midX, controller.view.bounds.midX, accuracy: 0.5)
+        XCTAssertEqual(subtitleFrame.midX, controller.view.bounds.midX, accuracy: 0.5)
+        XCTAssertGreaterThan(subtitleFrame.minY, titleFrame.maxY)
         XCTAssertEqual(
-            (iconFrame.minY + titleFrame.maxY) / 2,
+            (iconFrame.minY + subtitleFrame.maxY) / 2,
             controller.view.bounds.midY,
             accuracy: 0.5
         )

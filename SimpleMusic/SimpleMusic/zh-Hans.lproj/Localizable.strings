@@ -1,4 +1,5 @@
 "app.name" = "听见";
+"launch.subtitle" = "让本地音乐，随时开播";
 "common.cancel" = "取消";
 "common.delete" = "删除";
 "common.play" = "播放";
