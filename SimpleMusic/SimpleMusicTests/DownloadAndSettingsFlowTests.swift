@@ -477,6 +477,22 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         )
     }
 
+    func testSettingsGroupsUserConductGuidelinesWithAboutAndFeedbackWithSupport() throws {
+        let settings = makeIsolatedSettingsController()
+        settings.loadViewIfNeeded()
+
+        let groups = try settingsSectionRows(in: settings)
+
+        XCTAssertEqual(
+            groups[L10n.text("settings.section.about")],
+            ["settings.about", "settings.terms"]
+        )
+        XCTAssertEqual(
+            groups[L10n.text("settings.section.support")],
+            ["settings.feedback"]
+        )
+    }
+
     func testTermsButtonOpensUserAgreementInCommonWebView() throws {
         let settings = makeIsolatedSettingsController()
         let navigation = UINavigationController(rootViewController: settings)
@@ -682,6 +698,22 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
     private func tap(_ identifier: String, in controller: UIViewController) throws {
         let button = try XCTUnwrap(view(identifier, in: controller.view) as? UIButton)
         button.sendActions(for: .touchUpInside)
+    }
+
+    private func settingsSectionRows(
+        in controller: SettingsViewController
+    ) throws -> [String: [String]] {
+        let scrollView = try XCTUnwrap(controller.view.subviews.first as? UIScrollView)
+        let content = try XCTUnwrap(scrollView.subviews.first as? UIStackView)
+        return try content.arrangedSubviews.reduce(into: [String: [String]]()) { groups, section in
+            let stack = try XCTUnwrap(section as? UIStackView)
+            let titleLabel = try XCTUnwrap(stack.arrangedSubviews.first as? UILabel)
+            let title = try XCTUnwrap(titleLabel.text)
+            let rows = try XCTUnwrap(stack.arrangedSubviews.last as? UIStackView)
+            groups[title] = rows.arrangedSubviews.compactMap {
+                ($0 as? UIButton)?.accessibilityIdentifier
+            }
+        }
     }
 
     private func waitUntil(

@@ -141,11 +141,16 @@ final class SettingsViewController: UIViewController {
 
         content.addArrangedSubview(section(title: L10n.text("settings.section.library"), rows: [permissionButton]))
         content.addArrangedSubview(section(title: L10n.text("settings.section.download"), rows: [cellularRow, autoPlayRow]))
-        content.addArrangedSubview(section(title: L10n.text("settings.section.about"), rows: [aboutButton]))
+        content.addArrangedSubview(
+            section(
+                title: L10n.text("settings.section.about"),
+                rows: [aboutButton, termsButton]
+            )
+        )
         content.addArrangedSubview(
             section(
                 title: L10n.text("settings.section.support"),
-                rows: [feedbackButton, termsButton]
+                rows: [feedbackButton]
             )
         )
 
