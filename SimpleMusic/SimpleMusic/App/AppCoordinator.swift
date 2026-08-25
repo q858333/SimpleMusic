@@ -216,16 +216,9 @@ final class AppCoordinator {
         }
     }
 
-    /// 运行时直接复用系统启动 storyboard，避免维护两套品牌布局。
+    /// 系统启动页结束后，使用独立控制器承接 App 内的一秒品牌展示。
     private static func makeLaunchViewController() -> UIViewController {
-        let storyboard = UIStoryboard(
-            name: "LaunchScreen",
-            bundle: Bundle(for: AppDelegate.self)
-        )
-        guard let controller = storyboard.instantiateInitialViewController() else {
-            preconditionFailure("LaunchScreen.storyboard 必须配置 initialViewController")
-        }
-        return controller
+        LaunchViewController()
     }
 
     /// 系统启动页结束后继续显示同款 App 内页面一秒，再恢复原有路由。

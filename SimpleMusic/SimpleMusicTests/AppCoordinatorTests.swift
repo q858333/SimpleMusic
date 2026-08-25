@@ -11,6 +11,24 @@ private enum TestStoreError: Error {
 }
 
 final class AppCoordinatorTests: XCTestCase {
+    /// 如果启动后的过渡页退回 Storyboard 通用控制器，此测试应失败。
+    @MainActor
+    func testDefaultLaunchRouteUsesDedicatedLaunchViewController() {
+        let window = UIWindow(frame: .zero)
+        let coordinator = AppCoordinator(
+            window: window,
+            authorizationStatus: { .authorized },
+            requestAuthorization: { .authorized },
+            rootKind: .phone,
+            makeMainViewController: { _ in UIViewController() },
+            scheduleLaunchTransition: { _ in }
+        )
+
+        coordinator.start()
+
+        XCTAssertTrue(window.rootViewController is LaunchViewController)
+    }
+
     func testPersistentStoreFailureFallsBackToMemoryWithoutRemovingOriginalStore() throws {
         let persistent = NSPersistentContainer(name: "SimpleMusic")
         let memory = NSPersistentContainer(name: "SimpleMusic")
