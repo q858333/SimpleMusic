@@ -1,6 +1,7 @@
 import SnapKit
 import UIKit
 import UserNotifications
+import YYText
 
 /// App 启动后短暂展示的品牌页；系统冷启动画面仍由 LaunchScreen.storyboard 提供。
 final class LaunchViewController: UIViewController {
@@ -256,27 +257,7 @@ private final class LaunchAgreementView: UIView {
         )
         title.textAlignment = .center
 
-        let body = makeLabel(
-            L10n.text("launch.agreement.message"),
-            style: .body,
-            color: .secondaryLabel
-        )
-
-        let guidelines = makeLinkButton(
-            title: L10n.text("about.guidelines_title"),
-            identifier: "launch.agreement.guidelines",
-            action: onOpenGuidelines
-        )
-        let privacy = makeLinkButton(
-            title: L10n.text("about.privacy_title"),
-            identifier: "launch.agreement.privacy",
-            action: onOpenPrivacy
-        )
-        let links = UIStackView(arrangedSubviews: [guidelines, privacy])
-        links.axis = .horizontal
-        links.alignment = .center
-        links.distribution = .fillEqually
-        links.spacing = 8
+        let body = makeAgreementCopy()
 
         let decline = makeActionButton(
             title: L10n.text("launch.agreement.decline"),
@@ -295,7 +276,7 @@ private final class LaunchAgreementView: UIView {
         actions.distribution = .fillEqually
         actions.spacing = 12
 
-        let content = UIStackView(arrangedSubviews: [title, body, links, actions])
+        let content = UIStackView(arrangedSubviews: [title, body, actions])
         content.axis = .vertical
         content.spacing = 18
         content.isLayoutMarginsRelativeArrangement = true
@@ -314,6 +295,55 @@ private final class LaunchAgreementView: UIView {
         accept.snp.makeConstraints { make in make.height.equalTo(44) }
     }
 
+    private func makeAgreementCopy() -> YYLabel {
+        let message = L10n.text("launch.agreement.message")
+        let text = NSMutableAttributedString(
+            string: message,
+            attributes: [
+                .font: UIFont.preferredFont(forTextStyle: .body),
+                .foregroundColor: UIColor.secondaryLabel
+            ]
+        )
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .center
+        paragraphStyle.lineSpacing = 4
+        text.addAttribute(.paragraphStyle, value: paragraphStyle, range: NSRange(location: 0, length: text.length))
+
+        addHighlight(
+            L10n.text("about.guidelines_title"),
+            to: text,
+            action: onOpenGuidelines
+        )
+        addHighlight(
+            L10n.text("about.privacy_title"),
+            to: text,
+            action: onOpenPrivacy
+        )
+
+        let label = YYLabel()
+        label.accessibilityIdentifier = "launch.agreement.copy"
+        label.attributedText = text
+        label.numberOfLines = 0
+        label.textAlignment = .center
+        label.preferredMaxLayoutWidth = 360
+        return label
+    }
+
+    private func addHighlight(
+        _ title: String,
+        to text: NSMutableAttributedString,
+        action: @escaping () -> Void
+    ) {
+        let range = (text.string as NSString).range(of: title)
+        guard range.location != NSNotFound else { return }
+
+        text.addAttribute(.foregroundColor, value: Theme.accent, range: range)
+        let highlight = YYTextHighlight()
+        highlight.setColor(Theme.accent)
+        highlight.tapAction = { _, _, _, _ in action() }
+        text.yy_setTextHighlight(highlight, range: range)
+    }
+
     private func makeLabel(_ text: String, style: UIFont.TextStyle, color: UIColor) -> UILabel {
         let label = UILabel()
         label.text = text
@@ -322,21 +352,6 @@ private final class LaunchAgreementView: UIView {
         label.textColor = color
         label.numberOfLines = 0
         return label
-    }
-
-    private func makeLinkButton(
-        title: String,
-        identifier: String,
-        action: @escaping () -> Void
-    ) -> UIButton {
-        var configuration = UIButton.Configuration.plain()
-        configuration.title = title
-        configuration.baseForegroundColor = Theme.accent
-        let button = UIButton(configuration: configuration, primaryAction: UIAction { _ in action() })
-        button.accessibilityIdentifier = identifier
-        button.titleLabel?.font = .preferredFont(forTextStyle: .footnote)
-        button.titleLabel?.adjustsFontForContentSizeCategory = true
-        return button
     }
 
     private func makeActionButton(

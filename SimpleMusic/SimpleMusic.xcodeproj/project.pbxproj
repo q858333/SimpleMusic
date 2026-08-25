@@ -23,6 +23,7 @@
 		D30000000000000000000001 /* DeviceIdentifierServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000002 /* DeviceIdentifierServiceTests.swift */; };
 		D80000000000000000000001 /* AppCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D80000000000000000000002 /* AppCoordinatorTests.swift */; };
 		E90000000000000000000001 /* LibraryViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90000000000000000000002 /* LibraryViewModelTests.swift */; };
+		E93E6DEF78BC1E2CB3E3D5DC /* Pods_SimpleMusicTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CDB9DF82877845A62A78F227 /* Pods_SimpleMusicTests.framework */; };
 		F10000000000000000000001 /* PlayerViewControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* PlayerViewControllerTests.swift */; };
 		F20000000000000000000001 /* DownloadAndSettingsFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000002 /* DownloadAndSettingsFlowTests.swift */; };
 /* End PBXBuildFile section */
@@ -48,15 +49,18 @@
 		A1B2C3D4E5F60718293A4B7A /* AudioDownloadValidatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDownloadValidatorTests.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B8A /* DownloadFileStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadFileStoreTests.swift; sourceTree = "<group>"; };
 		A3C000000000000000000002 /* LocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationTests.swift; sourceTree = "<group>"; };
+		B38D1C2E3A6DA01F9E1AD114 /* Pods-SimpleMusicTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SimpleMusicTests.release.xcconfig"; path = "Target Support Files/Pods-SimpleMusicTests/Pods-SimpleMusicTests.release.xcconfig"; sourceTree = "<group>"; };
 		B4C0D0A00000000000000011 /* LocalMusicStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalMusicStoreTests.swift; sourceTree = "<group>"; };
 		B4C0D0A00000000000000012 /* DownloadManagerConcurrencyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadManagerConcurrencyTests.swift; sourceTree = "<group>"; };
 		B5E000000000000000000002 /* MusicLibraryServiceMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicLibraryServiceMappingTests.swift; sourceTree = "<group>"; };
 		C60000000000000000000002 /* PlaybackCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackCoordinatorTests.swift; sourceTree = "<group>"; };
 		C60000000000000000000004 /* PlaybackBackendLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackBackendLifecycleTests.swift; sourceTree = "<group>"; };
 		C70000000000000000000002 /* NowPlayingServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingServiceTests.swift; sourceTree = "<group>"; };
+		CDB9DF82877845A62A78F227 /* Pods_SimpleMusicTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_SimpleMusicTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		D21000000000000000000002 /* DownloadQueueTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadQueueTests.swift; sourceTree = "<group>"; };
 		D30000000000000000000002 /* DeviceIdentifierServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentifierServiceTests.swift; sourceTree = "<group>"; };
 		D80000000000000000000002 /* AppCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinatorTests.swift; sourceTree = "<group>"; };
+		DD6F0084510F11867E6BE2CC /* Pods-SimpleMusicTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SimpleMusicTests.debug.xcconfig"; path = "Target Support Files/Pods-SimpleMusicTests/Pods-SimpleMusicTests.debug.xcconfig"; sourceTree = "<group>"; };
 		E90000000000000000000002 /* LibraryViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryViewModelTests.swift; sourceTree = "<group>"; };
 		F10000000000000000000002 /* PlayerViewControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerViewControllerTests.swift; sourceTree = "<group>"; };
 		F20000000000000000000002 /* DownloadAndSettingsFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadAndSettingsFlowTests.swift; sourceTree = "<group>"; };
@@ -96,6 +100,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E93E6DEF78BC1E2CB3E3D5DC /* Pods_SimpleMusicTests.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -127,6 +132,8 @@
 			children = (
 				55DF45A54AE45924626D378B /* Pods-SimpleMusic.debug.xcconfig */,
 				82FEF5096D84D9077E96AF8F /* Pods-SimpleMusic.release.xcconfig */,
+				DD6F0084510F11867E6BE2CC /* Pods-SimpleMusicTests.debug.xcconfig */,
+				B38D1C2E3A6DA01F9E1AD114 /* Pods-SimpleMusicTests.release.xcconfig */,
 			);
 			path = Pods;
 			sourceTree = "<group>";
@@ -159,6 +166,7 @@
 			isa = PBXGroup;
 			children = (
 				6A34C52A1ABF5C26C9601CDD /* Pods_SimpleMusic.framework */,
+				CDB9DF82877845A62A78F227 /* Pods_SimpleMusicTests.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -192,6 +200,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = A1B2C3D4E5F60718293A4B66 /* Build configuration list for PBXNativeTarget "SimpleMusicTests" */;
 			buildPhases = (
+				E3CD4B785D7C8B56A0A3F341 /* [CP] Check Pods Manifest.lock */,
 				A1B2C3D4E5F60718293A4B60 /* Sources */,
 				A1B2C3D4E5F60718293A4B61 /* Frameworks */,
 				A1B2C3D4E5F60718293A4B62 /* Resources */,
@@ -278,17 +287,35 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-SimpleMusic/Pods-SimpleMusic-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-SimpleMusic/Pods-SimpleMusic-resources-${CONFIGURATION}-output-files.xcfilelist",
 			);
-			outputPaths = (
-			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-SimpleMusic/Pods-SimpleMusic-resources.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		E3CD4B785D7C8B56A0A3F341 /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-SimpleMusicTests-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
 		EF4FEFE1FF0F536A957B2678 /* [CP] Check Pods Manifest.lock */ = {
@@ -559,6 +586,7 @@
 		};
 		A1B2C3D4E5F60718293A4B64 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = DD6F0084510F11867E6BE2CC /* Pods-SimpleMusicTests.debug.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
@@ -586,6 +614,7 @@
 		};
 		A1B2C3D4E5F60718293A4B65 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = B38D1C2E3A6DA01F9E1AD114 /* Pods-SimpleMusicTests.release.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;

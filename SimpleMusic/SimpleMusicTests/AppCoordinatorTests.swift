@@ -95,6 +95,49 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertEqual(routeCount, 1)
     }
 
+    /// 若协议正文退回为普通文本或把条款拆成额外按钮，用户无法在上下文中点击对应条款。
+    @MainActor
+    func testLaunchAgreementEmbedsBothDocumentActionsInInteractiveRichText() throws {
+        let suiteName = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let controller = LaunchViewController(
+            registerDevice: {},
+            requestAPNsAuthorization: {},
+            agreementDefaults: defaults
+        )
+
+        controller.loadViewIfNeeded()
+
+        let copyView = try XCTUnwrap(
+            findView(identifier: "launch.agreement.copy", in: controller.view),
+            "views: \(allViews(in: controller.view).map { String(describing: type(of: $0)) })"
+        )
+        XCTAssertEqual(String(describing: type(of: copyView)), "YYLabel")
+        let attributedText = try XCTUnwrap(
+            copyView.value(forKey: "attributedText") as? NSAttributedString
+        )
+        let highlightKey = NSAttributedString.Key(rawValue: "YYTextHighlight")
+        for title in [
+            L10n.text("about.guidelines_title"),
+            L10n.text("about.privacy_title")
+        ] {
+            let range = (attributedText.string as NSString).range(of: title)
+            XCTAssertNotEqual(range.location, NSNotFound, title)
+            XCTAssertNotNil(
+                attributedText.attribute(highlightKey, at: range.location, effectiveRange: nil),
+                title
+            )
+            XCTAssertEqual(
+                attributedText.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? UIColor,
+                Theme.accent,
+                title
+            )
+        }
+        XCTAssertNil(findView(identifier: "launch.agreement.guidelines", in: controller.view))
+        XCTAssertNil(findView(identifier: "launch.agreement.privacy", in: controller.view))
+    }
+
     @MainActor
     func testAcceptedColdStartRequestsAPNsAndRegistersDeviceBeforeDelayedRoute() async throws {
         let suiteName = UUID().uuidString

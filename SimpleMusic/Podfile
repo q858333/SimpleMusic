@@ -5,7 +5,12 @@ target 'SimpleMusic' do
   pod 'SnapKit', '~> 5.7'
   pod 'IQKeyboardManager', '~> 4.0.13'
   pod 'Alamofire'
+  pod 'YYText', '~> 1.0.7'
 
+end
+
+target 'SimpleMusicTests' do
+  pod 'YYText', '~> 1.0.7'
 end
 
 post_install do |installer|
