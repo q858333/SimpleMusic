@@ -1,11 +1,11 @@
 "app.name" = "聽見";
 "launch.subtitle" = "讓本機音樂，隨時開播";
 "launch.agreement.title" = "使用者協議及隱私政策";
-"launch.agreement.message" = "歡迎使用聽見。使用前，請閱讀並同意《使用者行為準則》和《隱私原則》。";
+"launch.agreement.message" = "歡迎使用聽見。使用前，請閱讀並同意《使用者行為準則》和《隱私權政策》。";
 "launch.agreement.decline" = "不同意";
 "launch.agreement.accept" = "同意";
 "launch.agreement.decline_title" = "確認暫不使用？";
-"launch.agreement.decline_message" = "你需要同意《使用者行為準則》和《隱私原則》後才能繼續使用。";
+"launch.agreement.decline_message" = "你需要同意《使用者行為準則》和《隱私權政策》後才能繼續使用。";
 "launch.agreement.cancel" = "取消";
 "launch.agreement.confirm" = "確認";
 "common.cancel" = "取消";
@@ -134,6 +134,7 @@
 "settings.section.about" = "關於";
 "settings.section.support" = "支援";
 "settings.feedback_title" = "意見回饋";
+"settings.feedback_message" = "可傳送 Bug 回饋、功能建議或舉報違規行為至：\n\n%@";
 "settings.feedback_copy" = "複製電子郵件";
 "settings.feedback_cancel" = "取消";
 "settings.permission_status.not_requested" = "尚未詢問";
@@ -146,7 +147,7 @@
 "about.version" = "版本 %1$@";
 "about.formats_title" = "系統音訊格式";
 "about.formats_detail" = "僅支援音訊檔案直連。";
-"about.privacy_title" = "隱私原則";
-"about.privacy_detail" = "音樂只會儲存在本機，不會上傳或進行雲端同步；也不會解析音樂平台或一般網頁連結。";
+"about.privacy_title" = "隱私權政策";
+"about.privacy_detail" = "音樂只會儲存在本機，不會上傳或進行雲端同步。為支援推播等 App 服務，可能會在伺服器註冊基本裝置資訊。詳見隱私權政策。";
 "about.guidelines_title" = "使用者行為準則";
 "about.guidelines_detail" = "查看使用規範。";

@@ -134,6 +134,7 @@
 "settings.section.about" = "About";
 "settings.section.support" = "Support";
 "settings.feedback_title" = "Feedback";
+"settings.feedback_message" = "You can send bug reports, feature requests, or report violations to:\n\n%@";
 "settings.feedback_copy" = "Copy Email";
 "settings.feedback_cancel" = "Cancel";
 "settings.permission_status.not_requested" = "Not Requested";
@@ -146,7 +147,7 @@
 "about.version" = "Version %1$@";
 "about.formats_title" = "System Audio Formats";
 "about.formats_detail" = "Direct audio file links only.";
-"about.privacy_title" = "Privacy";
-"about.privacy_detail" = "Music stays on this device. It is never uploaded or synced to the cloud, and DiskTone does not parse music services or ordinary web pages.";
+"about.privacy_title" = "Privacy Policy";
+"about.privacy_detail" = "Music stays on this device and is never uploaded or synced to the cloud. DiskTone may register basic device information on our server to support app services such as push notifications. See the Privacy Policy for details.";
 "about.guidelines_title" = "User Conduct Guidelines";
 "about.guidelines_detail" = "View guidelines for using DiskTone.";

@@ -111,7 +111,6 @@ final class LaunchViewController: UIViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
 
-        requestAPNsAuthorizationIfNeeded()
         if agreementDefaults.bool(forKey: Self.agreementAcceptedDefaultsKey) {
             startPostAgreementActionsIfNeeded()
         }
@@ -136,6 +135,8 @@ final class LaunchViewController: UIViewController {
     private func startPostAgreementActionsIfNeeded() {
         guard !hasStartedPostAgreementActions else { return }
         hasStartedPostAgreementActions = true
+
+        requestAPNsAuthorizationIfNeeded()
 
         let registerDevice = registerDevice
         Task { await registerDevice() }

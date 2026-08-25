@@ -48,7 +48,7 @@ final class AppCoordinatorTests: XCTestCase {
     }
 
     @MainActor
-    func testLaunchAgreementRequestsAPNsOnOpenAndDefersDeviceRegistrationUntilAccepting() async throws {
+    func testLaunchAgreementDefersAPNsAndDeviceRegistrationUntilAccepting() async throws {
         let suiteName = UUID().uuidString
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -77,15 +77,14 @@ final class AppCoordinatorTests: XCTestCase {
 
         XCTAssertNotNil(findView(identifier: "launch.agreement", in: controller.view))
         XCTAssertEqual(deviceRegistrationCount, 0)
-        await fulfillment(of: [apnsAuthorization], timeout: 1)
-        XCTAssertEqual(apnsAuthorizationCount, 1)
+        XCTAssertEqual(apnsAuthorizationCount, 0)
         XCTAssertEqual(routeCount, 0)
 
         let acceptButton = try XCTUnwrap(
             findView(identifier: "launch.agreement.accept", in: controller.view) as? UIButton
         )
         acceptButton.sendActions(for: .touchUpInside)
-        await fulfillment(of: [deviceRegistration], timeout: 1)
+        await fulfillment(of: [apnsAuthorization, deviceRegistration], timeout: 1)
 
         XCTAssertTrue(defaults.bool(forKey: LaunchViewController.agreementAcceptedDefaultsKey))
         XCTAssertEqual(deviceRegistrationCount, 1)
@@ -855,7 +854,19 @@ final class AppCoordinatorTests: XCTestCase {
         let reasons = Dictionary(uniqueKeysWithValues: pairs)
 
         XCTAssertEqual(manifest["NSPrivacyTracking"] as? Bool, false)
-        XCTAssertEqual((manifest["NSPrivacyCollectedDataTypes"] as? [Any])?.count, 0)
+        let collectedDataTypes = try XCTUnwrap(manifest["NSPrivacyCollectedDataTypes"] as? [[String: Any]])
+        XCTAssertEqual(collectedDataTypes.count, 2)
+        let declaredTypes = Set(collectedDataTypes.compactMap { $0["NSPrivacyCollectedDataType"] as? String })
+        XCTAssertTrue(declaredTypes.contains("NSPrivacyCollectedDataTypeDeviceID"))
+        XCTAssertTrue(declaredTypes.contains("NSPrivacyCollectedDataTypeOtherDiagnosticData"))
+        for entry in collectedDataTypes {
+            XCTAssertEqual(entry["NSPrivacyCollectedDataTypeLinked"] as? Bool, false)
+            XCTAssertEqual(entry["NSPrivacyCollectedDataTypeTracking"] as? Bool, false)
+            XCTAssertEqual(
+                entry["NSPrivacyCollectedDataTypePurposes"] as? [String],
+                ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]
+            )
+        }
         XCTAssertEqual(reasons["NSPrivacyAccessedAPICategoryUserDefaults"], ["CA92.1"])
         XCTAssertEqual(reasons["NSPrivacyAccessedAPICategoryFileTimestamp"], ["C617.1"])
     }

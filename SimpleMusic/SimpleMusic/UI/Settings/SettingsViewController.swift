@@ -246,7 +246,7 @@ final class SettingsViewController: UIViewController {
         guard presentedViewController == nil else { return }
         let alert = UIAlertController(
             title: L10n.text("settings.feedback_title"),
-            message: Self.feedbackEmail,
+            message: L10n.format("settings.feedback_message", Self.feedbackEmail),
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(

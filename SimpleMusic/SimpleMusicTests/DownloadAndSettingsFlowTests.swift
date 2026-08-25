@@ -470,7 +470,7 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
 
         let alert = try XCTUnwrap(settings.presentedViewController as? UIAlertController)
         XCTAssertEqual(alert.title, L10n.text("settings.feedback_title"))
-        XCTAssertEqual(alert.message, "dengcheez@gmail.com")
+        XCTAssertEqual(alert.message, L10n.format("settings.feedback_message", "dengcheez@gmail.com"))
         XCTAssertEqual(
             alert.actions.map(\.title),
             [L10n.text("settings.feedback_copy"), L10n.text("settings.feedback_cancel")]

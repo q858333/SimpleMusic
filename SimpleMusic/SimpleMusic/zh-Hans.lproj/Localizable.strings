@@ -1,11 +1,11 @@
 "app.name" = "听见";
 "launch.subtitle" = "让本地音乐，随时开播";
 "launch.agreement.title" = "用户协议及隐私政策";
-"launch.agreement.message" = "欢迎使用听见。使用前，请阅读并同意《用户行为准则》和《隐私原则》。";
+"launch.agreement.message" = "欢迎使用听见。使用前，请阅读并同意《用户行为准则》和《隐私政策》。";
 "launch.agreement.decline" = "不同意";
 "launch.agreement.accept" = "同意";
 "launch.agreement.decline_title" = "确认暂不使用？";
-"launch.agreement.decline_message" = "你需要同意《用户行为准则》和《隐私原则》后才能继续使用。";
+"launch.agreement.decline_message" = "你需要同意《用户行为准则》和《隐私政策》后才能继续使用。";
 "launch.agreement.cancel" = "取消";
 "launch.agreement.confirm" = "确认";
 "common.cancel" = "取消";
@@ -134,6 +134,7 @@
 "settings.section.about" = "关于";
 "settings.section.support" = "支持";
 "settings.feedback_title" = "反馈";
+"settings.feedback_message" = "可发送 Bug 反馈、功能建议或举报违规行为至：\n\n%@";
 "settings.feedback_copy" = "复制邮箱";
 "settings.feedback_cancel" = "取消";
 "settings.permission_status.not_requested" = "未请求";
@@ -146,7 +147,7 @@
 "about.version" = "版本 %1$@";
 "about.formats_title" = "系统音频格式";
 "about.formats_detail" = "仅支持音频文件直链。";
-"about.privacy_title" = "隐私原则";
-"about.privacy_detail" = "音乐仅保存在本机，不上传、不进行云同步；不解析音乐平台或普通网页链接。";
+"about.privacy_title" = "隐私政策";
+"about.privacy_detail" = "音乐仅保存在本机，不会上传或云同步。为支持推送等应用服务，可能会在服务器注册基本设备信息。详见隐私政策。";
 "about.guidelines_title" = "用户行为准则";
 "about.guidelines_detail" = "查看使用规范。";
