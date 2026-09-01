@@ -15,6 +15,7 @@
 		B4C0D0A00000000000000001 /* LocalMusicStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C0D0A00000000000000011 /* LocalMusicStoreTests.swift */; };
 		B4C0D0A00000000000000002 /* DownloadManagerConcurrencyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C0D0A00000000000000012 /* DownloadManagerConcurrencyTests.swift */; };
 		B5E000000000000000000001 /* MusicLibraryServiceMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5E000000000000000000002 /* MusicLibraryServiceMappingTests.swift */; };
+		B6A000000000000000000001 /* PlaylistStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A000000000000000000002 /* PlaylistStoreTests.swift */; };
 		BC6F521D00C13F6116232C2D /* Pods_SimpleMusic.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6A34C52A1ABF5C26C9601CDD /* Pods_SimpleMusic.framework */; };
 		C60000000000000000000001 /* PlaybackCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60000000000000000000002 /* PlaybackCoordinatorTests.swift */; };
 		C60000000000000000000003 /* PlaybackBackendLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60000000000000000000004 /* PlaybackBackendLifecycleTests.swift */; };
@@ -53,6 +54,7 @@
 		B4C0D0A00000000000000011 /* LocalMusicStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalMusicStoreTests.swift; sourceTree = "<group>"; };
 		B4C0D0A00000000000000012 /* DownloadManagerConcurrencyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadManagerConcurrencyTests.swift; sourceTree = "<group>"; };
 		B5E000000000000000000002 /* MusicLibraryServiceMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicLibraryServiceMappingTests.swift; sourceTree = "<group>"; };
+		B6A000000000000000000002 /* PlaylistStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistStoreTests.swift; sourceTree = "<group>"; };
 		C60000000000000000000002 /* PlaybackCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackCoordinatorTests.swift; sourceTree = "<group>"; };
 		C60000000000000000000004 /* PlaybackBackendLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackBackendLifecycleTests.swift; sourceTree = "<group>"; };
 		C70000000000000000000002 /* NowPlayingServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingServiceTests.swift; sourceTree = "<group>"; };
@@ -149,6 +151,7 @@
 				B4C0D0A00000000000000011 /* LocalMusicStoreTests.swift */,
 				B4C0D0A00000000000000012 /* DownloadManagerConcurrencyTests.swift */,
 				B5E000000000000000000002 /* MusicLibraryServiceMappingTests.swift */,
+				B6A000000000000000000002 /* PlaylistStoreTests.swift */,
 				C60000000000000000000002 /* PlaybackCoordinatorTests.swift */,
 				C60000000000000000000004 /* PlaybackBackendLifecycleTests.swift */,
 				C70000000000000000000002 /* NowPlayingServiceTests.swift */,
@@ -361,6 +364,7 @@
 				A1B2C3D4E5F60718293A4B8B /* DownloadFileStoreTests.swift in Sources */,
 				B4C0D0A00000000000000001 /* LocalMusicStoreTests.swift in Sources */,
 				B5E000000000000000000001 /* MusicLibraryServiceMappingTests.swift in Sources */,
+				B6A000000000000000000001 /* PlaylistStoreTests.swift in Sources */,
 				B4C0D0A00000000000000002 /* DownloadManagerConcurrencyTests.swift in Sources */,
 				C60000000000000000000001 /* PlaybackCoordinatorTests.swift in Sources */,
 				C60000000000000000000003 /* PlaybackBackendLifecycleTests.swift in Sources */,
