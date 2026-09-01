@@ -136,6 +136,28 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
+    func testPlaylistLocalizationsExposeCompleteSharedKeySet() throws {
+        let requiredKeys: Set<String> = [
+            "playlist.title",
+            "playlist.new",
+            "playlist.rename",
+            "playlist.name_placeholder",
+            "playlist.empty",
+            "playlist.add",
+            "playlist.selection.empty",
+            "playlist.error.title",
+            "playlist.error.invalid_name",
+            "playlist.error.duplicate_name",
+            "playlist.error.save",
+            "deletion.action",
+        ]
+
+        for language in ["en", "zh-Hans", "zh-Hant"] {
+            let values = try stringsDictionary(language: language, name: "Localizable")
+            XCTAssertTrue(requiredKeys.isSubset(of: Set(values.keys)), "language=\(language)")
+        }
+    }
+
     func testDeletionMessageUsesFirstPositionalObjectParameterAcrossLanguages() throws {
         let expected = ["%1$@"]
 

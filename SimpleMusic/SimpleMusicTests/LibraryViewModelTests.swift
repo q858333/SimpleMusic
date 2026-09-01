@@ -1177,14 +1177,15 @@ final class LibraryViewModelTests: XCTestCase {
         XCTAssertEqual(cell.accessibilityLabel, try XCTUnwrap(expectedByLanguage[activeLanguage]))
     }
 
-    /// 系统歌曲没有本地删除动作，不能显示会产生空回调的“更多”按钮。
+    /// 如果系统歌曲仍沿用“仅本地歌曲显示更多”的旧分支，用户无法进入播放列表选择页。
     @MainActor
-    func testTrackCellHidesMoreActionForSystemTrack() throws {
+    func testTrackCellShowsMoreActionForSystemTrackWhenHandlerIsAvailable() throws {
         let cell = TrackCell(frame: CGRect(x: 0, y: 0, width: 360, height: 66))
         cell.configure(with: makeTrack(id: "system", source: .system(persistentID: 7)))
+        cell.onMore = {}
 
         let more = try XCTUnwrap(findView(identifier: "track.more", in: cell))
-        XCTAssertTrue(more.isHidden)
+        XCTAssertFalse(more.isHidden)
     }
 
     /// 如果无封面歌曲仍显示系统符号，或深浅色模式选错资源，此测试应失败。
@@ -1280,6 +1281,146 @@ final class LibraryViewModelTests: XCTestCase {
 
         let list = try XCTUnwrap(navigation.topViewController as? PlaylistListViewController)
         XCTAssertTrue(list.viewModel === playlistViewModel)
+    }
+
+    /// 如果资料库分类页没有继续传递共享播放列表状态，分类歌曲的更多菜单将无法加入播放列表。
+    @MainActor
+    func testLibraryTrackCategoryPassesSharedPlaylistViewModelToTrackList() throws {
+        let libraryViewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: []),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        let playlistViewModel = try PlaylistViewModel(
+            store: PlaylistStore.inMemory(),
+            library: libraryViewModel
+        )
+        let library = LibraryViewController(
+            viewModel: libraryViewModel,
+            playlistViewModel: playlistViewModel
+        )
+        let navigation = UINavigationController(rootViewController: library)
+        navigation.loadViewIfNeeded()
+        library.loadViewIfNeeded()
+
+        selectCategory(named: L10n.text("category.songs"), in: library)
+
+        let list = try XCTUnwrap(navigation.topViewController as? TrackListViewController)
+        XCTAssertTrue(list.playlistViewModel === playlistViewModel)
+    }
+
+    /// 如果系统歌曲更多操作没有展示选择页，或选择后传错歌曲/列表 ID，真实持久层不会得到该歌曲。
+    @MainActor
+    func testSystemTrackMoreActionPresentsPlaylistSelectionAndAddsTrack() async throws {
+        let track = makeTrack(id: "system-1", source: .system(persistentID: 1))
+        let libraryViewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: [track]),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        await libraryViewModel.reload()
+        let store = try PlaylistStore.inMemory()
+        let playlist = try store.create(name: "Favorites")
+        let playlistViewModel = try PlaylistViewModel(store: store, library: libraryViewModel)
+        let sut = SearchViewController(
+            viewModel: libraryViewModel,
+            playlistViewModel: playlistViewModel
+        )
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = sut
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        sut.loadViewIfNeeded()
+        sut.view.layoutIfNeeded()
+        sut.collectionView.reloadData()
+        sut.collectionView.layoutIfNeeded()
+
+        let cell = try XCTUnwrap(
+            sut.collectionView.cellForItem(at: IndexPath(item: 0, section: 0)) as? TrackCell
+        )
+        try XCTUnwrap(findView(identifier: "track.more", in: cell) as? UIButton)
+            .sendActions(for: .touchUpInside)
+        let selection = try XCTUnwrap(
+            sut.presentedViewController as? PlaylistSelectionViewController
+        )
+
+        selection.select(playlistID: playlist.id)
+
+        XCTAssertEqual(try store.tracks(in: playlist.id), [track.id])
+    }
+
+    /// 如果本地歌曲更多操作被加入播放列表流程覆盖，动作表会丢失原有删除入口。
+    @MainActor
+    func testLocalTrackMoreActionKeepsAddAndDeleteEntries() async throws {
+        let track = makeTrack(
+            id: "local-1",
+            source: .downloaded(fileName: "local-1.m4a")
+        )
+        let libraryViewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: []),
+            localStore: StubLocalMusicStore(tracks: [track])
+        )
+        await libraryViewModel.reload()
+        let playlistViewModel = try PlaylistViewModel(
+            store: PlaylistStore.inMemory(),
+            library: libraryViewModel
+        )
+        let sut = SearchViewController(
+            viewModel: libraryViewModel,
+            playlistViewModel: playlistViewModel
+        )
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = sut
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        sut.loadViewIfNeeded()
+        sut.view.layoutIfNeeded()
+        sut.collectionView.reloadData()
+        sut.collectionView.layoutIfNeeded()
+
+        let cell = try XCTUnwrap(
+            sut.collectionView.cellForItem(at: IndexPath(item: 0, section: 0)) as? TrackCell
+        )
+        try XCTUnwrap(findView(identifier: "track.more", in: cell) as? UIButton)
+            .sendActions(for: .touchUpInside)
+        let actions = try XCTUnwrap(sut.presentedViewController as? UIAlertController)
+
+        XCTAssertEqual(
+            Set(actions.actions.compactMap(\.title)),
+            Set([
+                L10n.text("playlist.add"),
+                L10n.text("deletion.action"),
+                L10n.text("common.cancel"),
+            ])
+        )
+    }
+
+    /// 如果空选择页只能返回列表目录而不能现场新建，新建后歌曲不会在同一操作中加入。
+    @MainActor
+    func testEmptyPlaylistSelectionCreatesPlaylistAndAddsTrack() throws {
+        let track = makeTrack(id: "new-playlist-track")
+        let libraryViewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: [track]),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        let store = try PlaylistStore.inMemory()
+        let playlistViewModel = try PlaylistViewModel(store: store, library: libraryViewModel)
+        let sut = PlaylistSelectionViewController(track: track, viewModel: playlistViewModel)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = sut
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        sut.loadViewIfNeeded()
+
+        try XCTUnwrap(
+            findView(identifier: "playlist.selection.new", in: sut.view) as? UIButton
+        ).sendActions(for: .touchUpInside)
+        let prompt = try XCTUnwrap(sut.presentedViewController as? UIAlertController)
+        let nameField = try XCTUnwrap(prompt.textFields?.first)
+        nameField.text = "Morning"
+        nameField.sendActions(for: .editingDidEndOnExit)
+
+        let playlist = try XCTUnwrap(store.fetchPlaylists().first)
+        XCTAssertEqual(playlist.name, "Morning")
+        XCTAssertEqual(try store.tracks(in: playlist.id), [track.id])
     }
 
     /// 如果新建按钮没有展示文本输入，或确认后没有经过真实 ViewModel 持久化，此测试应失败。
@@ -1548,7 +1689,7 @@ final class LibraryViewModelTests: XCTestCase {
         XCTAssertTrue(injected === environment.playlistViewModel)
     }
 
-    /// 如果手机或 iPad 根容器没有把同一个播放列表状态注入资料库页，此测试应失败。
+    /// 如果手机或 iPad 根容器没有把同一个播放列表状态注入资料库和搜索页，此测试应失败。
     @MainActor
     func testPhoneAndPadRootsInjectSharedPlaylistViewModel() throws {
         let libraryViewModel = LibraryViewModel(
@@ -1575,8 +1716,14 @@ final class LibraryViewModelTests: XCTestCase {
 
         let phoneLibrary = try XCTUnwrap(descendant(LibraryViewController.self, in: phone))
         let padLibrary = try XCTUnwrap(descendant(LibraryViewController.self, in: pad))
+        let phoneSearch = try XCTUnwrap(descendant(SearchViewController.self, in: phone))
+        try XCTUnwrap(findView(identifier: "pad.search", in: pad.view) as? UIButton)
+            .sendActions(for: .touchUpInside)
+        let padSearch = try XCTUnwrap(descendant(SearchViewController.self, in: pad))
         XCTAssertTrue(phoneLibrary.playlistViewModel === playlistViewModel)
         XCTAssertTrue(padLibrary.playlistViewModel === playlistViewModel)
+        XCTAssertTrue(phoneSearch.playlistViewModel === playlistViewModel)
+        XCTAssertTrue(padSearch.playlistViewModel === playlistViewModel)
     }
 
     /// Play All、Shuffle 与 Sort 必须作用于当前共享队列，而不是只显示静态按钮。

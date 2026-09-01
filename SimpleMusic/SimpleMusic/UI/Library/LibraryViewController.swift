@@ -117,11 +117,13 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
                 for: indexPath
             ) as! TrackCell
             cell.configure(with: track)
-            if case .downloaded = track.source {
+            if playlistViewModel != nil || track.isDownloaded {
                 cell.onMore = { [weak self] in
-                    self?.presentLocalTrackDeletionPrompt(for: track) {
-                        self?.onDeleteTrack?(track)
-                    }
+                    self?.presentTrackMoreActions(
+                        for: track,
+                        playlistViewModel: self?.playlistViewModel,
+                        onDelete: { [weak self] in self?.onDeleteTrack?(track) }
+                    )
                 }
             }
             return cell
@@ -156,6 +158,7 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
             let list = TrackListViewController(
                 category: category,
                 viewModel: viewModel,
+                playlistViewModel: playlistViewModel,
                 onPlay: onSelectTrack
             )
             list.onDelete = onDeleteTrack

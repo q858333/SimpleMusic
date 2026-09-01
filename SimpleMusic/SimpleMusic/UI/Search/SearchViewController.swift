@@ -8,6 +8,7 @@ final class SearchViewController: UIViewController,
     UICollectionViewDelegate,
     UISearchResultsUpdating {
     let viewModel: LibraryViewModel
+    let playlistViewModel: PlaylistViewModel?
     var onSelectTrack: (([MusicTrack], Int) -> Void)?
     var onDeleteTrack: ((MusicTrack) -> Void)?
 
@@ -23,8 +24,12 @@ final class SearchViewController: UIViewController,
         message: L10n.text("search.empty_library")
     )
 
-    init(viewModel: LibraryViewModel) {
+    init(
+        viewModel: LibraryViewModel,
+        playlistViewModel: PlaylistViewModel? = nil
+    ) {
         self.viewModel = viewModel
+        self.playlistViewModel = playlistViewModel
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -64,11 +69,13 @@ final class SearchViewController: UIViewController,
         ) as! TrackCell
         let track = results[indexPath.item]
         cell.configure(with: track)
-        if case .downloaded = track.source {
+        if playlistViewModel != nil || track.isDownloaded {
             cell.onMore = { [weak self] in
-                self?.presentLocalTrackDeletionPrompt(for: track) {
-                    self?.onDeleteTrack?(track)
-                }
+                self?.presentTrackMoreActions(
+                    for: track,
+                    playlistViewModel: self?.playlistViewModel,
+                    onDelete: { [weak self] in self?.onDeleteTrack?(track) }
+                )
             }
         }
         return cell

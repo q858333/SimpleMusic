@@ -5,8 +5,11 @@ import UIKit
 final class TrackCell: UICollectionViewCell {
     static let reuseIdentifier = "TrackCell"
 
-    var onMore: (() -> Void)?
+    var onMore: (() -> Void)? {
+        didSet { updateMoreVisibility() }
+    }
     private var usesPlaceholderArtwork = false
+    private var isDownloadedTrack = false
 
     private let artworkView: UIImageView = {
         let view = UIImageView()
@@ -92,6 +95,7 @@ final class TrackCell: UICollectionViewCell {
         artworkView.image = nil
         artworkView.contentMode = .scaleAspectFill
         usesPlaceholderArtwork = false
+        isDownloadedTrack = false
         onMore = nil
     }
 
@@ -107,12 +111,13 @@ final class TrackCell: UICollectionViewCell {
             updatePlaceholderArtwork()
         }
         if case .downloaded = track.source {
+            isDownloadedTrack = true
             downloadedLabel.isHidden = false
-            moreButton.isHidden = false
         } else {
+            isDownloadedTrack = false
             downloadedLabel.isHidden = true
-            moreButton.isHidden = true
         }
+        updateMoreVisibility()
         accessibilityLabel = L10n.format("track.accessibility", track.title, track.artist, track.album)
     }
 
@@ -182,6 +187,10 @@ final class TrackCell: UICollectionViewCell {
     private func updateCardVisuals() {
         backgroundColor = Theme.surface
         layer.borderColor = Theme.hairline.resolvedColor(with: traitCollection).cgColor
+    }
+
+    private func updateMoreVisibility() {
+        moreButton.isHidden = onMore == nil && isDownloadedTrack == false
     }
 }
 

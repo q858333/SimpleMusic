@@ -21,7 +21,10 @@ final class MainTabBarController: UITabBarController {
         viewModel: libraryViewModel,
         playlistViewModel: playlistViewModel
     )
-    private lazy var searchViewController = SearchViewController(viewModel: libraryViewModel)
+    private lazy var searchViewController = SearchViewController(
+        viewModel: libraryViewModel,
+        playlistViewModel: playlistViewModel
+    )
     private lazy var miniPlayerView = MiniPlayerView(
         snapshotPublisher: snapshotPublisher,
         onTogglePlay: onTogglePlay,

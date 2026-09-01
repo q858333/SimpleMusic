@@ -49,6 +49,7 @@ enum LibraryCategory: Equatable {
 /// 四个资料库入口共享的列表容器；后续动作都基于同一份 MusicTrack 队列。
 final class TrackListViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
     let category: LibraryCategory
+    let playlistViewModel: PlaylistViewModel?
     private(set) var tracks: [MusicTrack]
     var onPlay: (([MusicTrack], Int) -> Void)?
     var onDelete: ((MusicTrack) -> Void)?
@@ -64,9 +65,11 @@ final class TrackListViewController: UIViewController, UICollectionViewDataSourc
         category: LibraryCategory,
         title: String? = nil,
         tracks: [MusicTrack],
+        playlistViewModel: PlaylistViewModel? = nil,
         onPlay: (([MusicTrack], Int) -> Void)?
     ) {
         self.category = category
+        self.playlistViewModel = playlistViewModel
         viewModel = nil
         self.tracks = category.filteredTracks(from: tracks)
         self.onPlay = onPlay
@@ -78,9 +81,11 @@ final class TrackListViewController: UIViewController, UICollectionViewDataSourc
     init(
         category: LibraryCategory,
         viewModel: LibraryViewModel,
+        playlistViewModel: PlaylistViewModel? = nil,
         onPlay: (([MusicTrack], Int) -> Void)?
     ) {
         self.category = category
+        self.playlistViewModel = playlistViewModel
         self.viewModel = viewModel
         tracks = category.filteredTracks(from: viewModel.tracks)
         self.onPlay = onPlay
@@ -125,11 +130,13 @@ final class TrackListViewController: UIViewController, UICollectionViewDataSourc
         ) as! TrackCell
         let track = tracks[indexPath.item]
         cell.configure(with: track)
-        if case .downloaded = track.source {
+        if playlistViewModel != nil || track.isDownloaded {
             cell.onMore = { [weak self] in
-                self?.presentLocalTrackDeletionPrompt(for: track) {
-                    self?.onDelete?(track)
-                }
+                self?.presentTrackMoreActions(
+                    for: track,
+                    playlistViewModel: self?.playlistViewModel,
+                    onDelete: { [weak self] in self?.onDelete?(track) }
+                )
             }
         }
         return cell
@@ -144,12 +151,14 @@ final class TrackListViewController: UIViewController, UICollectionViewDataSourc
                 list = TrackListViewController(
                     category: childCategory,
                     viewModel: viewModel,
+                    playlistViewModel: playlistViewModel,
                     onPlay: onPlay
                 )
             } else {
                 list = TrackListViewController(
                     category: childCategory,
                     tracks: tracks,
+                    playlistViewModel: playlistViewModel,
                     onPlay: onPlay
                 )
             }

@@ -263,7 +263,10 @@ final class PadRootViewController: UIViewController {
             viewModel: viewModel,
             playlistViewModel: playlistViewModel
         )
-        let search = SearchViewController(viewModel: viewModel)
+        let search = SearchViewController(
+            viewModel: viewModel,
+            playlistViewModel: playlistViewModel
+        )
         library.onSelectTrack = { [weak self] queue, index in self?.onPlay?(queue, index) }
         search.onSelectTrack = { [weak self] queue, index in self?.onPlay?(queue, index) }
         library.onDeleteTrack = onDeleteTrack
