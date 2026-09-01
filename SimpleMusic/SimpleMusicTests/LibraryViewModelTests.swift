@@ -1347,9 +1347,9 @@ final class LibraryViewModelTests: XCTestCase {
         XCTAssertEqual(try store.tracks(in: playlist.id), [track.id])
     }
 
-    /// 如果本地歌曲更多操作被加入播放列表流程覆盖，动作表会丢失原有删除入口。
+    /// 如果本地歌曲“加入播放列表”action 没有连到选择页，实际点击后不会持久化准确歌曲。
     @MainActor
-    func testLocalTrackMoreActionKeepsAddAndDeleteEntries() async throws {
+    func testLocalTrackMoreAddActionPresentsSelectionAndPersistsExactTrack() async throws {
         let track = makeTrack(
             id: "local-1",
             source: .downloaded(fileName: "local-1.m4a")
@@ -1359,10 +1359,9 @@ final class LibraryViewModelTests: XCTestCase {
             localStore: StubLocalMusicStore(tracks: [track])
         )
         await libraryViewModel.reload()
-        let playlistViewModel = try PlaylistViewModel(
-            store: PlaylistStore.inMemory(),
-            library: libraryViewModel
-        )
+        let store = try PlaylistStore.inMemory()
+        let playlist = try store.create(name: "Local Favorites")
+        let playlistViewModel = try PlaylistViewModel(store: store, library: libraryViewModel)
         let sut = SearchViewController(
             viewModel: libraryViewModel,
             playlistViewModel: playlistViewModel
@@ -1391,6 +1390,68 @@ final class LibraryViewModelTests: XCTestCase {
                 L10n.text("common.cancel"),
             ])
         )
+        XCTAssertTrue(activateAlertAction(named: L10n.text("playlist.add"), in: actions))
+        let didPresentSelection = await eventually {
+            sut.presentedViewController is PlaylistSelectionViewController
+        }
+        XCTAssertTrue(didPresentSelection)
+        let selection = try XCTUnwrap(
+            sut.presentedViewController as? PlaylistSelectionViewController
+        )
+
+        selection.select(playlistID: playlist.id)
+
+        XCTAssertEqual(try store.tracks(in: playlist.id), [track.id])
+    }
+
+    /// 如果本地歌曲删除 action 没有继续经过确认弹窗，或回调传错歌曲，此测试应失败。
+    @MainActor
+    func testLocalTrackMoreDeleteActionConfirmsAndForwardsExactTrack() async throws {
+        let track = makeTrack(
+            id: "local-delete-1",
+            source: .downloaded(fileName: "local-delete-1.m4a")
+        )
+        let libraryViewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: []),
+            localStore: StubLocalMusicStore(tracks: [track])
+        )
+        await libraryViewModel.reload()
+        let playlistViewModel = try PlaylistViewModel(
+            store: PlaylistStore.inMemory(),
+            library: libraryViewModel
+        )
+        let sut = SearchViewController(
+            viewModel: libraryViewModel,
+            playlistViewModel: playlistViewModel
+        )
+        var deletedTrack: SimpleMusic.MusicTrack?
+        sut.onDeleteTrack = { deletedTrack = $0 }
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = sut
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        sut.loadViewIfNeeded()
+        sut.view.layoutIfNeeded()
+        sut.collectionView.reloadData()
+        sut.collectionView.layoutIfNeeded()
+
+        let cell = try XCTUnwrap(
+            sut.collectionView.cellForItem(at: IndexPath(item: 0, section: 0)) as? TrackCell
+        )
+        try XCTUnwrap(findView(identifier: "track.more", in: cell) as? UIButton)
+            .sendActions(for: .touchUpInside)
+        let actions = try XCTUnwrap(sut.presentedViewController as? UIAlertController)
+        XCTAssertTrue(activateAlertAction(named: L10n.text("deletion.action"), in: actions))
+        let didPresentConfirmation = await eventually {
+            (sut.presentedViewController as? UIAlertController)?.title == L10n.text("deletion.title")
+        }
+        XCTAssertTrue(didPresentConfirmation)
+        let confirmation = try XCTUnwrap(sut.presentedViewController as? UIAlertController)
+
+        XCTAssertTrue(activateAlertAction(named: L10n.text("common.delete"), in: confirmation))
+        let didDelete = await eventually { deletedTrack != nil }
+        XCTAssertTrue(didDelete)
+        XCTAssertEqual(deletedTrack, track)
     }
 
     /// 如果空选择页只能返回列表目录而不能现场新建，新建后歌曲不会在同一操作中加入。
@@ -2112,6 +2173,18 @@ final class LibraryViewModelTests: XCTestCase {
 
     private func allSubviews(in root: UIView) -> [UIView] {
         [root] + root.subviews.flatMap(allSubviews)
+    }
+
+    @MainActor
+    private func activateAlertAction(named title: String, in alert: UIAlertController) -> Bool {
+        typealias Handler = @convention(block) (UIAlertAction) -> Void
+        guard let action = alert.actions.first(where: { $0.title == title }),
+              let rawHandler = action.value(forKey: "handler") else {
+            return false
+        }
+        let handler = unsafeBitCast(rawHandler as AnyObject, to: Handler.self)
+        handler(action)
+        return true
     }
 
     private func selectCategory(named name: String, in library: LibraryViewController) {
