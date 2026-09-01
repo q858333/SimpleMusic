@@ -15,14 +15,19 @@ final class AppEnvironment {
     private let injectedDownloadStorageResolution: DownloadStorageResolution?
     private lazy var downloadStorageResolution = injectedDownloadStorageResolution
         ?? DownloadStorageFactory().resolve()
+    private lazy var libraryPersistentContainer: NSPersistentContainer = {
+        if let appDelegate = UIApplication.shared.delegate as? AppDelegate {
+            return appDelegate.persistentContainer
+        }
+        // 单元测试或非常规生命周期下，本地歌曲与播放列表仍共用同一内存索引。
+        return Self.makeInMemoryContainer()
+    }()
 
     lazy var localMusicStore: LocalMusicStore = {
-        if let appDelegate = UIApplication.shared.delegate as? AppDelegate {
-            return LocalMusicStore(container: appDelegate.persistentContainer)
-        }
-        // 单元测试或非常规生命周期下仍使用内存索引，不伪装成持久数据。
-        return LocalMusicStore(container: Self.makeInMemoryContainer())
+        LocalMusicStore(container: libraryPersistentContainer)
     }()
+
+    lazy var playlistStore = PlaylistStore(container: libraryPersistentContainer)
 
     var downloadFileStore: DownloadFileStore? { downloadStorageResolution.store }
     var downloadStorageWarning: String? { downloadStorageResolution.warning }
@@ -104,6 +109,14 @@ final class AppEnvironment {
             Task { await viewModel?.requestReload() }
         }
         return viewModel
+    }()
+
+    lazy var playlistViewModel: PlaylistViewModel = {
+        do {
+            return try PlaylistViewModel(store: playlistStore, library: libraryViewModel)
+        } catch {
+            fatalError("播放列表初始化失败：\(error)")
+        }
     }()
 
     lazy var playbackCoordinator = PlaybackCoordinator(
