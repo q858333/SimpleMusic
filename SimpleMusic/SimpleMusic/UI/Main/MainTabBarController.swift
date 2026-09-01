@@ -6,6 +6,7 @@ import UIKit
 final class MainTabBarController: UITabBarController {
     let dependencyIdentity: ObjectIdentifier?
     private let libraryViewModel: LibraryViewModel
+    private let playlistViewModel: PlaylistViewModel?
     private let snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>
     private let onPlay: ([MusicTrack], Int) -> Void
     private let onDeleteTrack: (MusicTrack) -> Void
@@ -16,7 +17,10 @@ final class MainTabBarController: UITabBarController {
 
     var onOpenPlayer: (() -> Void)?
 
-    private lazy var libraryViewController = LibraryViewController(viewModel: libraryViewModel)
+    private lazy var libraryViewController = LibraryViewController(
+        viewModel: libraryViewModel,
+        playlistViewModel: playlistViewModel
+    )
     private lazy var searchViewController = SearchViewController(viewModel: libraryViewModel)
     private lazy var miniPlayerView = MiniPlayerView(
         snapshotPublisher: snapshotPublisher,
@@ -35,6 +39,7 @@ final class MainTabBarController: UITabBarController {
     convenience init(dependencies: AppRootDependencies) {
         self.init(
             libraryViewModel: dependencies.libraryViewModel,
+            playlistViewModel: dependencies.playlistViewModel,
             snapshotPublisher: dependencies.snapshotPublisher,
             onPlay: dependencies.onPlay,
             onDeleteTrack: dependencies.onDeleteTrack,
@@ -46,6 +51,7 @@ final class MainTabBarController: UITabBarController {
 
     init(
         libraryViewModel: LibraryViewModel,
+        playlistViewModel: PlaylistViewModel? = nil,
         snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>,
         onPlay: @escaping ([MusicTrack], Int) -> Void,
         onDeleteTrack: @escaping (MusicTrack) -> Void = { _ in },
@@ -55,6 +61,7 @@ final class MainTabBarController: UITabBarController {
     ) {
         self.dependencyIdentity = dependencyIdentity
         self.libraryViewModel = libraryViewModel
+        self.playlistViewModel = playlistViewModel
         self.snapshotPublisher = snapshotPublisher
         self.onPlay = onPlay
         self.onDeleteTrack = onDeleteTrack

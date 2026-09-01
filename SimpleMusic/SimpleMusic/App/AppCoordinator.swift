@@ -12,6 +12,7 @@ enum AppRootKind: Equatable {
 struct AppRootDependencies {
     let identity: ObjectIdentifier
     let libraryViewModel: LibraryViewModel
+    let playlistViewModel: PlaylistViewModel?
     let snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>
     let onPlay: ([MusicTrack], Int) -> Void
     let onDeleteTrack: (MusicTrack) -> Void
@@ -36,6 +37,7 @@ struct AppRootDependencies {
         }
         identity = ObjectIdentifier(environment)
         libraryViewModel = viewModel
+        playlistViewModel = environment.playlistViewModel
         snapshotPublisher = environment.playbackCoordinator.snapshotPublisher
         onPlay = play
         onDeleteTrack = { [weak viewModel] track in
@@ -104,6 +106,7 @@ struct AppRootDependencies {
     init(
         identity: AnyObject,
         libraryViewModel: LibraryViewModel,
+        playlistViewModel: PlaylistViewModel? = nil,
         snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>,
         onPlay: @escaping ([MusicTrack], Int) -> Void,
         onDeleteTrack: @escaping (MusicTrack) -> Void = { _ in },
@@ -119,6 +122,7 @@ struct AppRootDependencies {
     ) {
         self.identity = ObjectIdentifier(identity)
         self.libraryViewModel = libraryViewModel
+        self.playlistViewModel = playlistViewModel
         self.snapshotPublisher = snapshotPublisher
         self.onPlay = onPlay
         self.onDeleteTrack = onDeleteTrack

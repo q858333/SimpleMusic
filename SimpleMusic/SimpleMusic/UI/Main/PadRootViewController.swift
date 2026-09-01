@@ -12,6 +12,7 @@ final class PadRootViewController: UIViewController {
     private let nowPlayingViewController: UIViewController
     private let playerGuideDefaults: UserDefaults
     private let libraryViewModel: LibraryViewModel?
+    private let playlistViewModel: PlaylistViewModel?
     private let snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>?
     private let onPlay: (([MusicTrack], Int) -> Void)?
     private let onDeleteTrack: ((MusicTrack) -> Void)?
@@ -118,6 +119,7 @@ final class PadRootViewController: UIViewController {
         self.init(
             nowPlayingViewController: panel,
             libraryViewModel: dependencies.libraryViewModel,
+            playlistViewModel: dependencies.playlistViewModel,
             snapshotPublisher: dependencies.snapshotPublisher,
             onPlay: dependencies.onPlay,
             onDeleteTrack: dependencies.onDeleteTrack,
@@ -138,6 +140,7 @@ final class PadRootViewController: UIViewController {
         self.nowPlayingViewController = nowPlayingViewController
         playerGuideDefaults = .standard
         libraryViewModel = nil
+        playlistViewModel = nil
         snapshotPublisher = nil
         onPlay = nil
         onDeleteTrack = nil
@@ -148,6 +151,7 @@ final class PadRootViewController: UIViewController {
     init(
         nowPlayingViewController: UIViewController,
         libraryViewModel: LibraryViewModel,
+        playlistViewModel: PlaylistViewModel? = nil,
         snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>,
         onPlay: @escaping ([MusicTrack], Int) -> Void,
         onDeleteTrack: @escaping (MusicTrack) -> Void = { _ in },
@@ -160,6 +164,7 @@ final class PadRootViewController: UIViewController {
         self.nowPlayingViewController = nowPlayingViewController
         self.playerGuideDefaults = playerGuideDefaults
         self.libraryViewModel = libraryViewModel
+        self.playlistViewModel = playlistViewModel
         self.snapshotPublisher = snapshotPublisher
         self.onPlay = onPlay
         self.onDeleteTrack = onDeleteTrack
@@ -254,7 +259,10 @@ final class PadRootViewController: UIViewController {
     }
 
     private func installLibraryPages(viewModel: LibraryViewModel) {
-        let library = LibraryViewController(viewModel: viewModel)
+        let library = LibraryViewController(
+            viewModel: viewModel,
+            playlistViewModel: playlistViewModel
+        )
         let search = SearchViewController(viewModel: viewModel)
         library.onSelectTrack = { [weak self] queue, index in self?.onPlay?(queue, index) }
         search.onSelectTrack = { [weak self] queue, index in self?.onPlay?(queue, index) }

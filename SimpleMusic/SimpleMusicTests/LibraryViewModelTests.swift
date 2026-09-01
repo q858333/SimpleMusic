@@ -1257,6 +1257,234 @@ final class LibraryViewModelTests: XCTestCase {
         XCTAssertEqual(navigation.topViewController?.title, L10n.text("category.songs"))
     }
 
+    /// 如果第五个资料库入口没有把应用级共享 ViewModel 传给列表页，此测试应失败。
+    @MainActor
+    func testLibraryPlaylistCategoryPushesPlaylistListUsingSharedViewModel() throws {
+        let libraryViewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: []),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        let playlistViewModel = try PlaylistViewModel(
+            store: PlaylistStore.inMemory(),
+            library: libraryViewModel
+        )
+        let library = LibraryViewController(
+            viewModel: libraryViewModel,
+            playlistViewModel: playlistViewModel
+        )
+        let navigation = UINavigationController(rootViewController: library)
+        navigation.loadViewIfNeeded()
+        library.loadViewIfNeeded()
+
+        selectCategory(named: L10n.text("playlist.title"), in: library)
+
+        let list = try XCTUnwrap(navigation.topViewController as? PlaylistListViewController)
+        XCTAssertTrue(list.viewModel === playlistViewModel)
+    }
+
+    /// 如果新建按钮没有展示文本输入，或确认后没有经过真实 ViewModel 持久化，此测试应失败。
+    @MainActor
+    func testPlaylistListCreatesPlaylistFromAlertTextField() throws {
+        let libraryViewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: []),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        let playlistViewModel = try PlaylistViewModel(
+            store: PlaylistStore.inMemory(),
+            library: libraryViewModel
+        )
+        let sut = PlaylistListViewController(viewModel: playlistViewModel, onPlay: { _, _ in })
+        let navigation = UINavigationController(rootViewController: sut)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = navigation
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        navigation.view.layoutIfNeeded()
+
+        let createButton = try XCTUnwrap(
+            sut.navigationItem.rightBarButtonItem?.customView as? UIButton
+        )
+        XCTAssertEqual(createButton.accessibilityIdentifier, "playlist.new")
+        createButton.sendActions(for: .touchUpInside)
+        let alert = try XCTUnwrap(sut.presentedViewController as? UIAlertController)
+        let textField = try XCTUnwrap(alert.textFields?.first)
+        textField.text = "  Road Trip  "
+        textField.sendActions(for: .editingDidEndOnExit)
+
+        XCTAssertEqual(playlistViewModel.playlists.map(\.name), ["Road Trip"])
+    }
+
+    /// 如果列表数量没有来自持久化 trackIDs，或点行时没有按当前资料库解析歌曲，此测试应失败。
+    @MainActor
+    func testPlaylistListShowsTrackCountAndPushesResolvedTracks() async throws {
+        let first = makeTrack(id: "playlist-first")
+        let second = makeTrack(id: "playlist-second")
+        let libraryViewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: [first, second]),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        await libraryViewModel.reload()
+        let store = try PlaylistStore.inMemory()
+        let playlist = try store.create(name: "Road Trip")
+        try store.add(trackID: first.id, to: playlist.id)
+        try store.add(trackID: second.id, to: playlist.id)
+        let playlistViewModel = try PlaylistViewModel(store: store, library: libraryViewModel)
+        let sut = PlaylistListViewController(viewModel: playlistViewModel, onPlay: { _, _ in })
+        let navigation = UINavigationController(rootViewController: sut)
+        navigation.loadViewIfNeeded()
+        sut.loadViewIfNeeded()
+        let table = try XCTUnwrap(
+            allSubviews(in: sut.view).compactMap { $0 as? UITableView }.first
+        )
+        let cell = sut.tableView(table, cellForRowAt: IndexPath(row: 0, section: 0))
+        let rowActions = try XCTUnwrap(
+            sut.tableView(
+                table,
+                trailingSwipeActionsConfigurationForRowAt: IndexPath(row: 0, section: 0)
+            )
+        )
+
+        XCTAssertEqual(cell.textLabel?.text, "Road Trip")
+        XCTAssertEqual(cell.detailTextLabel?.text, L10n.plural("tracks.count", count: 2))
+        XCTAssertEqual(rowActions.actions.count, 2)
+        XCTAssertTrue(rowActions.actions.contains { $0.style == .destructive })
+        sut.tableView(table, didSelectRowAt: IndexPath(row: 0, section: 0))
+        let tracks = try XCTUnwrap(navigation.topViewController as? PlaylistTracksViewController)
+        XCTAssertEqual(tracks.tracks.map(\.id), [first.id, second.id])
+    }
+
+    /// 如果空播放列表仍允许触发播放，或没有给出空状态，此测试应失败。
+    @MainActor
+    func testPlaylistTracksEmptyStateDisablesPlaybackActions() throws {
+        let libraryViewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: []),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        let store = try PlaylistStore.inMemory()
+        let playlist = try store.create(name: "Empty")
+        let playlistViewModel = try PlaylistViewModel(store: store, library: libraryViewModel)
+        var playbackCount = 0
+        let sut = PlaylistTracksViewController(
+            playlistID: playlist.id,
+            viewModel: playlistViewModel,
+            onPlay: { _, _ in playbackCount += 1 }
+        )
+        sut.loadViewIfNeeded()
+        let empty = try XCTUnwrap(
+            findView(identifier: "playlist.empty", in: sut.view) as? UILabel
+        )
+        let playAll = try XCTUnwrap(
+            findView(identifier: "playlist.playAll", in: sut.view) as? UIButton
+        )
+        let shuffle = try XCTUnwrap(
+            findView(identifier: "playlist.shuffle", in: sut.view) as? UIButton
+        )
+
+        XCTAssertFalse(empty.isHidden)
+        XCTAssertFalse(playAll.isEnabled)
+        XCTAssertFalse(shuffle.isEnabled)
+        playAll.sendActions(for: .touchUpInside)
+        shuffle.sendActions(for: .touchUpInside)
+        XCTAssertEqual(playbackCount, 0)
+    }
+
+    /// 如果播放列表详情绕开现有播放 closure、改变索引或漏掉当前队列，此测试应失败。
+    @MainActor
+    func testPlaylistTracksPlayAllAndShuffleForwardExistingPlaybackClosure() async throws {
+        let first = makeTrack(id: "queue-first")
+        let second = makeTrack(id: "queue-second")
+        let libraryViewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: [first, second]),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        await libraryViewModel.reload()
+        let store = try PlaylistStore.inMemory()
+        let playlist = try store.create(name: "Queue")
+        try store.add(trackID: first.id, to: playlist.id)
+        try store.add(trackID: second.id, to: playlist.id)
+        let playlistViewModel = try PlaylistViewModel(store: store, library: libraryViewModel)
+        var played = [([SimpleMusic.MusicTrack], Int)]()
+        let sut = PlaylistTracksViewController(
+            playlistID: playlist.id,
+            viewModel: playlistViewModel,
+            onPlay: { played.append(($0, $1)) }
+        )
+        sut.loadViewIfNeeded()
+
+        try XCTUnwrap(findView(identifier: "playlist.playAll", in: sut.view) as? UIButton)
+            .sendActions(for: .touchUpInside)
+        try XCTUnwrap(findView(identifier: "playlist.shuffle", in: sut.view) as? UIButton)
+            .sendActions(for: .touchUpInside)
+
+        XCTAssertEqual(played.count, 2)
+        XCTAssertEqual(played[0].0.map(\.id), [first.id, second.id])
+        XCTAssertEqual(played[0].1, 0)
+        XCTAssertEqual(Set(played[1].0.map(\.id)), Set([first.id, second.id]))
+        XCTAssertEqual(played[1].1, 0)
+    }
+
+    /// 如果重命名或删除只改表格快照、没有通过共享 ViewModel 落盘，此测试应失败。
+    @MainActor
+    func testPlaylistRowActionsRenameAndDeleteThroughSharedViewModel() throws {
+        let libraryViewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: []),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        let store = try PlaylistStore.inMemory()
+        _ = try store.create(name: "Old Name")
+        _ = try store.create(name: "Delete Me")
+        let playlistViewModel = try PlaylistViewModel(store: store, library: libraryViewModel)
+        let sut = PlaylistListViewController(viewModel: playlistViewModel, onPlay: { _, _ in })
+        let navigation = UINavigationController(rootViewController: sut)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = navigation
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        navigation.view.layoutIfNeeded()
+
+        sut.presentRenamePrompt(at: 0)
+        let alert = try XCTUnwrap(sut.presentedViewController as? UIAlertController)
+        let textField = try XCTUnwrap(alert.textFields?.first)
+        XCTAssertEqual(textField.text, "Old Name")
+        textField.text = "New Name"
+        textField.sendActions(for: .editingDidEndOnExit)
+        XCTAssertEqual(playlistViewModel.playlists.map(\.name), ["New Name", "Delete Me"])
+
+        sut.deletePlaylist(at: 1)
+        XCTAssertEqual(playlistViewModel.playlists.map(\.name), ["New Name"])
+    }
+
+    /// 如果手机或 iPad 根容器没有把同一个播放列表状态注入资料库页，此测试应失败。
+    @MainActor
+    func testPhoneAndPadRootsInjectSharedPlaylistViewModel() throws {
+        let libraryViewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: []),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        let playlistViewModel = try PlaylistViewModel(
+            store: PlaylistStore.inMemory(),
+            library: libraryViewModel
+        )
+        let snapshots = CurrentValueSubject<PlaybackSnapshot, Never>(PlaybackSnapshot())
+        let dependencies = AppRootDependencies(
+            identity: NSObject(),
+            libraryViewModel: libraryViewModel,
+            playlistViewModel: playlistViewModel,
+            snapshotPublisher: snapshots.eraseToAnyPublisher(),
+            onPlay: { _, _ in },
+            onTogglePlay: {}
+        )
+        let phone = MainTabBarController(dependencies: dependencies)
+        let pad = PadRootViewController(dependencies: dependencies)
+        phone.loadViewIfNeeded()
+        pad.loadViewIfNeeded()
+
+        let phoneLibrary = try XCTUnwrap(descendant(LibraryViewController.self, in: phone))
+        let padLibrary = try XCTUnwrap(descendant(LibraryViewController.self, in: pad))
+        XCTAssertTrue(phoneLibrary.playlistViewModel === playlistViewModel)
+        XCTAssertTrue(padLibrary.playlistViewModel === playlistViewModel)
+    }
+
     /// Play All、Shuffle 与 Sort 必须作用于当前共享队列，而不是只显示静态按钮。
     @MainActor
     func testTrackListActionsInvokePlaybackAndSortVisibleTracks() throws {
@@ -1643,6 +1871,25 @@ final class LibraryViewModelTests: XCTestCase {
 
     private func allSubviews(in root: UIView) -> [UIView] {
         [root] + root.subviews.flatMap(allSubviews)
+    }
+
+    private func selectCategory(named name: String, in library: LibraryViewController) {
+        guard let collection = allSubviews(in: library.view)
+            .compactMap({ $0 as? UICollectionView })
+            .first else {
+            return XCTFail("资料库缺少分类 collection view")
+        }
+        for section in 0..<library.numberOfSections(in: collection) {
+            let itemCount = library.collectionView(collection, numberOfItemsInSection: section)
+            for item in 0..<itemCount {
+                let indexPath = IndexPath(item: item, section: section)
+                let cell = library.collectionView(collection, cellForItemAt: indexPath)
+                guard cell.accessibilityLabel == name else { continue }
+                library.collectionView(collection, didSelectItemAt: indexPath)
+                return
+            }
+        }
+        XCTFail("未找到分类：\(name)")
     }
 
     private func descendant<T: UIViewController>(

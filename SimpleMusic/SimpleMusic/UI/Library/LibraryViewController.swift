@@ -5,6 +5,7 @@ import UIKit
 /// 资料库首页：展示真实来源状态、分类入口和当前统一歌曲列表。
 final class LibraryViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegate {
     let viewModel: LibraryViewModel
+    let playlistViewModel: PlaylistViewModel?
     var onSelectTrack: (([MusicTrack], Int) -> Void)?
     var onDeleteTrack: ((MusicTrack) -> Void)?
     var onDownload: (() -> Void)?
@@ -14,8 +15,12 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
     private var sections = [Section]()
     private var cancellable: AnyCancellable?
 
-    init(viewModel: LibraryViewModel) {
+    init(
+        viewModel: LibraryViewModel,
+        playlistViewModel: PlaylistViewModel? = nil
+    ) {
         self.viewModel = viewModel
+        self.playlistViewModel = playlistViewModel
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -99,6 +104,13 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
             ) as! CategoryCell
             cell.configure(title: category.title, symbol: symbol)
             return cell
+        case let .playlistCategory(title, symbol):
+            let cell = collectionView.dequeueReusableCell(
+                withReuseIdentifier: CategoryCell.reuseIdentifier,
+                for: indexPath
+            ) as! CategoryCell
+            cell.configure(title: title, symbol: symbol)
+            return cell
         case let .track(track):
             let cell = collectionView.dequeueReusableCell(
                 withReuseIdentifier: TrackCell.reuseIdentifier,
@@ -133,6 +145,13 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         let section = sections[indexPath.section]
         switch section.items[indexPath.item] {
+        case .playlistCategory:
+            guard let playlistViewModel else { return }
+            let list = PlaylistListViewController(
+                viewModel: playlistViewModel,
+                onPlay: onSelectTrack
+            )
+            navigationController?.pushViewController(list, animated: true)
         case let .category(category, _):
             let list = TrackListViewController(
                 category: category,
@@ -200,7 +219,8 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
                     .category(.songs, "music.note"),
                     .category(.albums, "square.stack"),
                     .category(.artists, "person.2"),
-                    .category(.downloaded, "arrow.down.circle")
+                    .category(.downloaded, "arrow.down.circle"),
+                    .playlistCategory(L10n.text("playlist.title"), "music.note.list")
                 ]
             )
         )
@@ -329,6 +349,7 @@ private extension LibraryViewController {
     enum Item {
         case notice(String, String)
         case category(LibraryCategory, String)
+        case playlistCategory(String, String)
         case track(MusicTrack)
     }
 
