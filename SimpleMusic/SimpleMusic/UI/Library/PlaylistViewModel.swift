@@ -8,17 +8,18 @@ final class PlaylistViewModel {
 
     private let store: PlaylistStore
     private let library: LibraryViewModel
-    private var tracksCancellable: AnyCancellable?
+    private var reloadCompletionCancellable: AnyCancellable?
 
     init(store: PlaylistStore, library: LibraryViewModel) throws {
         self.store = store
         self.library = library
         playlists = try store.fetchPlaylists()
-        tracksCancellable = library.$tracks
-            .dropFirst()
-            .sink { [weak self] tracks in
+        reloadCompletionCancellable = library.$completedReloadGeneration
+            .compactMap { $0 }
+            .sink { [weak self] _ in
                 MainActor.assumeIsolated {
-                    self?.removeMissingTrackIDs(using: tracks)
+                    guard let self else { return }
+                    self.removeMissingTrackIDs(using: self.library.tracks)
                 }
             }
     }

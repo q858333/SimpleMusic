@@ -44,6 +44,62 @@ final class PlaylistViewModelTests: XCTestCase {
         XCTAssertEqual(library.tracks, [keep])
     }
 
+    /// 系统来源先发布空结果时，尚在读取的本地歌曲不能被当成永久缺失而清理。
+    func testDelayedLocalSourceKeepsPlaylistItemThroughSystemIntermediatePublish() async throws {
+        let localTrack = makeTrack(id: "local")
+        let localStore = DeferredLocalMusicStore()
+        let library = LibraryViewModel(
+            library: MutableMusicLibrary(tracks: []),
+            localStore: localStore
+        )
+        let store = try PlaylistStore.inMemory()
+        let playlist = try store.create(name: "本地")
+        try store.add(trackID: localTrack.id, to: playlist.id)
+        let sut = try PlaylistViewModel(store: store, library: library)
+
+        let reload = Task { await library.reload() }
+        let didPublishSystemResult = await eventually {
+            library.systemState == .empty && library.localState == .loading && library.tracks.isEmpty
+        }
+        XCTAssertTrue(didPublishSystemResult)
+        XCTAssertEqual(try store.tracks(in: playlist.id), [localTrack.id])
+        XCTAssertTrue(sut.tracks(for: playlist.id).isEmpty)
+
+        localStore.resumeRequestIfPending(with: [localTrack])
+        await reload.value
+
+        XCTAssertEqual(try store.tracks(in: playlist.id), [localTrack.id])
+        XCTAssertEqual(sut.tracks(for: playlist.id), [localTrack])
+    }
+
+    /// 本地来源先发布空结果时，尚在读取的系统歌曲不能被当成永久缺失而清理。
+    func testDelayedSystemSourceKeepsPlaylistItemThroughLocalIntermediatePublish() async throws {
+        let systemTrack = makeTrack(id: "system")
+        let systemLibrary = DeferredMusicLibrary()
+        let library = LibraryViewModel(
+            library: systemLibrary,
+            localStore: EmptyLocalMusicStore()
+        )
+        let store = try PlaylistStore.inMemory()
+        let playlist = try store.create(name: "系统")
+        try store.add(trackID: systemTrack.id, to: playlist.id)
+        let sut = try PlaylistViewModel(store: store, library: library)
+
+        let reload = Task { await library.reload() }
+        let didPublishLocalResult = await eventually {
+            library.systemState == .loading && library.localState == .empty && library.tracks.isEmpty
+        }
+        XCTAssertTrue(didPublishLocalResult)
+        XCTAssertEqual(try store.tracks(in: playlist.id), [systemTrack.id])
+        XCTAssertTrue(sut.tracks(for: playlist.id).isEmpty)
+
+        systemLibrary.resumeRequestIfPending(with: [systemTrack])
+        await reload.value
+
+        XCTAssertEqual(try store.tracks(in: playlist.id), [systemTrack.id])
+        XCTAssertEqual(sut.tracks(for: playlist.id), [systemTrack])
+    }
+
     private func makeLibraryViewModel(source: MutableMusicLibrary) -> LibraryViewModel {
         LibraryViewModel(library: source, localStore: EmptyLocalMusicStore())
     }
@@ -58,6 +114,17 @@ final class PlaylistViewModelTests: XCTestCase {
             artworkData: nil,
             source: .system(persistentID: 1)
         )
+    }
+
+    private func eventually(
+        attempts: Int = 100,
+        condition: @escaping @MainActor () -> Bool
+    ) async -> Bool {
+        for _ in 0..<attempts {
+            if condition() { return true }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return condition()
     }
 }
 
@@ -78,5 +145,38 @@ private final class MutableMusicLibrary: MusicLibraryLoading {
 private final class EmptyLocalMusicStore: LocalMusicLoading {
     func loadTracks() async throws -> [SimpleMusic.MusicTrack] {
         []
+    }
+}
+
+@MainActor
+private final class DeferredMusicLibrary: MusicLibraryLoading {
+    let authorizationStatus: MPMediaLibraryAuthorizationStatus = .authorized
+    private var continuations = [CheckedContinuation<[SimpleMusic.MusicTrack], Never>]()
+
+    func loadTracks() async throws -> [SimpleMusic.MusicTrack] {
+        await withCheckedContinuation { continuation in
+            continuations.append(continuation)
+        }
+    }
+
+    func resumeRequestIfPending(with tracks: [SimpleMusic.MusicTrack]) {
+        guard continuations.isEmpty == false else { return }
+        continuations.removeFirst().resume(returning: tracks)
+    }
+}
+
+@MainActor
+private final class DeferredLocalMusicStore: LocalMusicLoading {
+    private var continuations = [CheckedContinuation<[SimpleMusic.MusicTrack], Never>]()
+
+    func loadTracks() async throws -> [SimpleMusic.MusicTrack] {
+        await withCheckedContinuation { continuation in
+            continuations.append(continuation)
+        }
+    }
+
+    func resumeRequestIfPending(with tracks: [SimpleMusic.MusicTrack]) {
+        guard continuations.isEmpty == false else { return }
+        continuations.removeFirst().resume(returning: tracks)
     }
 }

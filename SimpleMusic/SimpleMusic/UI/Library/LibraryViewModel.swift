@@ -43,6 +43,7 @@ final class LibraryViewModel {
     @Published private(set) var systemState: LibrarySectionState = .idle
     @Published private(set) var localState: LibrarySectionState = .idle
     @Published private(set) var storageWarning: String?
+    @Published private(set) var completedReloadGeneration: UInt64?
 
     private let library: any MusicLibraryLoading
     private let localStore: any LocalMusicLoading
@@ -80,6 +81,9 @@ final class LibraryViewModel {
         )
         async let localWork: Void = reloadLocal(generation: generation)
         _ = await (systemWork, localWork)
+
+        guard generation == reloadGeneration else { return }
+        completedReloadGeneration = generation
     }
 
     /// 生命周期、授权和系统资料库事件统一经过此入口。
