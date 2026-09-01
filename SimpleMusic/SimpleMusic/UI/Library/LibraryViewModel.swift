@@ -36,6 +36,13 @@ enum LibrarySectionState: Equatable {
     case failed(String)
 }
 
+/// 只有非 nil 的来源 ID 集才代表本代完成了可用于失效清理的权威枚举。
+struct LibraryReloadCompletion {
+    let generation: UInt64
+    let systemTrackIDs: Set<String>?
+    let localTrackIDs: Set<String>?
+}
+
 /// 汇总系统歌曲与下载歌曲；不拥有播放状态，只提供页面展示和本地搜索数据。
 @MainActor
 final class LibraryViewModel {
@@ -43,7 +50,7 @@ final class LibraryViewModel {
     @Published private(set) var systemState: LibrarySectionState = .idle
     @Published private(set) var localState: LibrarySectionState = .idle
     @Published private(set) var storageWarning: String?
-    @Published private(set) var completedReloadGeneration: UInt64?
+    @Published private(set) var completedReload: LibraryReloadCompletion?
 
     private let library: any MusicLibraryLoading
     private let localStore: any LocalMusicLoading
@@ -75,15 +82,19 @@ final class LibraryViewModel {
         localState = .loading
 
         // 两个 child task 同时启动；各来源结束后独立发布，reload 仍等待本代全部收束。
-        async let systemWork: Void = reloadSystem(
+        async let systemWork = reloadSystem(
             generation: generation,
             isAuthorized: isAuthorized
         )
-        async let localWork: Void = reloadLocal(generation: generation)
-        _ = await (systemWork, localWork)
+        async let localWork = reloadLocal(generation: generation)
+        let (systemTrackIDs, localTrackIDs) = await (systemWork, localWork)
 
         guard generation == reloadGeneration else { return }
-        completedReloadGeneration = generation
+        completedReload = LibraryReloadCompletion(
+            generation: generation,
+            systemTrackIDs: systemTrackIDs,
+            localTrackIDs: localTrackIDs
+        )
     }
 
     /// 生命周期、授权和系统资料库事件统一经过此入口。
@@ -131,50 +142,59 @@ final class LibraryViewModel {
         }
     }
 
-    private func reloadSystem(generation: UInt64, isAuthorized: Bool) async {
+    private func reloadSystem(
+        generation: UInt64,
+        isAuthorized: Bool
+    ) async -> Set<String>? {
         guard isAuthorized else {
-            guard generation == reloadGeneration else { return }
+            guard generation == reloadGeneration else { return nil }
             systemTracks = []
             publishMergedTracks()
-            return
+            return nil
         }
 
         let result = await load { try await self.library.loadTracks() }
 
         // 较早来源可以继续释放资源，但任何单源迟到事件都不能改写新一代。
-        guard generation == reloadGeneration else { return }
+        guard generation == reloadGeneration else { return nil }
         guard library.authorizationStatus == .authorized else {
             systemTracks = []
             systemState = .permissionRequired
             publishMergedTracks()
-            return
+            return nil
         }
 
         switch result {
         case let .success(loadedTracks):
             systemTracks = loadedTracks
             systemState = loadedTracks.isEmpty ? .empty : .loaded
+            publishMergedTracks()
+            return Set(loadedTracks.map(\.id))
         case .failure:
             systemState = .failed(L10n.text("library.error.system"))
+            publishMergedTracks()
+            return nil
         }
-        publishMergedTracks()
     }
 
-    private func reloadLocal(generation: UInt64) async {
+    private func reloadLocal(generation: UInt64) async -> Set<String>? {
         let result = await load { try await self.localStore.loadTracks() }
 
-        guard generation == reloadGeneration else { return }
+        guard generation == reloadGeneration else { return nil }
 
         switch result {
         case let .success(loadedTracks):
             localTracks = loadedTracks
             localState = loadedTracks.isEmpty ? .empty : .loaded
+            publishMergedTracks()
+            return Set(loadedTracks.map(\.id))
         case let .failure(error):
             localState = .failed(
                 (error as? LocalizedError)?.errorDescription ?? L10n.text("library.error.local")
             )
+            publishMergedTracks()
+            return nil
         }
-        publishMergedTracks()
     }
 
     private func publishMergedTracks() {

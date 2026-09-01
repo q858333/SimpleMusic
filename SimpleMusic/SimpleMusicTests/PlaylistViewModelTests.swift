@@ -100,6 +100,84 @@ final class PlaylistViewModelTests: XCTestCase {
         XCTAssertEqual(sut.tracks(for: playlist.id), [systemTrack])
     }
 
+    /// 如果本地索引读取失败仍被当成权威空枚举，下载歌曲的持久化关系会被误删。
+    func testLocalSourceFailurePreservesDurablePlaylistItem() async throws {
+        let trackID = "00000000-0000-0000-0000-000000000071"
+        let library = LibraryViewModel(
+            library: MutableMusicLibrary(tracks: []),
+            localStore: FailingLocalMusicStore()
+        )
+        let store = try PlaylistStore.inMemory()
+        let playlist = try store.create(name: "本地失败")
+        try store.add(trackID: trackID, to: playlist.id)
+        let sut = try PlaylistViewModel(store: store, library: library)
+
+        await library.reload()
+
+        XCTAssertTrue(sut.tracks(for: playlist.id).isEmpty)
+        XCTAssertEqual(try store.tracks(in: playlist.id), [trackID])
+    }
+
+    /// 如果系统查询失败仍被当成权威空枚举，Apple Music 歌曲关系会被误删。
+    func testSystemSourceFailurePreservesDurablePlaylistItem() async throws {
+        let trackID = "system-72"
+        let library = LibraryViewModel(
+            library: FailingMusicLibrary(),
+            localStore: EmptyLocalMusicStore()
+        )
+        let store = try PlaylistStore.inMemory()
+        let playlist = try store.create(name: "系统失败")
+        try store.add(trackID: trackID, to: playlist.id)
+        let sut = try PlaylistViewModel(store: store, library: library)
+
+        await library.reload()
+
+        XCTAssertTrue(sut.tracks(for: playlist.id).isEmpty)
+        XCTAssertEqual(try store.tracks(in: playlist.id), [trackID])
+    }
+
+    /// 如果拒绝系统资料库权限也发布可清理代次，冷启动解析不到的关系会被永久删除。
+    func testDeniedSystemAuthorizationPreservesDurablePlaylistItem() async throws {
+        let trackID = "system-73"
+        let library = LibraryViewModel(
+            library: AuthorizationMusicLibrary(authorizationStatus: .denied),
+            localStore: EmptyLocalMusicStore()
+        )
+        let store = try PlaylistStore.inMemory()
+        let playlist = try store.create(name: "系统拒权")
+        try store.add(trackID: trackID, to: playlist.id)
+        let sut = try PlaylistViewModel(store: store, library: library)
+
+        await library.reload()
+
+        XCTAssertTrue(sut.tracks(for: playlist.id).isEmpty)
+        XCTAssertEqual(try store.tracks(in: playlist.id), [trackID])
+    }
+
+    /// 如果系统查询期间撤权仍被当成权威成功，查询结果隐藏时会连带删除持久化关系。
+    func testRevokedSystemAuthorizationDuringQueryPreservesDurablePlaylistItem() async throws {
+        let track = makeTrack(id: "system-74")
+        let systemLibrary = DeferredMusicLibrary()
+        let library = LibraryViewModel(
+            library: systemLibrary,
+            localStore: EmptyLocalMusicStore()
+        )
+        let store = try PlaylistStore.inMemory()
+        let playlist = try store.create(name: "系统撤权")
+        try store.add(trackID: track.id, to: playlist.id)
+        let sut = try PlaylistViewModel(store: store, library: library)
+
+        let reload = Task { await library.reload() }
+        let queryStarted = await eventually { systemLibrary.requestCount == 1 }
+        XCTAssertTrue(queryStarted)
+        systemLibrary.authorizationStatus = .denied
+        systemLibrary.resumeRequestIfPending(with: [track])
+        await reload.value
+
+        XCTAssertTrue(sut.tracks(for: playlist.id).isEmpty)
+        XCTAssertEqual(try store.tracks(in: playlist.id), [track.id])
+    }
+
     private func makeLibraryViewModel(source: MutableMusicLibrary) -> LibraryViewModel {
         LibraryViewModel(library: source, localStore: EmptyLocalMusicStore())
     }
@@ -148,10 +226,42 @@ private final class EmptyLocalMusicStore: LocalMusicLoading {
     }
 }
 
+private struct SourceUnavailableError: Error {}
+
+@MainActor
+private final class AuthorizationMusicLibrary: MusicLibraryLoading {
+    let authorizationStatus: MPMediaLibraryAuthorizationStatus
+
+    init(authorizationStatus: MPMediaLibraryAuthorizationStatus) {
+        self.authorizationStatus = authorizationStatus
+    }
+
+    func loadTracks() async throws -> [SimpleMusic.MusicTrack] {
+        []
+    }
+}
+
+@MainActor
+private final class FailingMusicLibrary: MusicLibraryLoading {
+    let authorizationStatus: MPMediaLibraryAuthorizationStatus = .authorized
+
+    func loadTracks() async throws -> [SimpleMusic.MusicTrack] {
+        throw SourceUnavailableError()
+    }
+}
+
+private final class FailingLocalMusicStore: LocalMusicLoading {
+    func loadTracks() async throws -> [SimpleMusic.MusicTrack] {
+        throw SourceUnavailableError()
+    }
+}
+
 @MainActor
 private final class DeferredMusicLibrary: MusicLibraryLoading {
-    let authorizationStatus: MPMediaLibraryAuthorizationStatus = .authorized
+    var authorizationStatus: MPMediaLibraryAuthorizationStatus = .authorized
     private var continuations = [CheckedContinuation<[SimpleMusic.MusicTrack], Never>]()
+
+    var requestCount: Int { continuations.count }
 
     func loadTracks() async throws -> [SimpleMusic.MusicTrack] {
         await withCheckedContinuation { continuation in

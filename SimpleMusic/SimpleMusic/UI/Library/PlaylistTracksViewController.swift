@@ -66,8 +66,9 @@ final class PlaylistTracksViewController: UIViewController,
     }
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        guard tracks.indices.contains(indexPath.item) else { return }
-        onPlay?(tracks, indexPath.item)
+        let resolvedTracks = viewModel.tracks(for: playlistID)
+        guard resolvedTracks.indices.contains(indexPath.item) else { return }
+        onPlay?(resolvedTracks, indexPath.item)
     }
 
     func collectionView(
@@ -84,16 +85,20 @@ final class PlaylistTracksViewController: UIViewController,
             title: L10n.text("list.play_all"),
             identifier: "playlist.playAll"
         ) { [weak self] in
-            guard let self, tracks.isEmpty == false else { return }
-            onPlay?(tracks, 0)
+            guard let self else { return }
+            let resolvedTracks = viewModel.tracks(for: playlistID)
+            guard resolvedTracks.isEmpty == false else { return }
+            onPlay?(resolvedTracks, 0)
         }
         configureActionButton(
             shuffleButton,
             title: L10n.text("list.shuffle"),
             identifier: "playlist.shuffle"
         ) { [weak self] in
-            guard let self, tracks.isEmpty == false else { return }
-            onPlay?(tracks.shuffled(), 0)
+            guard let self else { return }
+            let resolvedTracks = viewModel.tracks(for: playlistID)
+            guard resolvedTracks.isEmpty == false else { return }
+            onPlay?(resolvedTracks.shuffled(), 0)
         }
         actionsStack.addArrangedSubview(playAllButton)
         actionsStack.addArrangedSubview(shuffleButton)
@@ -154,9 +159,11 @@ final class PlaylistTracksViewController: UIViewController,
     }
 
     private func bindViewModel() {
-        cancellable = viewModel.$playlists.sink { [weak self] _ in
-            self?.refreshContent()
-        }
+        cancellable = viewModel.$playlists
+            .combineLatest(viewModel.$resolutionRevision)
+            .sink { [weak self] _, _ in
+                self?.refreshContent()
+            }
     }
 
     private func refreshContent() {

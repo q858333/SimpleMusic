@@ -135,10 +135,12 @@ final class PlaylistListViewController: UIViewController, UITableViewDataSource,
     }
 
     private func bindViewModel() {
-        cancellable = viewModel.$playlists.sink { [weak self] playlists in
-            self?.playlists = playlists
-            self?.tableView.reloadData()
-        }
+        cancellable = viewModel.$playlists
+            .combineLatest(viewModel.$resolutionRevision)
+            .sink { [weak self] playlists, _ in
+                self?.playlists = playlists
+                self?.tableView.reloadData()
+            }
     }
 
     private func presentCreatePrompt() {

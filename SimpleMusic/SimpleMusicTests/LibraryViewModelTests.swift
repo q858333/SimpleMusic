@@ -1663,6 +1663,155 @@ final class LibraryViewModelTests: XCTestCase {
         XCTAssertEqual(selectedIndex, 2)
     }
 
+    /// 如果目录和详情只监听持久化列表，分阶段来源发布不会刷新已打开页面。
+    @MainActor
+    func testOpenPlaylistPagesRefreshForEachStagedLibraryPublication() async throws {
+        let systemTrack = makeTrack(id: "system-801", title: "系统新结果")
+        let localTrack = makeTrack(
+            id: "00000000-0000-0000-0000-000000000802",
+            title: "本地新结果",
+            source: .downloaded(fileName: "local-802.m4a")
+        )
+        let systemLibrary = DeferredMusicLibrary()
+        let localStore = DeferredLocalMusicStore()
+        let libraryViewModel = LibraryViewModel(
+            library: systemLibrary,
+            localStore: localStore
+        )
+        let store = try PlaylistStore.inMemory()
+        let playlist = try store.create(name: "分阶段")
+        try store.add(trackID: systemTrack.id, to: playlist.id)
+        try store.add(trackID: localTrack.id, to: playlist.id)
+        let playlistViewModel = try PlaylistViewModel(
+            store: store,
+            library: libraryViewModel
+        )
+        let list = PlaylistListViewController(viewModel: playlistViewModel, onPlay: nil)
+        let detail = PlaylistTracksViewController(
+            playlistID: playlist.id,
+            viewModel: playlistViewModel,
+            onPlay: nil
+        )
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = UINavigationController(rootViewController: list)
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        list.loadViewIfNeeded()
+        detail.loadViewIfNeeded()
+        window.layoutIfNeeded()
+        let table = try XCTUnwrap(
+            allSubviews(in: list.view).compactMap { $0 as? UITableView }.first
+        )
+
+        XCTAssertEqual(
+            table.cellForRow(at: IndexPath(row: 0, section: 0))?.detailTextLabel?.text,
+            L10n.plural("tracks.count", count: 0)
+        )
+        XCTAssertTrue(detail.tracks.isEmpty)
+
+        let firstReload = Task { await libraryViewModel.reload() }
+        let firstSourcesStarted = await eventually {
+            systemLibrary.requestCount == 1 && localStore.requestCount == 1
+        }
+        XCTAssertTrue(firstSourcesStarted)
+        systemLibrary.resumeRequestIfPending(at: 0, with: [systemTrack])
+        let systemStagePublished = await eventually {
+            detail.tracks == [systemTrack]
+                && table.cellForRow(at: IndexPath(row: 0, section: 0))?
+                    .detailTextLabel?.text == L10n.plural("tracks.count", count: 1)
+        }
+        XCTAssertTrue(systemStagePublished)
+        XCTAssertEqual(try store.tracks(in: playlist.id), [systemTrack.id, localTrack.id])
+
+        localStore.resumeRequestIfPending(at: 0, with: [localTrack])
+        await firstReload.value
+        XCTAssertEqual(detail.tracks, [systemTrack, localTrack])
+        XCTAssertEqual(
+            table.cellForRow(at: IndexPath(row: 0, section: 0))?.detailTextLabel?.text,
+            L10n.plural("tracks.count", count: 2)
+        )
+
+        let secondReload = Task { await libraryViewModel.reload() }
+        let secondSourcesStarted = await eventually {
+            systemLibrary.requestCount == 2 && localStore.requestCount == 2
+        }
+        XCTAssertTrue(secondSourcesStarted)
+        systemLibrary.resumeRequestIfPending(at: 1, with: [])
+        let systemRemovalPublished = await eventually {
+            detail.tracks == [localTrack]
+                && table.cellForRow(at: IndexPath(row: 0, section: 0))?
+                    .detailTextLabel?.text == L10n.plural("tracks.count", count: 1)
+        }
+        XCTAssertTrue(systemRemovalPublished)
+        XCTAssertEqual(try store.tracks(in: playlist.id), [systemTrack.id, localTrack.id])
+
+        localStore.resumeRequestIfPending(at: 1, with: [])
+        await secondReload.value
+        XCTAssertTrue(detail.tracks.isEmpty)
+        XCTAssertEqual(
+            table.cellForRow(at: IndexPath(row: 0, section: 0))?.detailTextLabel?.text,
+            L10n.plural("tracks.count", count: 0)
+        )
+        XCTAssertTrue(try store.tracks(in: playlist.id).isEmpty)
+    }
+
+    /// 如果同 ID 更新被去重或详情继续用旧快照，行元数据和三个播放入口都会保持旧值。
+    @MainActor
+    func testPlaylistDetailRedrawsAndPlaysLatestMetadataForSameTrackID() async throws {
+        let oldTrack = makeTrack(id: "system-811", title: "旧标题", artist: "旧艺人")
+        let updatedTrack = makeTrack(id: oldTrack.id, title: "新标题", artist: "新艺人")
+        let systemLibrary = DeferredMusicLibrary()
+        let libraryViewModel = LibraryViewModel(
+            library: systemLibrary,
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        let initialReload = Task { await libraryViewModel.reload() }
+        let initialRequestStarted = await eventually { systemLibrary.requestCount == 1 }
+        XCTAssertTrue(initialRequestStarted)
+        systemLibrary.resumeRequestIfPending(at: 0, with: [oldTrack])
+        await initialReload.value
+
+        let store = try PlaylistStore.inMemory()
+        let playlist = try store.create(name: "元数据")
+        try store.add(trackID: oldTrack.id, to: playlist.id)
+        let playlistViewModel = try PlaylistViewModel(
+            store: store,
+            library: libraryViewModel
+        )
+        var playedQueues = [[SimpleMusic.MusicTrack]]()
+        let sut = PlaylistTracksViewController(
+            playlistID: playlist.id,
+            viewModel: playlistViewModel,
+            onPlay: { queue, _ in playedQueues.append(queue) }
+        )
+        sut.loadViewIfNeeded()
+        let collection = try XCTUnwrap(
+            allSubviews(in: sut.view).compactMap { $0 as? UICollectionView }.first
+        )
+
+        let refresh = Task { await libraryViewModel.reload() }
+        let refreshStarted = await eventually { systemLibrary.requestCount == 2 }
+        XCTAssertTrue(refreshStarted)
+        systemLibrary.resumeRequestIfPending(at: 1, with: [updatedTrack])
+        await refresh.value
+
+        let cell = sut.collectionView(
+            collection,
+            cellForItemAt: IndexPath(item: 0, section: 0)
+        )
+        let title = try XCTUnwrap(findView(identifier: "track.title", in: cell) as? UILabel)
+        sut.collectionView(collection, didSelectItemAt: IndexPath(item: 0, section: 0))
+        try XCTUnwrap(findView(identifier: "playlist.playAll", in: sut.view) as? UIButton)
+            .sendActions(for: .touchUpInside)
+        try XCTUnwrap(findView(identifier: "playlist.shuffle", in: sut.view) as? UIButton)
+            .sendActions(for: .touchUpInside)
+
+        XCTAssertEqual(sut.tracks, [updatedTrack])
+        XCTAssertEqual(title.text, updatedTrack.title)
+        XCTAssertEqual(playedQueues.count, 3)
+        XCTAssertTrue(playedQueues.allSatisfy { $0 == [updatedTrack] })
+    }
+
     /// 如果重命名行 action 没有作用于选中列表或绕过共享 ViewModel，此测试应失败。
     @MainActor
     func testPlaylistRenameContextualActionRenamesSelectedPlaylist() throws {
