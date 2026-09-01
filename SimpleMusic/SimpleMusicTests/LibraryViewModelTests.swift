@@ -1423,9 +1423,47 @@ final class LibraryViewModelTests: XCTestCase {
         XCTAssertEqual(played[1].1, 0)
     }
 
-    /// 如果重命名或删除只改表格快照、没有通过共享 ViewModel 落盘，此测试应失败。
+    /// 如果点第三首时详情页改传固定索引或重排队列，此测试应失败。
     @MainActor
-    func testPlaylistRowActionsRenameAndDeleteThroughSharedViewModel() throws {
+    func testPlaylistTracksSelectionForwardsOrderedQueueAndSelectedIndex() async throws {
+        let first = makeTrack(id: "selection-first")
+        let second = makeTrack(id: "selection-second")
+        let third = makeTrack(id: "selection-third")
+        let libraryViewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: [first, second, third]),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        await libraryViewModel.reload()
+        let store = try PlaylistStore.inMemory()
+        let playlist = try store.create(name: "Selection")
+        try store.add(trackID: first.id, to: playlist.id)
+        try store.add(trackID: second.id, to: playlist.id)
+        try store.add(trackID: third.id, to: playlist.id)
+        let playlistViewModel = try PlaylistViewModel(store: store, library: libraryViewModel)
+        var selectedQueue = [SimpleMusic.MusicTrack]()
+        var selectedIndex: Int?
+        let sut = PlaylistTracksViewController(
+            playlistID: playlist.id,
+            viewModel: playlistViewModel,
+            onPlay: { queue, index in
+                selectedQueue = queue
+                selectedIndex = index
+            }
+        )
+        sut.loadViewIfNeeded()
+        let collection = try XCTUnwrap(
+            allSubviews(in: sut.view).compactMap { $0 as? UICollectionView }.first
+        )
+
+        sut.collectionView(collection, didSelectItemAt: IndexPath(item: 2, section: 0))
+
+        XCTAssertEqual(selectedQueue.map(\.id), [first.id, second.id, third.id])
+        XCTAssertEqual(selectedIndex, 2)
+    }
+
+    /// 如果重命名行 action 没有作用于选中列表或绕过共享 ViewModel，此测试应失败。
+    @MainActor
+    func testPlaylistRenameContextualActionRenamesSelectedPlaylist() throws {
         let libraryViewModel = LibraryViewModel(
             library: StubMusicLibrary(tracks: []),
             localStore: StubLocalMusicStore(tracks: [])
@@ -1442,16 +1480,72 @@ final class LibraryViewModelTests: XCTestCase {
         defer { window.isHidden = true }
         navigation.view.layoutIfNeeded()
 
-        sut.presentRenamePrompt(at: 0)
+        let table = try XCTUnwrap(
+            allSubviews(in: sut.view).compactMap { $0 as? UITableView }.first
+        )
+        let renameConfiguration = try XCTUnwrap(
+            sut.tableView(
+                table,
+                trailingSwipeActionsConfigurationForRowAt: IndexPath(row: 0, section: 0)
+            )
+        )
+        let renameAction = try XCTUnwrap(
+            renameConfiguration.actions.first { $0.style == .normal }
+        )
+        var didCompleteRename = false
+        renameAction.handler(renameAction, table) { didCompleteRename = $0 }
         let alert = try XCTUnwrap(sut.presentedViewController as? UIAlertController)
         let textField = try XCTUnwrap(alert.textFields?.first)
         XCTAssertEqual(textField.text, "Old Name")
         textField.text = "New Name"
         textField.sendActions(for: .editingDidEndOnExit)
+        XCTAssertTrue(didCompleteRename)
         XCTAssertEqual(playlistViewModel.playlists.map(\.name), ["New Name", "Delete Me"])
+    }
 
-        sut.deletePlaylist(at: 1)
-        XCTAssertEqual(playlistViewModel.playlists.map(\.name), ["New Name"])
+    /// 如果删除行 action 没有作用于选中列表或只改表格快照，此测试应失败。
+    @MainActor
+    func testPlaylistDeleteContextualActionDeletesSelectedPlaylist() throws {
+        let libraryViewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: []),
+            localStore: StubLocalMusicStore(tracks: [])
+        )
+        let store = try PlaylistStore.inMemory()
+        _ = try store.create(name: "Keep Me")
+        _ = try store.create(name: "Delete Me")
+        let playlistViewModel = try PlaylistViewModel(store: store, library: libraryViewModel)
+        let sut = PlaylistListViewController(viewModel: playlistViewModel, onPlay: { _, _ in })
+        sut.loadViewIfNeeded()
+        let table = try XCTUnwrap(
+            allSubviews(in: sut.view).compactMap { $0 as? UITableView }.first
+        )
+
+        let deleteConfiguration = try XCTUnwrap(
+            sut.tableView(
+                table,
+                trailingSwipeActionsConfigurationForRowAt: IndexPath(row: 1, section: 0)
+            )
+        )
+        let deleteAction = try XCTUnwrap(
+            deleteConfiguration.actions.first { $0.style == .destructive }
+        )
+        var didCompleteDelete = false
+        deleteAction.handler(deleteAction, table) { didCompleteDelete = $0 }
+        XCTAssertTrue(didCompleteDelete)
+        XCTAssertEqual(playlistViewModel.playlists.map(\.name), ["Keep Me"])
+    }
+
+    /// 如果环境依赖组装丢弃共享实例或重新创建播放列表状态，此测试应失败。
+    @MainActor
+    func testEnvironmentDependenciesPreservePlaylistViewModelIdentity() throws {
+        let environment = AppEnvironment(
+            downloadStorageResolution: DownloadStorageResolution(store: nil, warning: nil)
+        )
+
+        let dependencies = AppRootDependencies(environment: environment)
+
+        let injected = try XCTUnwrap(dependencies.playlistViewModel)
+        XCTAssertTrue(injected === environment.playlistViewModel)
     }
 
     /// 如果手机或 iPad 根容器没有把同一个播放列表状态注入资料库页，此测试应失败。
