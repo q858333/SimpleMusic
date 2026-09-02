@@ -10,6 +10,7 @@ final class AppEnvironment {
     let deviceIdentifierService = DeviceIdentifierService()
     let downloadNetworkMonitor = DownloadNetworkMonitor()
     let musicLibraryService = MusicLibraryService()
+    private let appConfigurationService: AppConfigurationService
     private var libraryChangeObserver: MusicLibraryChangeObserver?
     private var localMusicCatalog: LocalMusicCatalog?
     private let injectedDownloadStorageResolution: DownloadStorageResolution?
@@ -31,8 +32,8 @@ final class AppEnvironment {
 
     var downloadFileStore: DownloadFileStore? { downloadStorageResolution.store }
     var downloadStorageWarning: String? { downloadStorageResolution.warning }
-    /// 服务端接入后只需要替换此处的能力来源；所有下载 UI 共用这一开关。
-    var downloadFeatureEnabled: Bool { true }
+    /// 所有下载 UI 共用服务端下发的能力开关；网络失败时保留当前值。
+    private(set) var downloadFeatureEnabled = true
 
     lazy var downloadManager: DownloadManager? = {
         guard let downloadFileStore else { return nil }
@@ -141,8 +142,12 @@ final class AppEnvironment {
         )
     )
 
-    init(downloadStorageResolution: DownloadStorageResolution? = nil) {
+    init(
+        downloadStorageResolution: DownloadStorageResolution? = nil,
+        appConfigurationService: AppConfigurationService? = nil
+    ) {
         injectedDownloadStorageResolution = downloadStorageResolution
+        self.appConfigurationService = appConfigurationService ?? AppConfigurationService()
         // 下载偏好已从设置页移除：统一恢复为可使用蜂窝网络，且完成后不打断当前播放。
         settingsStore.allowsCellularDownloads = true
         settingsStore.autoPlayAfterDownload = false
@@ -162,6 +167,19 @@ final class AppEnvironment {
     /// 返回本次启动由 APNs 回调的最新 Token；回调前为 nil。
     var apnsDeviceToken: String? {
         APNsTokenStore.shared.currentToken
+    }
+
+    /// 冷启动完成配置请求；只有开关改变时才要求根界面重新构造。
+    func refreshRemoteConfiguration() async -> Bool {
+        do {
+            let downloadsEnabled = try await appConfigurationService.fetch().downloadsEnabled
+            let changed = downloadFeatureEnabled != downloadsEnabled
+            downloadFeatureEnabled = downloadsEnabled
+            return changed
+        } catch {
+            NSLog("应用配置拉取失败：%@", String(describing: error))
+            return false
+        }
     }
 
     private static func makeInMemoryContainer() -> NSPersistentContainer {

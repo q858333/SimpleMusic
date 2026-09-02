@@ -6,18 +6,22 @@ import YYText
 /// App 启动后短暂展示的品牌页；系统冷启动画面仍由 LaunchScreen.storyboard 提供。
 final class LaunchViewController: UIViewController {
     typealias LaunchAction = @MainActor () async -> Void
+    typealias ConfigurationRefreshAction = @MainActor () async -> Bool
     typealias RouteScheduler = @MainActor (@escaping @MainActor () -> Void) -> Void
 
     static let agreementAcceptedDefaultsKey = "launch.agreement.accepted"
 
     private let registerDevice: LaunchAction
     private let requestAPNsAuthorization: LaunchAction
+    private let refreshRemoteConfiguration: ConfigurationRefreshAction
     private let agreementDefaults: UserDefaults
     private let scheduleRoute: RouteScheduler
     var onAgreementAccepted: @MainActor () -> Void
+    var onConfigurationRefreshed: @MainActor () -> Void = {}
     private var hasAcceptedAgreement = false
     private var hasRequestedAPNsAuthorization = false
     private var hasStartedPostAgreementActions = false
+    private var hasStartedConfigurationRefresh = false
 
     private let iconView: UIImageView = {
         let imageView = UIImageView(image: UIImage(named: "music-note-white"))
@@ -52,12 +56,14 @@ final class LaunchViewController: UIViewController {
     init(
         registerDevice: @escaping LaunchAction = LaunchViewController.registerDevice,
         requestAPNsAuthorization: @escaping LaunchAction = LaunchViewController.requestAPNsAuthorization,
+        refreshRemoteConfiguration: @escaping ConfigurationRefreshAction = LaunchViewController.refreshRemoteConfiguration,
         agreementDefaults: UserDefaults = .standard,
         onAgreementAccepted: @escaping @MainActor () -> Void = {},
         scheduleRoute: @escaping RouteScheduler = LaunchViewController.scheduleRoute
     ) {
         self.registerDevice = registerDevice
         self.requestAPNsAuthorization = requestAPNsAuthorization
+        self.refreshRemoteConfiguration = refreshRemoteConfiguration
         self.agreementDefaults = agreementDefaults
         self.onAgreementAccepted = onAgreementAccepted
         self.scheduleRoute = scheduleRoute
@@ -111,8 +117,20 @@ final class LaunchViewController: UIViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
 
+        startConfigurationRefreshIfNeeded()
         if agreementDefaults.bool(forKey: Self.agreementAcceptedDefaultsKey) {
             startPostAgreementActionsIfNeeded()
+        }
+    }
+
+    private func startConfigurationRefreshIfNeeded() {
+        guard !hasStartedConfigurationRefresh else { return }
+        hasStartedConfigurationRefresh = true
+
+        let refreshRemoteConfiguration = refreshRemoteConfiguration
+        Task { [weak self] in
+            guard await refreshRemoteConfiguration(), !Task.isCancelled else { return }
+            self?.onConfigurationRefreshed()
         }
     }
 
@@ -212,7 +230,11 @@ final class LaunchViewController: UIViewController {
         }
     }
 
-    private static func scheduleRoute(_ route: @escaping @MainActor () -> Void) {
+    private static func refreshRemoteConfiguration() async -> Bool {
+        await AppEnvironment.shared.refreshRemoteConfiguration()
+    }
+
+    nonisolated private static func scheduleRoute(_ route: @escaping @MainActor () -> Void) {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard !Task.isCancelled else { return }

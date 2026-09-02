@@ -121,6 +121,70 @@ enum DeviceRegistrationError: Error, Equatable {
     case httpStatus(Int)
 }
 
+struct AppConfiguration: Equatable {
+    let downloadsEnabled: Bool
+}
+
+enum AppConfigurationError: Error, Equatable {
+    case invalidResponse
+    case httpStatus(Int)
+}
+
+/// 读取 Worker 下发的应用开关；失败由调用方保留当前配置继续运行。
+@MainActor
+final class AppConfigurationService {
+    typealias RequestExecutor = (URLRequest) async throws -> (Data, URLResponse)
+
+    private struct WorkerResponse: Decodable {
+        let success: Bool
+        let data: Payload?
+    }
+
+    private struct Payload: Decodable {
+        let downloadsEnabled: Bool
+    }
+
+    private let endpoint: URL
+    private let requestExecutor: RequestExecutor
+
+    init(
+        endpoint: URL = URL(string: "https://disktoneweb.dengcheez.workers.dev/api/v1/config")!,
+        requestExecutor: @escaping RequestExecutor = { request in
+            let response = await AF.request(request).serializingData().response
+            let data = try response.result.get()
+            guard let urlResponse = response.response else {
+                throw AppConfigurationError.invalidResponse
+            }
+            return (data, urlResponse)
+        }
+    ) {
+        self.endpoint = endpoint
+        self.requestExecutor = requestExecutor
+    }
+
+    func fetch() async throws -> AppConfiguration {
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 15
+
+        let (data, response) = try await requestExecutor(request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AppConfigurationError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw AppConfigurationError.httpStatus(httpResponse.statusCode)
+        }
+        guard
+            let payload = try? JSONDecoder().decode(WorkerResponse.self, from: data),
+            payload.success,
+            let configuration = payload.data
+        else {
+            throw AppConfigurationError.invalidResponse
+        }
+        return AppConfiguration(downloadsEnabled: configuration.downloadsEnabled)
+    }
+}
+
 /// 将本机设备号与可选 APNs Token 上报到 Worker；网络失败由调用方记录，不阻塞启动。
 @MainActor
 final class DeviceRegistrationService {
