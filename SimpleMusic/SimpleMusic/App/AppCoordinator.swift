@@ -13,6 +13,7 @@ struct AppRootDependencies {
     let identity: ObjectIdentifier
     let libraryViewModel: LibraryViewModel
     let playlistViewModel: PlaylistViewModel?
+    let downloadFeatureEnabled: Bool
     let snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>
     let onPlay: ([MusicTrack], Int) -> Void
     let onDeleteTrack: (MusicTrack) -> Void
@@ -38,6 +39,7 @@ struct AppRootDependencies {
         identity = ObjectIdentifier(environment)
         libraryViewModel = viewModel
         playlistViewModel = environment.playlistViewModel
+        downloadFeatureEnabled = environment.downloadFeatureEnabled
         snapshotPublisher = environment.playbackCoordinator.snapshotPublisher
         onPlay = play
         onDeleteTrack = { [weak viewModel] track in
@@ -107,6 +109,7 @@ struct AppRootDependencies {
         identity: AnyObject,
         libraryViewModel: LibraryViewModel,
         playlistViewModel: PlaylistViewModel? = nil,
+        downloadFeatureEnabled: Bool = true,
         snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>,
         onPlay: @escaping ([MusicTrack], Int) -> Void,
         onDeleteTrack: @escaping (MusicTrack) -> Void = { _ in },
@@ -123,6 +126,7 @@ struct AppRootDependencies {
         self.identity = ObjectIdentifier(identity)
         self.libraryViewModel = libraryViewModel
         self.playlistViewModel = playlistViewModel
+        self.downloadFeatureEnabled = downloadFeatureEnabled
         self.snapshotPublisher = snapshotPublisher
         self.onPlay = onPlay
         self.onDeleteTrack = onDeleteTrack
@@ -171,13 +175,23 @@ final class AppCoordinator {
         environment: AppEnvironment,
         userInterfaceIdiom: UIUserInterfaceIdiom
     ) {
-        let dependencies = AppRootDependencies(environment: environment)
         self.init(
             window: window,
             authorizationStatus: { environment.musicLibraryService.authorizationStatus },
             requestAuthorization: { await environment.musicLibraryService.requestAuthorization() },
             rootKind: Self.rootKind(for: userInterfaceIdiom),
-            makeMainViewController: Self.makeMainViewControllerFactory(dependencies: dependencies)
+            makeMainViewController: { kind in
+                Self.makeMainViewControllerFactory(
+                    dependencies: AppRootDependencies(environment: environment)
+                )(kind)
+            },
+            makeLaunchViewController: {
+                LaunchViewController(
+                    refreshRemoteConfiguration: {
+                        await environment.refreshRemoteConfiguration()
+                    }
+                )
+            }
         )
     }
 
@@ -205,6 +219,9 @@ final class AppCoordinator {
         if let launch = launch as? LaunchViewController {
             launch.onAgreementAccepted = { [weak self] in
                 self?.showInitialRoute()
+            }
+            launch.onConfigurationRefreshed = { [weak self] in
+                self?.refreshMainInterfaceIfVisible()
             }
         }
         window.rootViewController = launch
@@ -326,6 +343,11 @@ final class AppCoordinator {
         // 异步权限回调和按钮事件可能接近发生，根界面只能创建一次。
         guard !hasEnteredMain else { return }
         hasEnteredMain = true
+        window.rootViewController = makeMainViewController(rootKind)
+    }
+
+    private func refreshMainInterfaceIfVisible() {
+        guard hasEnteredMain else { return }
         window.rootViewController = makeMainViewController(rootKind)
     }
 }

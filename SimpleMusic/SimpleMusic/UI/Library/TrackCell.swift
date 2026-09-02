@@ -9,7 +9,6 @@ final class TrackCell: UICollectionViewCell {
         didSet { updateMoreVisibility() }
     }
     private var usesPlaceholderArtwork = false
-    private var isDownloadedTrack = false
 
     private let artworkView: UIImageView = {
         let view = UIImageView()
@@ -95,11 +94,10 @@ final class TrackCell: UICollectionViewCell {
         artworkView.image = nil
         artworkView.contentMode = .scaleAspectFill
         usesPlaceholderArtwork = false
-        isDownloadedTrack = false
         onMore = nil
     }
 
-    func configure(with track: MusicTrack) {
+    func configure(with track: MusicTrack, showsDownloadStatus: Bool = true) {
         titleLabel.text = track.title
         subtitleLabel.text = "\(track.artist) · \(track.album)"
         if let artwork = track.artworkData.flatMap(UIImage.init(data:)) {
@@ -110,11 +108,9 @@ final class TrackCell: UICollectionViewCell {
             usesPlaceholderArtwork = true
             updatePlaceholderArtwork()
         }
-        if case .downloaded = track.source {
-            isDownloadedTrack = true
+        if case .downloaded = track.source, showsDownloadStatus {
             downloadedLabel.isHidden = false
         } else {
-            isDownloadedTrack = false
             downloadedLabel.isHidden = true
         }
         updateMoreVisibility()
@@ -190,7 +186,7 @@ final class TrackCell: UICollectionViewCell {
     }
 
     private func updateMoreVisibility() {
-        moreButton.isHidden = onMore == nil && isDownloadedTrack == false
+        moreButton.isHidden = onMore == nil
     }
 }
 

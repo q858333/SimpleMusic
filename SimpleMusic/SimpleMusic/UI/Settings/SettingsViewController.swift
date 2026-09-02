@@ -18,8 +18,6 @@ final class SettingsViewController: UIViewController {
     private var permissionTask: Task<Void, Never>?
 
     private let permissionStatusLabel = UILabel()
-    private let cellularSwitch = UISwitch()
-    private let autoPlaySwitch = UISwitch()
 
     init(
         settingsStore: SettingsStore,
@@ -93,30 +91,6 @@ final class SettingsViewController: UIViewController {
         permissionRow.snp.makeConstraints { make in make.edges.equalToSuperview().inset(14) }
         permissionButton.addAction(UIAction { [weak self] _ in self?.handlePermission() }, for: .touchUpInside)
 
-        cellularSwitch.accessibilityIdentifier = "settings.cellular"
-        cellularSwitch.accessibilityLabel = L10n.text("settings.cellular_title")
-        cellularSwitch.addAction(UIAction { [weak self] _ in
-            guard let self else { return }
-            settingsStore.allowsCellularDownloads = cellularSwitch.isOn
-        }, for: .valueChanged)
-        let cellularRow = makeSwitchRow(
-            title: L10n.text("settings.cellular_title"),
-            detail: L10n.text("settings.cellular_detail"),
-            toggle: cellularSwitch
-        )
-
-        autoPlaySwitch.accessibilityIdentifier = "settings.autoplay"
-        autoPlaySwitch.accessibilityLabel = L10n.text("settings.autoplay_title")
-        autoPlaySwitch.addAction(UIAction { [weak self] _ in
-            guard let self else { return }
-            settingsStore.autoPlayAfterDownload = autoPlaySwitch.isOn
-        }, for: .valueChanged)
-        let autoPlayRow = makeSwitchRow(
-            title: L10n.text("settings.autoplay_title"),
-            detail: L10n.text("settings.autoplay_detail"),
-            toggle: autoPlaySwitch
-        )
-
         let aboutButton = makeDisclosureButton(
             title: L10n.text("settings.about_title"),
             identifier: "settings.about"
@@ -130,7 +104,6 @@ final class SettingsViewController: UIViewController {
             self?.showFeedback()
         }
         content.addArrangedSubview(section(title: L10n.text("settings.section.library"), rows: [permissionButton]))
-        content.addArrangedSubview(section(title: L10n.text("settings.section.download"), rows: [cellularRow, autoPlayRow]))
         content.addArrangedSubview(section(title: L10n.text("settings.section.about"), rows: [aboutButton]))
         content.addArrangedSubview(
             section(
@@ -162,22 +135,6 @@ final class SettingsViewController: UIViewController {
         stack.axis = .vertical
         stack.spacing = 8
         return stack
-    }
-
-    private func makeSwitchRow(title: String, detail: String, toggle: UISwitch) -> UIView {
-        let titleLabel = makeLabel(title, style: .body)
-        let detailLabel = makeLabel(detail, style: .caption1, color: .secondaryLabel)
-        let copy = UIStackView(arrangedSubviews: [titleLabel, detailLabel])
-        copy.axis = .vertical
-        copy.spacing = 3
-        let row = UIStackView(arrangedSubviews: [copy, toggle])
-        row.alignment = .center
-        row.spacing = 12
-        row.backgroundColor = Theme.surface
-        row.isLayoutMarginsRelativeArrangement = true
-        row.layoutMargins = UIEdgeInsets(top: 10, left: 14, bottom: 10, right: 14)
-        row.snp.makeConstraints { make in make.height.greaterThanOrEqualTo(64) }
-        return row
     }
 
     private func makeRowButton(identifier: String) -> UIButton {
@@ -230,8 +187,6 @@ final class SettingsViewController: UIViewController {
 
     private func syncValues() {
         guard isViewLoaded else { return }
-        cellularSwitch.isOn = settingsStore.allowsCellularDownloads
-        autoPlaySwitch.isOn = settingsStore.autoPlayAfterDownload
         permissionStatusLabel.text = Self.permissionText(authorizationStatus())
     }
 

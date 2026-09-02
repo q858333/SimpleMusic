@@ -209,6 +209,7 @@ extension UIViewController {
     func presentTrackMoreActions(
         for track: MusicTrack,
         playlistViewModel: PlaylistViewModel?,
+        allowsDownloadedTrackDeletion: Bool = true,
         onDelete: @escaping () -> Void
     ) {
         guard presentedViewController == nil else { return }
@@ -222,6 +223,7 @@ extension UIViewController {
         }
 
         guard let playlistViewModel else {
+            guard allowsDownloadedTrackDeletion else { return }
             presentLocalTrackDeletionPrompt(for: track, onConfirm: onDelete)
             return
         }
@@ -240,12 +242,14 @@ extension UIViewController {
                 )
             }
         })
-        actions.addAction(UIAlertAction(title: L10n.text("deletion.action"), style: .destructive) {
-            [weak self] _ in
-            self?.dismiss(animated: true) { [weak self] in
-                self?.presentLocalTrackDeletionPrompt(for: track, onConfirm: onDelete)
-            }
-        })
+        if allowsDownloadedTrackDeletion {
+            actions.addAction(UIAlertAction(title: L10n.text("deletion.action"), style: .destructive) {
+                [weak self] _ in
+                self?.dismiss(animated: true) { [weak self] in
+                    self?.presentLocalTrackDeletionPrompt(for: track, onConfirm: onDelete)
+                }
+            })
+        }
         actions.addAction(UIAlertAction(title: L10n.text("common.cancel"), style: .cancel))
         actions.popoverPresentationController?.sourceView = view
         actions.popoverPresentationController?.sourceRect = CGRect(

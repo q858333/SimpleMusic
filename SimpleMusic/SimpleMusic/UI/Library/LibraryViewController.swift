@@ -6,6 +6,7 @@ import UIKit
 final class LibraryViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegate {
     let viewModel: LibraryViewModel
     let playlistViewModel: PlaylistViewModel?
+    let downloadFeatureEnabled: Bool
     var onSelectTrack: (([MusicTrack], Int) -> Void)?
     var onDeleteTrack: ((MusicTrack) -> Void)?
     var onDownload: (() -> Void)?
@@ -17,10 +18,12 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
 
     init(
         viewModel: LibraryViewModel,
-        playlistViewModel: PlaylistViewModel? = nil
+        playlistViewModel: PlaylistViewModel? = nil,
+        downloadFeatureEnabled: Bool = true
     ) {
         self.viewModel = viewModel
         self.playlistViewModel = playlistViewModel
+        self.downloadFeatureEnabled = downloadFeatureEnabled
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -51,10 +54,9 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
             accessibilityLabel: L10n.text("library.open_settings"),
             action: { [weak self] in self?.onSettings?() }
         )
-        navigationItem.rightBarButtonItems = [
-            UIBarButtonItem(customView: settings),
-            UIBarButtonItem(customView: download)
-        ]
+        navigationItem.rightBarButtonItems = downloadFeatureEnabled
+            ? [UIBarButtonItem(customView: settings), UIBarButtonItem(customView: download)]
+            : [UIBarButtonItem(customView: settings)]
     }
 
     private func navigationButton(
@@ -116,12 +118,13 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
                 withReuseIdentifier: TrackCell.reuseIdentifier,
                 for: indexPath
             ) as! TrackCell
-            cell.configure(with: track)
-            if playlistViewModel != nil || track.isDownloaded {
+            cell.configure(with: track, showsDownloadStatus: downloadFeatureEnabled)
+            if playlistViewModel != nil || (downloadFeatureEnabled && track.isDownloaded) {
                 cell.onMore = { [weak self] in
                     self?.presentTrackMoreActions(
                         for: track,
                         playlistViewModel: self?.playlistViewModel,
+                        allowsDownloadedTrackDeletion: self?.downloadFeatureEnabled ?? false,
                         onDelete: { [weak self] in self?.onDeleteTrack?(track) }
                     )
                 }
@@ -151,7 +154,8 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
             guard let playlistViewModel else { return }
             let list = PlaylistListViewController(
                 viewModel: playlistViewModel,
-                onPlay: onSelectTrack
+                onPlay: onSelectTrack,
+                downloadFeatureEnabled: downloadFeatureEnabled
             )
             navigationController?.pushViewController(list, animated: true)
         case let .category(category, _):
@@ -222,7 +226,9 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
                     .category(.songs, "music.note"),
                     .category(.albums, "square.stack"),
                     .category(.artists, "person.2"),
-                    .category(.downloaded, "arrow.down.circle"),
+                ] + (downloadFeatureEnabled ? [
+                    .category(.downloaded, "arrow.down.circle")
+                ] : []) + [
                     .playlistCategory(L10n.text("playlist.title"), "music.note.list")
                 ]
             )
@@ -241,7 +247,7 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
 
     private func statusMessages() -> [Item] {
         var messages = [Item]()
-        if let storageWarning = viewModel.storageWarning {
+        if downloadFeatureEnabled, let storageWarning = viewModel.storageWarning {
             messages.append(.notice(storageWarning, "externaldrive.badge.exclamationmark"))
         }
         switch viewModel.systemState {
@@ -252,7 +258,7 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
         default:
             break
         }
-        if case let .failed(message) = viewModel.localState {
+        if downloadFeatureEnabled, case let .failed(message) = viewModel.localState {
             messages.append(.notice(message, "exclamationmark.triangle"))
         }
 

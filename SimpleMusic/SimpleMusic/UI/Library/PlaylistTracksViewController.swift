@@ -11,6 +11,7 @@ final class PlaylistTracksViewController: UIViewController,
 
     private let viewModel: PlaylistViewModel
     private let onPlay: (([MusicTrack], Int) -> Void)?
+    private let downloadFeatureEnabled: Bool
     private let playAllButton = UIButton(type: .system)
     private let shuffleButton = UIButton(type: .system)
     private let emptyLabel = UILabel()
@@ -21,11 +22,13 @@ final class PlaylistTracksViewController: UIViewController,
     init(
         playlistID: String,
         viewModel: PlaylistViewModel,
-        onPlay: (([MusicTrack], Int) -> Void)?
+        onPlay: (([MusicTrack], Int) -> Void)?,
+        downloadFeatureEnabled: Bool = true
     ) {
         self.playlistID = playlistID
         self.viewModel = viewModel
         self.onPlay = onPlay
+        self.downloadFeatureEnabled = downloadFeatureEnabled
         tracks = viewModel.tracks(for: playlistID)
         super.init(nibName: nil, bundle: nil)
         title = viewModel.playlists.first(where: { $0.id == playlistID })?.name
@@ -61,7 +64,7 @@ final class PlaylistTracksViewController: UIViewController,
             withReuseIdentifier: TrackCell.reuseIdentifier,
             for: indexPath
         ) as! TrackCell
-        cell.configure(with: tracks[indexPath.item])
+        cell.configure(with: tracks[indexPath.item], showsDownloadStatus: downloadFeatureEnabled)
         return cell
     }
 

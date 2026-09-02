@@ -7,16 +7,19 @@ final class PlaylistListViewController: UIViewController, UITableViewDataSource,
     let viewModel: PlaylistViewModel
 
     private let onPlay: (([MusicTrack], Int) -> Void)?
+    private let downloadFeatureEnabled: Bool
     private var playlists: [Playlist]
     private var cancellable: AnyCancellable?
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
 
     init(
         viewModel: PlaylistViewModel,
-        onPlay: (([MusicTrack], Int) -> Void)?
+        onPlay: (([MusicTrack], Int) -> Void)?,
+        downloadFeatureEnabled: Bool = true
     ) {
         self.viewModel = viewModel
         self.onPlay = onPlay
+        self.downloadFeatureEnabled = downloadFeatureEnabled
         playlists = viewModel.playlists
         super.init(nibName: nil, bundle: nil)
     }
@@ -65,7 +68,8 @@ final class PlaylistListViewController: UIViewController, UITableViewDataSource,
         let list = PlaylistTracksViewController(
             playlistID: playlists[indexPath.row].id,
             viewModel: viewModel,
-            onPlay: onPlay
+            onPlay: onPlay,
+            downloadFeatureEnabled: downloadFeatureEnabled
         )
         navigationController?.pushViewController(list, animated: true)
     }

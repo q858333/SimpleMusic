@@ -204,6 +204,58 @@ final class AppCoordinatorTests: XCTestCase {
         XCTAssertTrue(window.rootViewController === main)
     }
 
+    @MainActor
+    func testColdStartRebuildsMainInterfaceAfterRemoteConfigurationChanges() async throws {
+        let window = UIWindow(frame: .zero)
+        let initialMain = UIViewController()
+        let refreshedMain = UIViewController()
+        var mainFactoryCount = 0
+        var scheduledRoute: (@MainActor () -> Void)?
+        var configurationCompletion: CheckedContinuation<Bool, Never>?
+        let configurationStarted = expectation(description: "configuration starts")
+        let routeScheduled = expectation(description: "route scheduled")
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        defaults.set(true, forKey: LaunchViewController.agreementAcceptedDefaultsKey)
+        let launch = LaunchViewController(
+            registerDevice: {},
+            requestAPNsAuthorization: {},
+            refreshRemoteConfiguration: {
+                configurationStarted.fulfill()
+                return await withCheckedContinuation { configurationCompletion = $0 }
+            },
+            agreementDefaults: defaults,
+            scheduleRoute: {
+                scheduledRoute = $0
+                routeScheduled.fulfill()
+            }
+        )
+        let coordinator = AppCoordinator(
+            window: window,
+            authorizationStatus: { .authorized },
+            requestAuthorization: { .authorized },
+            rootKind: .phone,
+            makeMainViewController: { _ in
+                mainFactoryCount += 1
+                return mainFactoryCount == 1 ? initialMain : refreshedMain
+            },
+            makeLaunchViewController: { launch }
+        )
+
+        coordinator.start()
+        launch.loadViewIfNeeded()
+        launch.beginAppearanceTransition(true, animated: false)
+        launch.endAppearanceTransition()
+        await fulfillment(of: [configurationStarted, routeScheduled], timeout: 1)
+        try XCTUnwrap(scheduledRoute)()
+        await waitUntil { window.rootViewController === initialMain }
+        configurationCompletion?.resume(returning: true)
+
+        await waitUntil { window.rootViewController === refreshedMain }
+
+        XCTAssertEqual(mainFactoryCount, 2)
+        XCTAssertTrue(window.rootViewController === refreshedMain)
+    }
+
     func testPersistentStoreFailureFallsBackToMemoryWithoutRemovingOriginalStore() throws {
         let persistent = NSPersistentContainer(name: "SimpleMusic")
         let memory = NSPersistentContainer(name: "SimpleMusic")
@@ -318,6 +370,16 @@ final class AppCoordinatorTests: XCTestCase {
             environment.libraryViewModel.localState,
             .failed(L10n.text("storage.download.unavailable_short"))
         )
+    }
+
+    /// 远端开关返回前，下载入口必须保持关闭，避免先展示后撤回。
+    @MainActor
+    func testEnvironmentDefaultsDownloadsToDisabledBeforeRemoteConfiguration() {
+        let environment = AppEnvironment(
+            downloadStorageResolution: DownloadStorageResolution(store: nil, warning: nil)
+        )
+
+        XCTAssertFalse(environment.downloadFeatureEnabled)
     }
 
     @MainActor
