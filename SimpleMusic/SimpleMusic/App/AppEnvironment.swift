@@ -31,6 +31,8 @@ final class AppEnvironment {
 
     var downloadFileStore: DownloadFileStore? { downloadStorageResolution.store }
     var downloadStorageWarning: String? { downloadStorageResolution.warning }
+    /// 服务端接入后只需要替换此处的能力来源；所有下载 UI 共用这一开关。
+    var downloadFeatureEnabled: Bool { true }
 
     lazy var downloadManager: DownloadManager? = {
         guard let downloadFileStore else { return nil }
@@ -141,6 +143,9 @@ final class AppEnvironment {
 
     init(downloadStorageResolution: DownloadStorageResolution? = nil) {
         injectedDownloadStorageResolution = downloadStorageResolution
+        // 下载偏好已从设置页移除：统一恢复为可使用蜂窝网络，且完成后不打断当前播放。
+        settingsStore.allowsCellularDownloads = true
+        settingsStore.autoPlayAfterDownload = false
         do {
             try nowPlayingService.start()
         } catch {

@@ -50,6 +50,7 @@ enum LibraryCategory: Equatable {
 final class TrackListViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
     let category: LibraryCategory
     let playlistViewModel: PlaylistViewModel?
+    let downloadFeatureEnabled: Bool
     private(set) var tracks: [MusicTrack]
     var onPlay: (([MusicTrack], Int) -> Void)?
     var onDelete: ((MusicTrack) -> Void)?
@@ -66,10 +67,12 @@ final class TrackListViewController: UIViewController, UICollectionViewDataSourc
         title: String? = nil,
         tracks: [MusicTrack],
         playlistViewModel: PlaylistViewModel? = nil,
+        downloadFeatureEnabled: Bool = true,
         onPlay: (([MusicTrack], Int) -> Void)?
     ) {
         self.category = category
         self.playlistViewModel = playlistViewModel
+        self.downloadFeatureEnabled = downloadFeatureEnabled
         viewModel = nil
         self.tracks = category.filteredTracks(from: tracks)
         self.onPlay = onPlay
@@ -82,10 +85,12 @@ final class TrackListViewController: UIViewController, UICollectionViewDataSourc
         category: LibraryCategory,
         viewModel: LibraryViewModel,
         playlistViewModel: PlaylistViewModel? = nil,
+        downloadFeatureEnabled: Bool = true,
         onPlay: (([MusicTrack], Int) -> Void)?
     ) {
         self.category = category
         self.playlistViewModel = playlistViewModel
+        self.downloadFeatureEnabled = downloadFeatureEnabled
         self.viewModel = viewModel
         tracks = category.filteredTracks(from: viewModel.tracks)
         self.onPlay = onPlay
@@ -129,12 +134,13 @@ final class TrackListViewController: UIViewController, UICollectionViewDataSourc
             for: indexPath
         ) as! TrackCell
         let track = tracks[indexPath.item]
-        cell.configure(with: track)
-        if playlistViewModel != nil || track.isDownloaded {
+        cell.configure(with: track, showsDownloadStatus: downloadFeatureEnabled)
+        if playlistViewModel != nil || (downloadFeatureEnabled && track.isDownloaded) {
             cell.onMore = { [weak self] in
                 self?.presentTrackMoreActions(
                     for: track,
                     playlistViewModel: self?.playlistViewModel,
+                    allowsDownloadedTrackDeletion: self?.downloadFeatureEnabled ?? false,
                     onDelete: { [weak self] in self?.onDelete?(track) }
                 )
             }
@@ -152,6 +158,7 @@ final class TrackListViewController: UIViewController, UICollectionViewDataSourc
                     category: childCategory,
                     viewModel: viewModel,
                     playlistViewModel: playlistViewModel,
+                    downloadFeatureEnabled: downloadFeatureEnabled,
                     onPlay: onPlay
                 )
             } else {
@@ -159,6 +166,7 @@ final class TrackListViewController: UIViewController, UICollectionViewDataSourc
                     category: childCategory,
                     tracks: tracks,
                     playlistViewModel: playlistViewModel,
+                    downloadFeatureEnabled: downloadFeatureEnabled,
                     onPlay: onPlay
                 )
             }

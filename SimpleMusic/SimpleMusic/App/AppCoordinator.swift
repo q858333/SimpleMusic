@@ -13,6 +13,7 @@ struct AppRootDependencies {
     let identity: ObjectIdentifier
     let libraryViewModel: LibraryViewModel
     let playlistViewModel: PlaylistViewModel?
+    let downloadFeatureEnabled: Bool
     let snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>
     let onPlay: ([MusicTrack], Int) -> Void
     let onDeleteTrack: (MusicTrack) -> Void
@@ -38,6 +39,7 @@ struct AppRootDependencies {
         identity = ObjectIdentifier(environment)
         libraryViewModel = viewModel
         playlistViewModel = environment.playlistViewModel
+        downloadFeatureEnabled = environment.downloadFeatureEnabled
         snapshotPublisher = environment.playbackCoordinator.snapshotPublisher
         onPlay = play
         onDeleteTrack = { [weak viewModel] track in
@@ -107,6 +109,7 @@ struct AppRootDependencies {
         identity: AnyObject,
         libraryViewModel: LibraryViewModel,
         playlistViewModel: PlaylistViewModel? = nil,
+        downloadFeatureEnabled: Bool = true,
         snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>,
         onPlay: @escaping ([MusicTrack], Int) -> Void,
         onDeleteTrack: @escaping (MusicTrack) -> Void = { _ in },
@@ -123,6 +126,7 @@ struct AppRootDependencies {
         self.identity = ObjectIdentifier(identity)
         self.libraryViewModel = libraryViewModel
         self.playlistViewModel = playlistViewModel
+        self.downloadFeatureEnabled = downloadFeatureEnabled
         self.snapshotPublisher = snapshotPublisher
         self.onPlay = onPlay
         self.onDeleteTrack = onDeleteTrack

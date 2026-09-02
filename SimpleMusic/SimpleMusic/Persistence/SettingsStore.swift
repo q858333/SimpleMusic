@@ -13,7 +13,10 @@ struct SettingsStore {
     let defaults: UserDefaults
 
     var allowsCellularDownloads: Bool {
-        get { defaults.bool(forKey: Key.cellular) }
+        get {
+            guard defaults.object(forKey: Key.cellular) != nil else { return true }
+            return defaults.bool(forKey: Key.cellular)
+        }
         nonmutating set { defaults.set(newValue, forKey: Key.cellular) }
     }
 

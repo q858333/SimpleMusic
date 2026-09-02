@@ -7,6 +7,7 @@ final class MainTabBarController: UITabBarController {
     let dependencyIdentity: ObjectIdentifier?
     private let libraryViewModel: LibraryViewModel
     private let playlistViewModel: PlaylistViewModel?
+    private let downloadFeatureEnabled: Bool
     private let snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>
     private let onPlay: ([MusicTrack], Int) -> Void
     private let onDeleteTrack: (MusicTrack) -> Void
@@ -19,11 +20,13 @@ final class MainTabBarController: UITabBarController {
 
     private lazy var libraryViewController = LibraryViewController(
         viewModel: libraryViewModel,
-        playlistViewModel: playlistViewModel
+        playlistViewModel: playlistViewModel,
+        downloadFeatureEnabled: downloadFeatureEnabled
     )
     private lazy var searchViewController = SearchViewController(
         viewModel: libraryViewModel,
-        playlistViewModel: playlistViewModel
+        playlistViewModel: playlistViewModel,
+        downloadFeatureEnabled: downloadFeatureEnabled
     )
     private lazy var miniPlayerView = MiniPlayerView(
         snapshotPublisher: snapshotPublisher,
@@ -43,6 +46,7 @@ final class MainTabBarController: UITabBarController {
         self.init(
             libraryViewModel: dependencies.libraryViewModel,
             playlistViewModel: dependencies.playlistViewModel,
+            downloadFeatureEnabled: dependencies.downloadFeatureEnabled,
             snapshotPublisher: dependencies.snapshotPublisher,
             onPlay: dependencies.onPlay,
             onDeleteTrack: dependencies.onDeleteTrack,
@@ -55,6 +59,7 @@ final class MainTabBarController: UITabBarController {
     init(
         libraryViewModel: LibraryViewModel,
         playlistViewModel: PlaylistViewModel? = nil,
+        downloadFeatureEnabled: Bool = true,
         snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>,
         onPlay: @escaping ([MusicTrack], Int) -> Void,
         onDeleteTrack: @escaping (MusicTrack) -> Void = { _ in },
@@ -65,6 +70,7 @@ final class MainTabBarController: UITabBarController {
         self.dependencyIdentity = dependencyIdentity
         self.libraryViewModel = libraryViewModel
         self.playlistViewModel = playlistViewModel
+        self.downloadFeatureEnabled = downloadFeatureEnabled
         self.snapshotPublisher = snapshotPublisher
         self.onPlay = onPlay
         self.onDeleteTrack = onDeleteTrack

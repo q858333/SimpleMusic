@@ -9,6 +9,7 @@ final class SearchViewController: UIViewController,
     UISearchResultsUpdating {
     let viewModel: LibraryViewModel
     let playlistViewModel: PlaylistViewModel?
+    let downloadFeatureEnabled: Bool
     var onSelectTrack: (([MusicTrack], Int) -> Void)?
     var onDeleteTrack: ((MusicTrack) -> Void)?
 
@@ -26,10 +27,12 @@ final class SearchViewController: UIViewController,
 
     init(
         viewModel: LibraryViewModel,
-        playlistViewModel: PlaylistViewModel? = nil
+        playlistViewModel: PlaylistViewModel? = nil,
+        downloadFeatureEnabled: Bool = true
     ) {
         self.viewModel = viewModel
         self.playlistViewModel = playlistViewModel
+        self.downloadFeatureEnabled = downloadFeatureEnabled
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -68,12 +71,13 @@ final class SearchViewController: UIViewController,
             for: indexPath
         ) as! TrackCell
         let track = results[indexPath.item]
-        cell.configure(with: track)
-        if playlistViewModel != nil || track.isDownloaded {
+        cell.configure(with: track, showsDownloadStatus: downloadFeatureEnabled)
+        if playlistViewModel != nil || (downloadFeatureEnabled && track.isDownloaded) {
             cell.onMore = { [weak self] in
                 self?.presentTrackMoreActions(
-                    for: track,
-                    playlistViewModel: self?.playlistViewModel,
+                        for: track,
+                        playlistViewModel: self?.playlistViewModel,
+                        allowsDownloadedTrackDeletion: self?.downloadFeatureEnabled ?? false,
                     onDelete: { [weak self] in self?.onDeleteTrack?(track) }
                 )
             }

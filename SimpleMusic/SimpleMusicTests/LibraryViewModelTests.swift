@@ -1157,6 +1157,37 @@ final class LibraryViewModelTests: XCTestCase {
         })
     }
 
+    /// 下载能力关闭时，资料库不能露出已下载状态或本地删除入口。
+    @MainActor
+    func testDownloadCapabilityCanHideLibraryDownloadSurfaces() async throws {
+        let downloaded = makeTrack(
+            id: "hidden-download",
+            source: .downloaded(fileName: "hidden-download.m4a")
+        )
+        let viewModel = LibraryViewModel(
+            library: StubMusicLibrary(tracks: []),
+            localStore: StubLocalMusicStore(tracks: [downloaded])
+        )
+        await viewModel.reload()
+        let library = LibraryViewController(
+            viewModel: viewModel,
+            downloadFeatureEnabled: false
+        )
+        library.loadViewIfNeeded()
+
+        let labels = library.navigationItem.rightBarButtonItems?
+            .compactMap { $0.customView?.accessibilityLabel } ?? []
+        XCTAssertFalse(labels.contains(L10n.text("library.download_audio")))
+
+        let cell = TrackCell(frame: CGRect(x: 0, y: 0, width: 360, height: 66))
+        cell.configure(with: downloaded, showsDownloadStatus: false)
+        cell.layoutIfNeeded()
+        let badge = try XCTUnwrap(findView(identifier: "track.downloaded", in: cell))
+        let more = try XCTUnwrap(findView(identifier: "track.more", in: cell))
+        XCTAssertTrue(badge.isHidden)
+        XCTAssertTrue(more.isHidden)
+    }
+
     /// 如果歌曲行 VoiceOver 文案继续硬编码中文标点，英文运行将不会读出语言对应的分隔。
     @MainActor
     func testTrackCellUsesActiveLanguageAccessibilityFormat() throws {

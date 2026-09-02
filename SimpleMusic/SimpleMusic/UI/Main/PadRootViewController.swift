@@ -13,6 +13,7 @@ final class PadRootViewController: UIViewController {
     private let playerGuideDefaults: UserDefaults
     private let libraryViewModel: LibraryViewModel?
     private let playlistViewModel: PlaylistViewModel?
+    private let downloadFeatureEnabled: Bool
     private let snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>?
     private let onPlay: (([MusicTrack], Int) -> Void)?
     private let onDeleteTrack: ((MusicTrack) -> Void)?
@@ -120,6 +121,7 @@ final class PadRootViewController: UIViewController {
             nowPlayingViewController: panel,
             libraryViewModel: dependencies.libraryViewModel,
             playlistViewModel: dependencies.playlistViewModel,
+            downloadFeatureEnabled: dependencies.downloadFeatureEnabled,
             snapshotPublisher: dependencies.snapshotPublisher,
             onPlay: dependencies.onPlay,
             onDeleteTrack: dependencies.onDeleteTrack,
@@ -141,6 +143,7 @@ final class PadRootViewController: UIViewController {
         playerGuideDefaults = .standard
         libraryViewModel = nil
         playlistViewModel = nil
+        downloadFeatureEnabled = true
         snapshotPublisher = nil
         onPlay = nil
         onDeleteTrack = nil
@@ -152,6 +155,7 @@ final class PadRootViewController: UIViewController {
         nowPlayingViewController: UIViewController,
         libraryViewModel: LibraryViewModel,
         playlistViewModel: PlaylistViewModel? = nil,
+        downloadFeatureEnabled: Bool = true,
         snapshotPublisher: AnyPublisher<PlaybackSnapshot, Never>,
         onPlay: @escaping ([MusicTrack], Int) -> Void,
         onDeleteTrack: @escaping (MusicTrack) -> Void = { _ in },
@@ -165,6 +169,7 @@ final class PadRootViewController: UIViewController {
         self.playerGuideDefaults = playerGuideDefaults
         self.libraryViewModel = libraryViewModel
         self.playlistViewModel = playlistViewModel
+        self.downloadFeatureEnabled = downloadFeatureEnabled
         self.snapshotPublisher = snapshotPublisher
         self.onPlay = onPlay
         self.onDeleteTrack = onDeleteTrack
@@ -261,11 +266,13 @@ final class PadRootViewController: UIViewController {
     private func installLibraryPages(viewModel: LibraryViewModel) {
         let library = LibraryViewController(
             viewModel: viewModel,
-            playlistViewModel: playlistViewModel
+            playlistViewModel: playlistViewModel,
+            downloadFeatureEnabled: downloadFeatureEnabled
         )
         let search = SearchViewController(
             viewModel: viewModel,
-            playlistViewModel: playlistViewModel
+            playlistViewModel: playlistViewModel,
+            downloadFeatureEnabled: downloadFeatureEnabled
         )
         library.onSelectTrack = { [weak self] queue, index in self?.onPlay?(queue, index) }
         search.onSelectTrack = { [weak self] queue, index in self?.onPlay?(queue, index) }

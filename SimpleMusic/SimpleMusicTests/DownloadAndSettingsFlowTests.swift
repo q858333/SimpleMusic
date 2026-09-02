@@ -247,25 +247,19 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(label("download.network.status", in: second)).isHidden)
     }
 
-    func testSettingsSwitchesReadAndWriteSettingsStore() throws {
+    func testSettingsDoesNotExposeDownloadPreferences() throws {
         let defaults = UserDefaults(suiteName: #function)!
         defaults.removePersistentDomain(forName: #function)
         let store = SettingsStore(defaults: defaults)
-        store.allowsCellularDownloads = true
         let controller = makeSettingsController(settingsStore: store, status: { .authorized })
         controller.loadViewIfNeeded()
-        let cellular = try XCTUnwrap(view("settings.cellular", in: controller.view) as? UISwitch)
-        let autoPlay = try XCTUnwrap(view("settings.autoplay", in: controller.view) as? UISwitch)
 
-        XCTAssertTrue(cellular.isOn)
-        XCTAssertFalse(autoPlay.isOn)
-        cellular.isOn = false
-        cellular.sendActions(for: .valueChanged)
-        autoPlay.isOn = true
-        autoPlay.sendActions(for: .valueChanged)
-
-        XCTAssertFalse(store.allowsCellularDownloads)
-        XCTAssertTrue(store.autoPlayAfterDownload)
+        XCTAssertTrue(allViews(in: controller.view).compactMap { $0 as? UISwitch }.isEmpty)
+        XCTAssertNil(view("settings.cellular", in: controller.view))
+        XCTAssertNil(view("settings.autoplay", in: controller.view))
+        XCTAssertFalse(labelTexts(in: controller).contains(L10n.text("settings.section.download")))
+        XCTAssertTrue(store.allowsCellularDownloads)
+        XCTAssertFalse(store.autoPlayAfterDownload)
     }
 
     func testPermissionActionRequestsFirstTimeAndOpensSettingsWhenDenied() throws {
@@ -364,18 +358,12 @@ final class DownloadAndSettingsFlowTests: XCTestCase {
         let switches = allViews(in: settings.view).compactMap { $0 as? UISwitch }
         let labels = allViews(in: settings.view).compactMap { $0 as? UILabel }
 
-        XCTAssertEqual(switches.count, 2)
+        XCTAssertEqual(switches.count, 0)
         XCTAssertTrue(labels.filter { $0.text != nil }.allSatisfy(\.adjustsFontForContentSizeCategory))
         XCTAssertEqual(settings.title, L10n.text("settings.title"))
-        XCTAssertEqual(switches[0].accessibilityLabel, L10n.text("settings.cellular_title"))
-        XCTAssertEqual(switches[1].accessibilityLabel, L10n.text("settings.autoplay_title"))
         XCTAssertTrue(labelTexts(in: settings).contains(L10n.text("settings.permission_title")))
-        XCTAssertTrue(labelTexts(in: settings).contains(L10n.text("settings.cellular_title")))
-        XCTAssertTrue(labelTexts(in: settings).contains(L10n.text("settings.cellular_detail")))
-        XCTAssertTrue(labelTexts(in: settings).contains(L10n.text("settings.autoplay_title")))
-        XCTAssertTrue(labelTexts(in: settings).contains(L10n.text("settings.autoplay_detail")))
         XCTAssertTrue(labelTexts(in: settings).contains(L10n.text("settings.section.library")))
-        XCTAssertTrue(labelTexts(in: settings).contains(L10n.text("settings.section.download")))
+        XCTAssertFalse(labelTexts(in: settings).contains(L10n.text("settings.section.download")))
         XCTAssertTrue(labelTexts(in: settings).contains(L10n.text("settings.section.about")))
         XCTAssertEqual(
             buttonTitle("settings.about", in: settings),
