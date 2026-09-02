@@ -130,7 +130,7 @@ enum AppConfigurationError: Error, Equatable {
     case httpStatus(Int)
 }
 
-/// 读取 Worker 下发的应用开关；失败由调用方保留当前配置继续运行。
+/// 读取 Worker 下发的配置；失败由调用方保留当前配置继续运行。
 @MainActor
 final class AppConfigurationService {
     typealias RequestExecutor = (URLRequest) async throws -> (Data, URLResponse)

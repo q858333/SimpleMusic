@@ -32,7 +32,7 @@ final class AppEnvironment {
 
     var downloadFileStore: DownloadFileStore? { downloadStorageResolution.store }
     var downloadStorageWarning: String? { downloadStorageResolution.warning }
-    /// 所有下载 UI 共用服务端下发的能力开关；默认关闭，网络失败时保留当前值。
+    /// 所有下载 UI 共用服务端下发；默认关闭，网络失败时保留当前值。
     private(set) var downloadFeatureEnabled = false
 
     lazy var downloadManager: DownloadManager? = {
@@ -169,7 +169,7 @@ final class AppEnvironment {
         APNsTokenStore.shared.currentToken
     }
 
-    /// 冷启动完成配置请求；只有开关改变时才要求根界面重新构造。
+    /// 冷启动完成配置请求；要求根界面重新构造。
     func refreshRemoteConfiguration() async -> Bool {
         do {
             let downloadsEnabled = try await appConfigurationService.fetch().downloadsEnabled

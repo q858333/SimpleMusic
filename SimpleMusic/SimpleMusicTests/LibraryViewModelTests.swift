@@ -1157,7 +1157,7 @@ final class LibraryViewModelTests: XCTestCase {
         })
     }
 
-    /// 下载能力关闭时，资料库不能露出已下载状态或本地删除入口。
+    /// 关闭时，不展示。
     @MainActor
     func testDownloadCapabilityCanHideLibraryDownloadSurfaces() async throws {
         let downloaded = makeTrack(
