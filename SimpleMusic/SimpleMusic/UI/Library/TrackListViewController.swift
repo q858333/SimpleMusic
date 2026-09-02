@@ -239,7 +239,7 @@ final class TrackListViewController: UIViewController, UICollectionViewDataSourc
     ) -> UIButton {
         var configuration = UIButton.Configuration.tinted()
         configuration.title = title
-        configuration.baseForegroundColor = Theme.accent
+        configuration.baseForegroundColor = .label
         let button = UIButton(configuration: configuration)
         button.accessibilityIdentifier = identifier
         button.accessibilityLabel = title
