@@ -118,7 +118,7 @@ final class PlaylistListViewController: UIViewController, UITableViewDataSource,
         configuration.title = L10n.text("playlist.new")
         configuration.image = UIImage(systemName: "plus")
         configuration.imagePadding = 6
-        configuration.baseForegroundColor = Theme.accent
+        configuration.baseForegroundColor = .label
         let button = UIButton(configuration: configuration)
         button.accessibilityIdentifier = "playlist.new"
         button.addAction(UIAction { [weak self] _ in
