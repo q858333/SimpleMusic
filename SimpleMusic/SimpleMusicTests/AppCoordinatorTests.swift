@@ -372,6 +372,16 @@ final class AppCoordinatorTests: XCTestCase {
         )
     }
 
+    /// 远端开关返回前，下载入口必须保持关闭，避免先展示后撤回。
+    @MainActor
+    func testEnvironmentDefaultsDownloadsToDisabledBeforeRemoteConfiguration() {
+        let environment = AppEnvironment(
+            downloadStorageResolution: DownloadStorageResolution(store: nil, warning: nil)
+        )
+
+        XCTAssertFalse(environment.downloadFeatureEnabled)
+    }
+
     @MainActor
     func testDependenciesUseShortDownloadWarningWhenStorageWarningIsNil() throws {
         let environment = AppEnvironment(

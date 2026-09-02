@@ -32,8 +32,8 @@ final class AppEnvironment {
 
     var downloadFileStore: DownloadFileStore? { downloadStorageResolution.store }
     var downloadStorageWarning: String? { downloadStorageResolution.warning }
-    /// 所有下载 UI 共用服务端下发的能力开关；网络失败时保留当前值。
-    private(set) var downloadFeatureEnabled = true
+    /// 所有下载 UI 共用服务端下发的能力开关；默认关闭，网络失败时保留当前值。
+    private(set) var downloadFeatureEnabled = false
 
     lazy var downloadManager: DownloadManager? = {
         guard let downloadFileStore else { return nil }
