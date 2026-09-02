@@ -226,9 +226,7 @@ final class LibraryViewController: UIViewController, UICollectionViewDataSource,
                     .category(.songs, "music.note"),
                     .category(.albums, "square.stack"),
                     .category(.artists, "person.2"),
-                ] + (downloadFeatureEnabled ? [
-                    .category(.downloaded, "arrow.down.circle")
-                ] : []) + [
+                ] + [
                     .playlistCategory(L10n.text("playlist.title"), "music.note.list")
                 ]
             )
@@ -459,7 +457,7 @@ private final class SectionHeader: UICollectionReusableView {
         label.adjustsFontForContentSizeCategory = true
         addSubview(label)
         label.snp.makeConstraints { make in
-            make.leading.trailing.bottom.equalToSuperview()
+            make.leading.trailing.bottom.equalToSuperview().inset(8)
         }
     }
 

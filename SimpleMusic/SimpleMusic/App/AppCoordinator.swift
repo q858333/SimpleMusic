@@ -278,11 +278,25 @@ final class AppCoordinator {
     ) {
         guard let library = descendantLibraryController(in: root) else { return }
         library.onDownload = { [weak library] in
-            guard let library, library.presentedViewController == nil else { return }
+            guard let library,
+                  let navigation = library.navigationController,
+                  navigation.transitionCoordinator == nil else { return }
             let content = dependencies.makeDownloadViewController()
-            let navigation = UINavigationController(rootViewController: content)
-            navigation.modalPresentationStyle = .pageSheet
-            library.present(navigation, animated: true)
+            if let downloads = content as? DownloadSheetViewController {
+                downloads.onShowDownloaded = { [weak downloads] in
+                    guard let navigation = downloads?.navigationController else { return }
+                    let downloaded = TrackListViewController(
+                        category: .downloaded,
+                        viewModel: dependencies.libraryViewModel,
+                        playlistViewModel: dependencies.playlistViewModel,
+                        downloadFeatureEnabled: dependencies.downloadFeatureEnabled,
+                        onPlay: dependencies.onPlay
+                    )
+                    downloaded.onDelete = dependencies.onDeleteTrack
+                    navigation.pushViewController(downloaded, animated: true)
+                }
+            }
+            navigation.pushViewController(content, animated: true)
         }
         library.onSettings = { [weak library] in
             guard let library else { return }

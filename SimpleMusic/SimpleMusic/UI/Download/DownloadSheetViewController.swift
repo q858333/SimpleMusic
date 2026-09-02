@@ -4,8 +4,9 @@ import UIKit
 
 /// 展示应用级下载队列；页面生命周期不会控制下载任务生命周期。
 @MainActor
-final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, UIAdaptivePresentationControllerDelegate {
+final class DownloadSheetViewController: UIViewController, UITextFieldDelegate {
     let downloadQueue: DownloadQueue
+    var onShowDownloaded: (() -> Void)?
 
     private let settingsStore: SettingsStore
     private let networkStatusProvider: (any DownloadNetworkStatusProviding)?
@@ -31,13 +32,14 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
     init(
         downloadQueue: DownloadQueue,
         settingsStore: SettingsStore = SettingsStore(defaults: .standard),
-        networkStatusProvider: (any DownloadNetworkStatusProviding)? = nil
+        networkStatusProvider: (any DownloadNetworkStatusProviding)? = nil,
+        onShowDownloaded: (() -> Void)? = nil
     ) {
         self.downloadQueue = downloadQueue
         self.settingsStore = settingsStore
         self.networkStatusProvider = networkStatusProvider
+        self.onShowDownloaded = onShowDownloaded
         super.init(nibName: nil, bundle: nil)
-        modalPresentationStyle = .pageSheet
     }
 
     @available(*, unavailable)
@@ -54,13 +56,8 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
         bindNetworkStatus()
     }
 
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        presentationController?.delegate = self
-    }
-
+    /// 兼容旧的页面释放调用；下载任务始终由应用级队列持有。
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
-        // 页面消失只停止 UI 观察，下载继续由应用级队列持有。
         cancellables.removeAll()
     }
 
@@ -70,12 +67,15 @@ final class DownloadSheetViewController: UIViewController, UITextFieldDelegate, 
     }
 
     private func buildInterface() {
-        let closeButton = makeButton(title: L10n.text("common.cancel"), identifier: "download.close")
-        closeButton.addAction(UIAction { [weak self] _ in
-            self?.cancellables.removeAll()
-            self?.dismiss(animated: true)
+        var downloadedConfiguration = UIButton.Configuration.plain()
+        downloadedConfiguration.title = L10n.text("category.downloaded")
+        downloadedConfiguration.baseForegroundColor = .label
+        let downloadedButton = UIButton(configuration: downloadedConfiguration)
+        downloadedButton.accessibilityIdentifier = "download.showDownloaded"
+        downloadedButton.addAction(UIAction { [weak self] _ in
+            self?.onShowDownloaded?()
         }, for: .touchUpInside)
-        navigationItem.leftBarButtonItem = UIBarButtonItem(customView: closeButton)
+        navigationItem.rightBarButtonItem = UIBarButtonItem(customView: downloadedButton)
 
         urlField.accessibilityIdentifier = "download.url"
         urlField.accessibilityLabel = L10n.text("download.url_accessibility")

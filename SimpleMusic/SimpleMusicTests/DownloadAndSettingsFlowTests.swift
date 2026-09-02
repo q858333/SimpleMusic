@@ -6,6 +6,23 @@ import XCTest
 
 @MainActor
 final class DownloadAndSettingsFlowTests: XCTestCase {
+    func testDownloadPageExposesDownloadedTracksAction() throws {
+        let operation = ControlledQueueDownloadOperation()
+        let queue = makeQueue(operation: operation)
+        var actionCount = 0
+        let controller = DownloadSheetViewController(
+            downloadQueue: queue,
+            onShowDownloaded: { actionCount += 1 }
+        )
+        controller.loadViewIfNeeded()
+
+        let button = try XCTUnwrap(controller.navigationItem.rightBarButtonItem?.customView as? UIButton)
+        XCTAssertEqual(button.accessibilityIdentifier, "download.showDownloaded")
+        button.sendActions(for: .touchUpInside)
+
+        XCTAssertEqual(actionCount, 1)
+    }
+
     func testClosingAndReleasingSheetDoesNotCancelActiveQueueJob() throws {
         let operation = ControlledQueueDownloadOperation()
         let queue = makeQueue(operation: operation)
